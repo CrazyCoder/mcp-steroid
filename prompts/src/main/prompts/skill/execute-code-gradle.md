@@ -15,6 +15,7 @@ Waiting for smart mode alone does not trigger an import.
 
 ```kotlin[IU]
 import com.intellij.openapi.externalSystem.importing.ImportSpecBuilder
+import com.intellij.openapi.externalSystem.service.project.ProjectDataManager
 import com.intellij.openapi.externalSystem.service.project.manage.ProjectDataImportListener
 import com.intellij.openapi.externalSystem.util.ExternalSystemUtil
 import kotlinx.coroutines.CompletableDeferred
@@ -52,6 +53,12 @@ ExternalSystemUtil.refreshProject(
     ImportSpecBuilder(project, GradleConstants.SYSTEM_ID).build()
 )
 withTimeout(8.minutes) { importDone.await() }
+// A broken build script still reaches onFinalTasksFinished; only the import timestamps tell it apart.
+val info = ProjectDataManager.getInstance().getExternalProjectsData(project, GradleConstants.SYSTEM_ID)
+    .firstOrNull { it.externalProjectPath == gradleProjectPath }
+check(info != null && info.lastImportTimestamp == info.lastSuccessfulImportTimestamp) {
+    "Gradle import failed; the Build tool window's Sync tab shows the error"
+}
 waitForSmartMode()
 println("Gradle sync complete")
 ```
@@ -59,6 +66,9 @@ println("Gradle sync complete")
 Key points:
 - `ProjectDataImportListener.onFinalTasksFinished` is the Gradle import boundary; `onImportFinished` is too early because final import tasks still run afterward.
 - Subscribe before calling `ExternalSystemUtil.refreshProject(...)` so the listener cannot miss a fast import event.
+- `onImportFailed` does not fire for a build-script error such as a Kotlin DSL compilation failure, and `onFinalTasksFinished` still does. Compare `lastImportTimestamp` with `lastSuccessfulImportTimestamp` to see whether the import worked.
+- A dependency that cannot be downloaded does not fail the import: it becomes a library with no class roots. Check `LibraryOrderEntry.getRootFiles(OrderRootType.CLASSES)` when the task depends on it.
+- A first import can take minutes. Claude Code cancels an MCP call after 60 s unless the server's `.mcp.json` entry sets `timeout` (milliseconds); when the limit is unknown, start the import in one call and check the timestamps in the next.
 - `waitForSmartMode()` after final tasks lets indexing settle before follow-up indexed reads.
 - Use the two-argument `ExternalSystemUtil.refreshProject(path, importSpec)` form; older overloads are deprecated.
 - If sync fails, fix the Gradle/JDK/import problem. Do not continue with unresolved dependencies.
@@ -67,7 +77,7 @@ Key points:
 
 The preferred Gradle test runner from `steroid_execute_code`. Uses `GradleRunConfiguration.isRunAsTest = true` so per-test results land in IntelliJ's standard SM test-runner data model. **Read that model by polling**, not by subscribing to events — the polling shape is much shorter and survives retries cleanly.
 
-> ⚠️ **Each call must finish in under 60 seconds.** A typical Gradle test on a fresh checkout (cold daemon, dependency resolve, compile, test execution) easily exceeds that. Do NOT try a single-call recipe that awaits the whole run; it will be cancelled by the client mid-await even though the IDE-side script timeout is much larger.
+> ⚠️ **Keep each call short.** Claude Code cancels an MCP call after 60 s unless the server's `.mcp.json` entry sets `timeout` (milliseconds), and other clients have their own limits. A typical Gradle test on a fresh checkout (cold daemon, dependency resolve, compile, test execution) easily exceeds 60 s, so do not await the whole run in one call when the client limit is unknown; launch and poll as below.
 
 ### Call 1 — launch the Gradle test, return immediately
 

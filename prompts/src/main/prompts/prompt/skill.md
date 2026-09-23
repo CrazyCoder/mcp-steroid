@@ -386,7 +386,7 @@ or `prompts/list` — the tool is the canonical discovery surface.
 ### Common Issues
 - **"Project not found"** - Run `steroid_list_projects` first to get exact project names
 - **No output from execute** - Only printed values come back; the last expression's value is ignored by the runtime. End the script with `println()` / `printJson()` of everything you need
-- **Timeout** - Increase `timeout` parameter (default 60 seconds)
+- **Timeout** - Increase the `timeout` parameter (default 600 seconds). The MCP client has its own limit: Claude Code cancels a call after 60 s unless the server's `.mcp.json` entry sets `timeout` (milliseconds)
 - **Script errors** - Check Kotlin syntax; imports are optional
 
 ## Detailed Guides

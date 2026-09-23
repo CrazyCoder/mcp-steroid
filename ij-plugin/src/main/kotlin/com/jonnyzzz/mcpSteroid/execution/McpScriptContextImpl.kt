@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.execution
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInspection.InspectionEngine
@@ -15,6 +16,7 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiManager
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.util.PairProcessor
 import com.intellij.codeInsight.daemon.HighlightDisplayKey
 import com.intellij.openapi.Disposable
@@ -404,22 +406,24 @@ class McpScriptContextImpl(
             return false
         }
 
-        // Wait for highlighting to complete
-        val completed = withTimeoutOrNull(timeout) {
-            while (!disposed.get()) {
-                val isComplete = withContext(Dispatchers.EDT) {
-                    DaemonCodeAnalyzerEx.isHighlightingCompleted(editor, project)
-                }
-                if (isComplete) break
-                delay(50.milliseconds)
-            }
-            true
-        } ?: false
+        val completed = awaitHighlighting(
+            isCompleted = { disposed.get() || withContext(Dispatchers.EDT) { DaemonCodeAnalyzerEx.isHighlightingCompleted(editor, project) } },
+            restart = {
+                val psiFile = readAction { PsiManager.getInstance(project).findFile(file) }
+                if (psiFile != null) DaemonCodeAnalyzer.getInstance(project).restart(psiFile, "MCP Steroid waitForEditorHighlighting")
+            },
+            timeout = timeout,
+        ) == HighlightingWait.COMPLETED
 
         if (completed) {
             log.info("[$executionId] Daemon analysis completed for ${file.name}")
         } else {
+            // The daemon analyzes only the active project window; say so, since that is the usual cause.
+            val active = withContext(Dispatchers.EDT) { WindowManager.getInstance().getFrame(project)?.isActive == true }
+            val cause = if (active) "" else " The project window is not active, and the IDE analyzes only the active window: " +
+                "call ProjectUtil.focusProjectWindow(project, true) on the EDT first."
             log.warn("[$executionId] Timeout waiting for daemon analysis on ${file.name}")
+            resultBuilder.logMessage("WARNING: daemon analysis of ${file.name} did not complete within $timeout.$cause")
         }
         return completed
     }
@@ -431,11 +435,9 @@ class McpScriptContextImpl(
     ): List<HighlightInfo> {
         checkDisposed()
 
-        // Wait for analysis to complete
-        val completed = waitForEditorHighlighting(file, timeout)
-        if (!completed) {
-            return emptyList()
-        }
+        // On a timeout the last analysis' highlights are returned; waitForEditorHighlighting has
+        // already put a warning in the result, so they are not mistaken for a clean file.
+        waitForEditorHighlighting(file, timeout)
 
         // Get document for the file
         val document = readAction {

@@ -23,7 +23,7 @@ the project-level value is null.
 
 When an agent task asks for "run one fast test through Maven" — pick a plain JUnit method, then run it through IntelliJ's Maven integration. **Do NOT shell out to `./mvnw` or `mvn` via the `Bash` tool**, and do NOT use `ProcessBuilder("./mvnw")` inside `steroid_execute_code`. Both bypass the IDE entirely and defeat the value of MCP Steroid.
 
-> ⚠️ **Single-call pattern does NOT work for Maven test runs.** The MCP HTTP transport (claude-code's CLI in particular) cancels in-flight tool calls after ~60 seconds. Maven setup + a JUnit test on a fresh checkout often takes 30–120s. A single script that calls `runConfiguration` and then `await`s the SMT listener will be cancelled mid-run by the client, even though the IDE-side script timeout is much larger. **Use the two-call pattern below: launch in call 1, poll in call 2+.**
+> ⚠️ **Single-call pattern does NOT work for Maven test runs.** Claude Code cancels an MCP call after 60 s unless the server's `.mcp.json` entry sets `timeout` (milliseconds), and other clients have their own limits. Maven setup + a JUnit test on a fresh checkout often takes 30–120s. A single script that calls `runConfiguration` and then `await`s the SMT listener will be cancelled mid-run by the client, even though the IDE-side script timeout is much larger. **Use the two-call pattern below: launch in call 1, poll in call 2+.**
 
 > ⚠️ **Use polling, not listeners.** Read state directly from the live `RunContentDescriptor`'s `ProcessHandler` (terminated? exit code?) plus the surefire XML report on disk. SMT events do not fire reliably for Maven surefire, and a long-lived `messageBus.connect()` is brittle across retries. Polling is shorter, simpler, and matches what a human reads from the Run tool window.
 
@@ -118,7 +118,7 @@ if (handler == null) {
 - Maven surefire writes one `<TestClass>.txt` and `<TestClass>.xml` per class into `<module>/target/surefire-reports/`. The `.txt` files start with `Tests run: N, Failures: M, Errors: K, Skipped: J, Time elapsed: …` — same numbers a human reads.
 - `processHandler.exitCode == 0` is the authoritative pass/fail signal; the surefire counts are extra detail for the agent's report.
 - For Maven runs `descriptor.executionConsole` is a `BuildView`; `BuildView.getConsoleView()` returns the inner `ConsoleViewImpl` whose `editor.document.text` holds the full Maven log — that's the same content the Build tool window shows. Reading the tail on failure surfaces `BUILD FAILURE`, missing-artifact errors, and compile errors without a follow-up call.
-- Each script returns in <2s — well under the MCP HTTP transport's ~60s cancel window. `project.userData`, `CompletableDeferred`, and `messageBus.connect()` are all unnecessary.
+- Each script returns in <2s — well under any client's call limit. `project.userData`, `CompletableDeferred`, and `messageBus.connect()` are all unnecessary.
 
 **`-am` (also-make) is BANNED.** It walks the upstream graph and frequently OOM-kills the container. Pin to the one submodule with `-pl <module>` and accept that one extra `install` round-trip below if a sibling artifact is missing.
 

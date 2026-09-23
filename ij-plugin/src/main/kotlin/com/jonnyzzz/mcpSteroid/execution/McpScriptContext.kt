@@ -224,7 +224,11 @@ interface McpScriptContext {
 
     /**
      * Wait for the code analysis process to complete highlighting on the given file.
-     * The file must be open in the editor for highlighting to work.
+     * The file must be open in the editor for highlighting to work, and the IDE analyzes only the
+     * active project window: bring it forward with `ProjectUtil.focusProjectWindow(project, true)` on
+     * the EDT when it may be in the background. A file analyzed before reports no completion until the
+     * daemon runs again, so the daemon is restarted for the file once when no pass completes within a
+     * second. A timeout adds a warning to the result that names the inactive window when that is why.
      *
      * @param file The virtual file to wait for analysis completion
      * @param timeout Maximum time to wait (default: 30 seconds)
@@ -249,14 +253,15 @@ interface McpScriptContext {
      * Waits for the daemon analysis to complete and then returns highlights for the file.
      * Returns highlights with severity of at least WEAK_WARNING by default.
      *
-     * **NOTE**: This method relies on the daemon code analyzer which may return stale results
-     * if the IDE window is not focused (see GitHub issue #20). For reliable results regardless
-     * of window focus, use [runInspectionsDirectly] instead.
+     * **NOTE**: The daemon analyzes only the active project window (GitHub issue #20); see
+     * [waitForEditorHighlighting]. These are the highlights the user sees, including the unused-symbol
+     * pass that [runInspectionsDirectly] does not run.
      *
      * @param file The virtual file to get highlights for.
      * @param minSeverityValue Minimum severity value (default: WEAK_WARNING). Use HighlightSeverity.*.myVal.
      * @param timeout Maximum time to wait for analysis (default: 30 seconds).
-     * @return List of HighlightInfo for the file, or empty list if timeout.
+     * @return List of HighlightInfo for the file. When the wait times out, the last analysis'
+     *   highlights, with a warning in the result.
      *
      * ```kotlin
      * val file = findProjectFile("src/Main.kt") ?: error("File not found")
@@ -304,7 +309,8 @@ interface McpScriptContext {
      * val problems = runInspectionsDirectly(file)
      * problems.forEach { (toolId, descriptors) ->
      *     descriptors.forEach { problem ->
-     *         println("[$toolId] ${problem.descriptionTemplate}")
+     *         // descriptionTemplate holds placeholders such as <code>#ref</code>; render it for the text the user sees.
+     *         println("[$toolId] ${readAction { ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement) }}")
      *     }
      * }
      * problems.failedTools.forEach { failed ->
@@ -312,7 +318,10 @@ interface McpScriptContext {
      * }
      * ```
      *
-     * @see getHighlightsWhenReady for daemon-based highlights (requires window focus)
+     * It runs local inspections only. Warnings from the highlighting passes, such as unused symbols,
+     * come only from [getHighlightsWhenReady].
+     *
+     * @see getHighlightsWhenReady for daemon-based highlights (requires the active project window)
      */
     suspend fun runInspectionsDirectly(
         file: VirtualFile,

@@ -209,12 +209,14 @@ printToon(records.map { (path, lines, name) -> mapOf("path" to path, "lines" to 
 ```kotlin
 // Built-in read/write actions (no imports needed):
 val text = readAction { "read under lock" }         // Execute under read lock (PSI/VFS reads)
-writeAction { /* modify PSI/VFS under write lock */ }  // Execute under write lock
+writeAction { /* modify PSI/VFS under write lock */ }  // Execute under write lock; may run off the EDT
 val smart = smartReadAction { "smart + read" }       // Wait for smart mode + read action
 println("read=$text, smart=$smart")
 ```
 
 **Important**: These are **built-in** - you do NOT need to import `readAction` or `writeAction` from IntelliJ Platform!
+
+`writeAction { }` can run as a background write action, so code inside it that needs the EDT fails, for example `WriteCommandAction` ("Calling invokeAndWait from background write-action leads to deadlock"). For an undoable document edit use `withContext(Dispatchers.EDT) { WriteCommandAction.runWriteCommandAction(project) { document.setText(text) } }`.
 
 ### Built-in Search Scopes (NO IMPORTS NEEDED!)
 

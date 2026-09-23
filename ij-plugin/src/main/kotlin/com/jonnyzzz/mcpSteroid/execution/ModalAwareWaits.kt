@@ -105,6 +105,37 @@ internal suspend fun <T> runBoundedByTimeout(
 
 private const val MAX_DIALOG_CLOSE_ROUNDS = 5
 
+/** How [awaitHighlighting] ended. */
+internal enum class HighlightingWait { COMPLETED, TIMED_OUT }
+
+/**
+ * Waits for the daemon to finish analyzing an editor.
+ *
+ * A file the daemon analyzed before reports no completion until the daemon runs for it again, so
+ * a wait on an unchanged file would always time out. When [isCompleted] is still false after
+ * [restartAfter], [restart] runs once to start a new pass.
+ */
+internal suspend fun awaitHighlighting(
+    isCompleted: suspend () -> Boolean,
+    restart: suspend () -> Unit,
+    timeout: Duration,
+    restartAfter: Duration = 1.seconds,
+    poll: Duration = 50.milliseconds,
+): HighlightingWait {
+    val start = kotlin.time.TimeSource.Monotonic.markNow()
+    var restarted = false
+    return withTimeoutOrNull(timeout) {
+        while (!isCompleted()) {
+            if (!restarted && start.elapsedNow() >= restartAfter) {
+                restart()
+                restarted = true
+            }
+            kotlinx.coroutines.delay(poll)
+        }
+        HighlightingWait.COMPLETED
+    } ?: HighlightingWait.TIMED_OUT
+}
+
 /** Names closed dialogs for a message: `dialog 'A'`, `dialogs 'A', 'B'`, or `no dialog`. */
 internal fun List<String>.describeDialogs(): String = when {
     isEmpty() -> "no dialog"
