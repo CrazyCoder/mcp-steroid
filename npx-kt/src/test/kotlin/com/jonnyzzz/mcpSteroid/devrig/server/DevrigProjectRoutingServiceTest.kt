@@ -207,6 +207,6 @@ class DevrigProjectRoutingServiceTest {
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:4343/mcp").rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer secret-$pid"),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
-            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+            plugin = PluginInfo("io.github.crazycoder.mcp-steroid", "MCP Steroid", "0.0.0-test"),
         )
 }

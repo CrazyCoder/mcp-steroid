@@ -24,7 +24,7 @@ import kotlinx.serialization.json.jsonObject
 import org.slf4j.LoggerFactory
 
 /** The MCP Steroid plugin id, as declared in `ij-plugin/.../META-INF/plugin.xml`. */
-const val MCP_STEROID_PLUGIN_ID = "com.jonnyzzz.mcp-steroid"
+const val MCP_STEROID_PLUGIN_ID = "io.github.crazycoder.mcp-steroid"
 
 /**
  * The one-shot command that installs (or updates) MCP Steroid into every running JetBrains IDE over

@@ -76,7 +76,7 @@ class InstallPluginCommandTest {
         // install modal still appears — assert we actually send it.
         assertEquals("http://localhost", recorded.installOrigin)
         assertTrue(recorded.installUri.orEmpty().contains("action=install"), recorded.installUri)
-        assertTrue(recorded.installUri.orEmpty().contains("pluginId=com.jonnyzzz.mcp-steroid"), recorded.installUri)
+        assertTrue(recorded.installUri.orEmpty().contains("pluginId=io.github.crazycoder.mcp-steroid"), recorded.installUri)
     }
 
     // --- orchestrator (fake client) ---------------------------------------------------------------

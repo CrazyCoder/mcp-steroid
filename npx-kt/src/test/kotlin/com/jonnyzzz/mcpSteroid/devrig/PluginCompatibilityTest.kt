@@ -121,7 +121,7 @@ class PluginCompatibilityTest {
             }
         }.toByteArray()
         ZipOutputStream(Files.newOutputStream(zip)).use { out ->
-            out.putNextEntry(ZipEntry("mcp-steroid/lib/ij-plugin-test.jar"))
+            out.putNextEntry(ZipEntry("mcp-steroid-plus/lib/ij-plugin-test.jar"))
             out.write(jarBytes)
             out.closeEntry()
         }

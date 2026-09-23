@@ -85,7 +85,7 @@ fun pluginZipFixture(zip: Path): Path {
     Files.createDirectories(zip.parent)
     ZipArchiveOutputStream(Files.newOutputStream(zip)).use { out ->
         val bytes = "plugin".toByteArray(Charsets.UTF_8)
-        val entry = ZipArchiveEntry("mcp-steroid/lib/plugin.txt").apply {
+        val entry = ZipArchiveEntry("mcp-steroid-plus/lib/plugin.txt").apply {
             size = bytes.size.toLong()
             unixMode = 0b110_100_100
         }

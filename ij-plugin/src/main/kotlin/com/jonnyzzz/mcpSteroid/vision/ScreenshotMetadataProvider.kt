@@ -152,6 +152,6 @@ interface ScreenshotMetadataProvider {
 
     companion object {
         val EP_NAME: ExtensionPointName<ScreenshotMetadataProvider> =
-            ExtensionPointName.create("com.jonnyzzz.mcp-steroid.screenshotMetadataProvider")
+            ExtensionPointName.create("io.github.crazycoder.mcp-steroid.screenshotMetadataProvider")
     }
 }

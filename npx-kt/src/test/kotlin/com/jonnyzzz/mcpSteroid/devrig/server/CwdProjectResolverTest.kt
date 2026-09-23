@@ -84,7 +84,7 @@ class CwdProjectResolverTest {
             rpcBaseUrl = "http://127.0.0.1:4343/mcp",
             bridgeHeaders = emptyMap(),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
-            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+            plugin = PluginInfo("io.github.crazycoder.mcp-steroid", "MCP Steroid", "0.0.0-test"),
         ),
         projectInfo = IdeProjectState(name = exposedName, projectPath = projectPath.toString()),
         exposedProjectName = exposedName,

@@ -48,7 +48,7 @@ import java.nio.file.Path
 import javax.swing.JComponent
 
 /**
- * Application-level settings page: Settings | Tools | Devrig — MCP Steroid.
+ * Application-level settings page: Settings | Tools | MCP Steroid Plus.
  *
  * Purely informational — no persistent state, no mutable options. The page exists so users
  * can confirm the plugin is installed and connect an AI agent:
@@ -430,10 +430,10 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
     companion object {
         /** Must match the id attribute of the applicationConfigurable EP in plugin.xml. */
-        const val CONFIGURABLE_ID = "com.jonnyzzz.mcp-steroid.settings"
+        const val CONFIGURABLE_ID = "io.github.crazycoder.mcp-steroid.settings"
 
         /** Must match the displayName attribute of the applicationConfigurable EP in plugin.xml. */
-        const val DISPLAY_NAME = "Devrig — MCP Steroid"
+        const val DISPLAY_NAME = "MCP Steroid Plus"
 
         /** Title of the collapsed section holding the deprecated direct-HTTP setup. */
         const val HTTP_SECTION_TITLE = "Direct HTTP connection (deprecated)"

@@ -281,8 +281,10 @@ tasks.withType<KotlinCompile>().configureEach {
     dependsOn(generateMetadata)
 }
 
+val pluginDirName = "mcp-steroid-plus"
+
 intellijPlatform {
-    projectName = rootProject.name
+    projectName = pluginDirName
     caching {
         ides {
             enabled = true
@@ -290,7 +292,7 @@ intellijPlatform {
     }
     buildSearchableOptions = false
     pluginConfiguration {
-        name = "MCP Steroid"
+        name = "MCP Steroid Plus"
         version = project.version.toString()
         if (releaseNotesText != null) {
             changeNotes = releaseNotesText
@@ -805,7 +807,7 @@ val deployPluginLocallyTo253 = tasks.register<Sync>("deployPluginLocallyTo253") 
     group = "intellij platform"
     outputs.upToDateWhen { false }
 
-    val targetName = "" + rootProject.name
+    val targetName = pluginDirName
     val targetDir = "${System.getenv("HOME")}/intellij-253/config/plugins/$targetName"
 
     this.destinationDir = file(targetDir)
@@ -845,7 +847,7 @@ val deployPluginLocallyTo261 = tasks.register<Sync>("deployPluginLocallyTo261") 
     group = "intellij platform"
     outputs.upToDateWhen { false }
 
-    val targetName = "" + rootProject.name
+    val targetName = pluginDirName
     val targetDir = "${System.getenv("HOME")}/Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins/$targetName"
 
     this.destinationDir = file(targetDir)
@@ -884,7 +886,7 @@ val deployPluginLocallyToIntelliJMain = tasks.register<Sync>("deployPluginLocall
     group = "intellij platform"
     outputs.upToDateWhen { false }
 
-    val targetName = "" + rootProject.name
+    val targetName = pluginDirName
     val targetDir = "${System.getenv("HOME")}/.intellij-main/config/plugins/$targetName"
 
     this.destinationDir = file(targetDir)

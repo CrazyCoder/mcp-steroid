@@ -7,7 +7,7 @@
         "build": "GO-261.25134.147"
     },
     "plugin": {
-        "id": "com.jonnyzzz.mcp-steroid",
+        "id": "io.github.crazycoder.mcp-steroid",
         "name": "MCP Steroid",
         "version": "0.100-409f23a2"
     },

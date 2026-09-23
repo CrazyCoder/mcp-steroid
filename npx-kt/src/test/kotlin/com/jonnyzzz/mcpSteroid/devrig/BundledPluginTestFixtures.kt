@@ -8,16 +8,16 @@ import java.nio.file.Path
 
 /**
  * Writes a minimal bundled-plugin zip with entries:
- *  - `mcp-steroid/lib/plugin.txt` = [version]
- *  - `mcp-steroid/bin/fixture-executable` (executable)
+ *  - `mcp-steroid-plus/lib/plugin.txt` = [version]
+ *  - `mcp-steroid-plus/bin/fixture-executable` (executable)
  *
  * Returns [zip] for chaining.
  */
 internal fun bundledPluginZipFixture(zip: Path, version: String): Path {
     Files.createDirectories(zip.parent)
     ZipArchiveOutputStream(Files.newOutputStream(zip)).use { out ->
-        out.addZipFile("mcp-steroid/lib/plugin.txt", version)
-        out.addZipFile("mcp-steroid/bin/fixture-executable", "#!/usr/bin/env sh\n", mode = 0b111_101_101)
+        out.addZipFile("mcp-steroid-plus/lib/plugin.txt", version)
+        out.addZipFile("mcp-steroid-plus/bin/fixture-executable", "#!/usr/bin/env sh\n", mode = 0b111_101_101)
     }
     return zip
 }

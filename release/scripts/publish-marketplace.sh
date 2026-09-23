@@ -15,7 +15,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MARKETPLACE_TOKEN_FILE="$HOME/.marketplace"
-PLUGIN_ID="com.jonnyzzz.mcp-steroid"
+PLUGIN_ID="io.github.crazycoder.mcp-steroid"
 
 if [[ ! -f "$MARKETPLACE_TOKEN_FILE" ]]; then
   echo "Missing marketplace token file: $MARKETPLACE_TOKEN_FILE" >&2
@@ -41,7 +41,7 @@ echo "Plugin ID:  $PLUGIN_ID"
 echo "Uploading to JetBrains Marketplace..."
 
 # Upload using curl — token is read from file
-# The xmlId parameter accepts the string plugin ID (com.jonnyzzz.mcp-steroid)
+# The xmlId parameter accepts the string plugin ID (io.github.crazycoder.mcp-steroid)
 curl -i \
   --header "Authorization: Bearer $(head -1 "$MARKETPLACE_TOKEN_FILE" | tr -d '[:space:]')" \
   --form "xmlId=$PLUGIN_ID" \

@@ -55,7 +55,7 @@ class BackendManagerStartStopTest {
                 argumentsFile = argumentsFile,
                 markerDirectory = PidMarker.markerDirectory(userHome),
                 ideHome = bundleDir,
-                pluginHome = homePaths.cacheDir("idea-ultimate-2026.2.0.1").resolve("plugins/mcp-steroid"),
+                pluginHome = homePaths.cacheDir("idea-ultimate-2026.2.0.1").resolve("plugins/mcp-steroid-plus"),
             ),
         )
         val manager = BackendManager(
@@ -98,7 +98,7 @@ class BackendManagerStartStopTest {
                 launcherPidFile = launcherPidFile,
                 markerDirectory = PidMarker.markerDirectory(userHome),
                 ideHome = bundleDir,
-                pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid"),
+                pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus"),
             ),
         )
         val manager = BackendManager(
@@ -146,7 +146,7 @@ class BackendManagerStartStopTest {
                 launcherPidFile = launcherPidFile,
                 markerDirectory = PidMarker.markerDirectory(userHome),
                 ideHome = bundleDir,
-                pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid"),
+                pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus"),
             ),
         )
         val manager = BackendManager(
@@ -390,7 +390,7 @@ class BackendManagerStartStopTest {
         val userHome = tempDir.resolve("user-home")
         val markerDirectory = PidMarker.markerDirectory(userHome)
         val bundleDir = homePaths.backendDir(id).resolve("idea-$build")
-        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
+        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus")
         val argumentsFile = tempDir.resolve("remote-args.txt")
         installStubBackend(
             homePaths = homePaths,
@@ -442,7 +442,7 @@ class BackendManagerStartStopTest {
         val userHome = tempDir.resolve("user-home")
         val markerDirectory = PidMarker.markerDirectory(userHome)
         val bundleDir = homePaths.backendDir(id).resolve("idea-$build")
-        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
+        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus")
         installStubBackend(
             homePaths = homePaths,
             id = id,
@@ -538,7 +538,7 @@ class BackendManagerStartStopTest {
         val userHome = tempDir.resolve("user-home")
         val markerDirectory = PidMarker.markerDirectory(userHome)
         val bundleDir = homePaths.backendDir(id).resolve("idea-$build")
-        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
+        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus")
         installStubBackend(
             homePaths = homePaths,
             id = id,
@@ -671,7 +671,7 @@ class BackendManagerStartStopTest {
                 handedOffPidFile = handedOffPidFile,
                 markerDirectory = PidMarker.markerDirectory(userHome),
                 ideHome = bundleDir,
-                pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid"),
+                pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus"),
                 pidFile = homePaths.pidFile(id),
             ),
         )
@@ -983,7 +983,7 @@ class BackendManagerStartStopTest {
                 communityMarkerJson(
                     pid = process.pid(),
                     ideHome = homePaths.backendDir("idea-community-2025.3.3").resolve("idea-IC-253.1"),
-                    pluginHome = homePaths.cacheDir("idea-community-2025.3.3").resolve("plugins/mcp-steroid"),
+                    pluginHome = homePaths.cacheDir("idea-community-2025.3.3").resolve("plugins/mcp-steroid-plus"),
                 ),
             )
             val manager = BackendManager(
@@ -1023,7 +1023,7 @@ class BackendManagerStartStopTest {
                 communityMarkerJson(
                     pid = process.pid(),
                     ideHome = homePaths.backendDir(id).resolve("idea-IC-253.1"),
-                    pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid"),
+                    pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus"),
                     createdAt = processStartedAt.minusSeconds(1).toString(),
                 ),
             )
@@ -1098,7 +1098,7 @@ class BackendManagerStartStopTest {
                 communityMarkerJson(
                     pid = process.pid(),
                     ideHome = tempDir.resolve("different-ide-home"),
-                    pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid"),
+                    pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus"),
                 ),
             )
             val manager = BackendManager(
@@ -1135,7 +1135,7 @@ class BackendManagerStartStopTest {
                 communityMarkerJson(
                     pid = process.pid(),
                     ideHome = homePaths.backendDir(id).resolve("idea-IC-253.1"),
-                    pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid"),
+                    pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus"),
                     build = "IU-253.1",
                 ),
             )
@@ -1186,7 +1186,7 @@ class BackendManagerStartStopTest {
                 downloadedAt = "2026-07-31T00:00:00Z",
             ),
         )
-        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
+        val pluginHome = homePaths.cacheDir(id).resolve("plugins/mcp-steroid-plus")
         val unrelated = startUnrelatedSleeper()
         Files.createDirectories(homePaths.stateDir)
         Files.writeString(homePaths.pidFile(id), "${unrelated.pid()}\n")
@@ -1371,7 +1371,7 @@ class BackendManagerStartStopTest {
         installStubBackend(homePaths, launcherBody = gracefulLauncher())
 
         // Seed a stale old plugin to verify that start replaces it with the current one.
-        val pluginDir = homePaths.cacheDir("idea-community-2025.3.3").resolve("plugins/mcp-steroid")
+        val pluginDir = homePaths.cacheDir("idea-community-2025.3.3").resolve("plugins/mcp-steroid-plus")
         Files.createDirectories(pluginDir.resolve("lib"))
         Files.writeString(pluginDir.resolve("lib/plugin.txt"), "old")
         Files.writeString(pluginDir.resolve("stale.txt"), "stale")
@@ -1778,7 +1778,7 @@ class BackendManagerStartStopTest {
                 ),
                 devrigEndpoint = testDevrigEndpoint("http://localhost:63342/mcp"),
                 ide = IdeInfo(name = "IntelliJ IDEA Ultimate", version = "2026.2.0.1", build = "IU-262.8665.337"),
-                plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "1.0.0"),
+                plugin = PluginInfo(id = "io.github.crazycoder.mcp-steroid", name = "MCP Steroid", version = "1.0.0"),
                 createdAt = createdAt,
                 ideHome = ideHome.toAbsolutePath().normalize().toString(),
                 intellijWebServer = null,

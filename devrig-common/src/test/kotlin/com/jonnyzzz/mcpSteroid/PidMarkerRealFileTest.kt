@@ -34,7 +34,7 @@ class PidMarkerRealFileTest {
         assertEquals("GoLand 2026.1.3", marker.ide.name)
         assertEquals("2026.1.3", marker.ide.version)
         assertEquals("GO-261.25134.147", marker.ide.build)
-        assertEquals("com.jonnyzzz.mcp-steroid", marker.plugin.id)
+        assertEquals("io.github.crazycoder.mcp-steroid", marker.plugin.id)
         assertEquals("MCP Steroid", marker.plugin.name)
         assertEquals("0.100-409f23a2", marker.plugin.version)
         assertEquals("2026-06-22T11:35:33.211077Z", marker.createdAt)

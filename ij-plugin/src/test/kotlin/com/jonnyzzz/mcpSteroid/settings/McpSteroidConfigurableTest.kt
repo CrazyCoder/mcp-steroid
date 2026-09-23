@@ -43,10 +43,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
 
         assertEquals("tools", ep.parentId)
         assertEquals(McpSteroidConfigurable.DISPLAY_NAME, ep.displayName)
-        assertTrue(
-            "Settings tab name must lead with the Devrig product name; got '${McpSteroidConfigurable.DISPLAY_NAME}'",
-            McpSteroidConfigurable.DISPLAY_NAME.startsWith("Devrig"),
-        )
+        assertEquals("MCP Steroid Plus", McpSteroidConfigurable.DISPLAY_NAME)
 
         val configurable = ep.createConfigurable()
         assertNotNull("ConfigurableEP must instantiate the settings page", configurable)

@@ -306,7 +306,7 @@ class BackendProvisionTest {
         assertEquals(null, result.productCode)
         assertEquals(sourcePlugin, result.pluginSource)
         assertEquals(tempDir.resolve("home/Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins"), result.pluginsDir)
-        assertEquals(tempDir.resolve("home/Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins/mcp-steroid"), result.suggestedDestination)
+        assertEquals(tempDir.resolve("home/Library/Application Support/JetBrains/IntelliJIdea2026.1/plugins/mcp-steroid-plus"), result.suggestedDestination)
         assertTrue(result.suggestedDestination.notExists(), "provision must not create the suggested destination")
         assertTrue(installPluginCalls.isEmpty(), "provision must not call /api/installPlugin")
     }
@@ -383,7 +383,7 @@ class BackendProvisionTest {
         selector = "IntelliJIdea2026.1",
         pluginsDir = tempDir.resolve("plugins"),
         pluginSource = tempDir.resolve("ij-plugin.zip"),
-        suggestedDestination = tempDir.resolve("plugins/mcp-steroid"),
+        suggestedDestination = tempDir.resolve("plugins/mcp-steroid-plus"),
     )
 
     private fun renderProvisionText(rows: List<ProvisionTarget>): String {
@@ -439,7 +439,7 @@ class BackendProvisionTest {
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
             bridgeHeaders = emptyMap(),
             ide = IdeInfo(name = name, version = version, build = build),
-            plugin = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
+            plugin = PluginInfo(id = "io.github.crazycoder.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test"),
             backendName = "mock-backend-name",
         )
     }

@@ -61,7 +61,7 @@ class WebsiteArtifactsTest {
 
     private val pluginXml = """
         <idea-plugin>
-          <id>com.jonnyzzz.mcp-steroid</id>
+          <id>io.github.crazycoder.mcp-steroid</id>
           <version>0.101.0-abc1234</version>
           <idea-version since-build="253" until-build="999.*"/>
         </idea-plugin>
@@ -75,7 +75,7 @@ class WebsiteArtifactsTest {
     @Test
     fun `extractPluginCoordinates reads id, version and since-build from the artifact`() {
         val coords = extractPluginCoordinates(releaseZipWithPlugin())
-        assertEquals("com.jonnyzzz.mcp-steroid", coords.id)
+        assertEquals("io.github.crazycoder.mcp-steroid", coords.id)
         assertEquals("0.101.0-abc1234", coords.version)
         assertEquals("253", coords.sinceBuild)
     }
@@ -103,7 +103,7 @@ class WebsiteArtifactsTest {
 
     @Test
     fun `extractPluginCoordinates fails on a blank version`() {
-        val blank = "<idea-plugin><id>com.jonnyzzz.mcp-steroid</id><version></version><idea-version since-build=\"253\"/></idea-plugin>"
+        val blank = "<idea-plugin><id>io.github.crazycoder.mcp-steroid</id><version></version><idea-version since-build=\"253\"/></idea-plugin>"
         val jar = zip(mapOf("META-INF/plugin.xml" to blank.toByteArray()))
         val release = zip(mapOf("mcp-steroid/lib/ij-plugin-x.jar" to jar))
         assertFailsWith<IllegalStateException> { extractPluginCoordinates(release) }
@@ -114,11 +114,11 @@ class WebsiteArtifactsTest {
     @Test
     fun `renderUpdatePluginsXml carries id, url, version, since-build and CDATA sections`() {
         val xml = renderUpdatePluginsXml(
-            PluginCoordinates("com.jonnyzzz.mcp-steroid", "0.101.0-abc1234", "253"),
+            PluginCoordinates("io.github.crazycoder.mcp-steroid", "0.101.0-abc1234", "253"),
             "https://github.com/jonnyzzz/mcp-steroid/releases/download/v1.0.0/mcp-steroid-1.0.0.zip",
             "<h2>What's New in v1.0.0</h2>",
         )
-        assertContains(xml, """id="com.jonnyzzz.mcp-steroid"""")
+        assertContains(xml, """id="io.github.crazycoder.mcp-steroid"""")
         assertContains(xml, """version="0.101.0-abc1234"""")
         assertContains(xml, "mcp-steroid-1.0.0.zip")
         assertContains(xml, """since-build="253"""")

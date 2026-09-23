@@ -534,8 +534,8 @@ class BackendManager(
     fun deployMcpSteroidPlugin(id: String): Path {
         val source = bundledPluginResolver.resolveBundledPluginZip()
         require(Files.isRegularFile(source)) { "Bundled ij-plugin.zip is missing: $source" }
-        val target = homePaths.cacheDir(id).resolve("plugins/mcp-steroid")
-        val partial = homePaths.cacheDir(id).resolve("plugins/.mcp-steroid-unpack.partial")
+        val target = homePaths.cacheDir(id).resolve("plugins/$MCP_STEROID_PLUGIN_DIR_NAME")
+        val partial = homePaths.cacheDir(id).resolve("plugins/.$MCP_STEROID_PLUGIN_DIR_NAME-unpack.partial")
         deleteRecursively(target)
         deleteRecursively(partial)
         Files.createDirectories(partial)
@@ -609,7 +609,7 @@ class BackendManager(
         writeIdeUserStartupConfigFiles(ideUserHome)
 
         val managedLog = logDir.resolve("managed.log")
-        val expectedPluginHome = cacheDir.resolve("plugins/mcp-steroid")
+        val expectedPluginHome = cacheDir.resolve("plugins/$MCP_STEROID_PLUGIN_DIR_NAME")
         val preLaunchProcesses = processInspector.allProcesses().associateBy { it.pid }
         var launcherPid: Long? = null
         var backendPid: Long? = null
@@ -1081,7 +1081,7 @@ class BackendManager(
             marker = marker,
             descriptor = descriptor,
             expectedIdeHome = expectedIdeHome,
-            expectedPluginHome = homePaths.cacheDir(descriptor.id).resolve("plugins/mcp-steroid"),
+            expectedPluginHome = homePaths.cacheDir(descriptor.id).resolve("plugins/$MCP_STEROID_PLUGIN_DIR_NAME"),
             markerPath = markerPath,
             warnedMarkers = mutableSetOf(),
         )

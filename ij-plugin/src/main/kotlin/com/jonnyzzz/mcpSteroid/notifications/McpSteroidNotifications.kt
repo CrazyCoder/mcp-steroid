@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
  * on purpose: every message here may auto-hide — a balloon is a nudge, and everything it said stays
  * reachable in the Notifications tool window. Must match `plugin.xml`.
  */
-const val MCP_STEROID_NOTIFICATION_GROUP = "jonnyzzz.mcp.steroid.updates"
+const val MCP_STEROID_NOTIFICATION_GROUP = "io.github.crazycoder.mcp-steroid.notifications"
 
 /**
  * Every message the plugin can show, one entry per kind. [McpSteroidNotifications] keeps at most one

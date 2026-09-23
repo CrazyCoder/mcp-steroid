@@ -28,7 +28,7 @@ import java.io.StringWriter
  * the bytes don't carry. Release detection is a plain GitHub REST API lookup (no token needed for the
  * public repo).
  */
-private const val PLUGIN_ID = "com.jonnyzzz.mcp-steroid"
+private const val PLUGIN_ID = "io.github.crazycoder.mcp-steroid"
 private val GITHUB_RELEASE_ZIP = Regex("""^https://github\.com/jonnyzzz/mcp-steroid/releases/download/[^/]+/.+\.zip$""")
 
 /** Fetches a URL body as text (GitHub REST API). Injectable seam — the parsing/render logic is the tested unit. */

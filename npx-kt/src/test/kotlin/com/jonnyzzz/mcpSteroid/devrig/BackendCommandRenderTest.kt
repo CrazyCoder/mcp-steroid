@@ -44,7 +44,7 @@ class BackendCommandRenderTest {
         backendName: String = "mock-backend-name",
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
-        val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
+        val pluginInfo = PluginInfo(id = "io.github.crazycoder.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
         return DiscoveredIde(
             processId = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,
@@ -138,7 +138,7 @@ class BackendCommandRenderTest {
     @Test
     fun `S1 IDE with no MCP Steroid plugin name falls back to MCP Steroid label`() {
         val ideInfo = IdeInfo(name = "GoLand", version = "2026.1", build = "GO-261.1")
-        val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "", version = "0.9.0")
+        val pluginInfo = PluginInfo(id = "io.github.crazycoder.mcp-steroid", name = "", version = "0.9.0")
         val ide = DiscoveredIde(
             processId = 99L,
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:6315/mcp").rpcBaseUrl,

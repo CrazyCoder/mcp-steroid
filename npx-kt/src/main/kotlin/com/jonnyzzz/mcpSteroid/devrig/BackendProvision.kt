@@ -17,7 +17,7 @@ import io.ktor.http.isSuccess
 import java.nio.file.Path
 
 const val PROVISION_ACTION_ID = "provision"
-const val MCP_STEROID_PLUGIN_DIR_NAME = "mcp-steroid"
+const val MCP_STEROID_PLUGIN_DIR_NAME = "mcp-steroid-plus"
 
 data class ProvisionResult(
     val id: String,

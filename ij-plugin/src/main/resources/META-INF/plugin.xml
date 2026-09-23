@@ -1,25 +1,20 @@
 <idea-plugin>
-    <id>com.jonnyzzz.mcp-steroid</id>
-    <name>MCP Steroid</name>
-    <vendor>jonnyzzz.com</vendor>
+    <id>io.github.crazycoder.mcp-steroid</id>
+    <name>MCP Steroid Plus</name>
+    <vendor url="https://github.com/CrazyCoder">CrazyCoder</vendor>
 
     <description><![CDATA[
-    <p><strong>MCP Steroid</strong> gives AI agents the whole IDE, not just the files.</p>
+    <p><strong>MCP Steroid Plus</strong> runs a Model Context Protocol (MCP) server inside the IDE.
+    Connected agents execute Kotlin against the live IntelliJ Platform: semantic navigation,
+    inspections, refactorings, the debugger, and test runs. Screenshots let the agent see the IDE.</p>
 
-    <p>It runs a Model Context Protocol (MCP) server inside your IDE. Connected agents — Claude Code,
-    Codex, Gemini CLI, or any MCP-compatible agent — execute Kotlin against the live IntelliJ Platform:
-    semantic navigation, inspections, refactorings, the debugger, and test runs. Screenshots let the
-    agent see the IDE. Guides bundled with the plugin teach the agent these APIs as it works.</p>
+    <p>A maintained continuation of MCP Steroid by Eugene Petrenko
+    (<a href="https://github.com/jonnyzzz/mcp-steroid">jonnyzzz/mcp-steroid</a>), with fixes for
+    current IntelliJ Platform builds. Source and releases:
+    <a href="https://github.com/CrazyCoder/mcp-steroid">github.com/CrazyCoder/mcp-steroid</a>.</p>
 
-    <p>The recommended way to connect an agent is the <a href="https://devrig.dev/docs/devrig/">devrig CLI</a>:
-    one bridge that reaches every IDE you have open and keeps working across restarts and port changes.
-    Documentation and examples: <a href="https://devrig.dev">devrig.dev</a>.</p>
-
-    <p>MCP Steroid is an independent research project by Eugene Petrenko
-    (<a href="https://jonnyzzz.com">@jonnyzzz</a>). Not affiliated with, endorsed by, or supported by
-    JetBrains s.r.o.</p>
-
-    <p><small>IntelliJ Platform and JetBrains are trademarks of JetBrains s.r.o.</small></p>
+    <p><small>Not an official JetBrains product. IntelliJ Platform and JetBrains are trademarks of
+    JetBrains s.r.o.</small></p>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
@@ -43,7 +38,7 @@
     </extensionPoints>
 
     <!-- MCP tools, resources, and prompts are wired explicitly in McpToolRegistrations.kt -->
-    <extensions defaultExtensionNs="com.jonnyzzz.mcp-steroid">
+    <extensions defaultExtensionNs="io.github.crazycoder.mcp-steroid">
 
         <!-- Screenshot metadata providers -->
         <screenshotMetadataProvider implementation="com.jonnyzzz.mcpSteroid.vision.ScreenshotImageProvider"/>
@@ -82,17 +77,15 @@
         <!-- The plugin's single notification group: plugin-update notifications, the once-per-run devrig
              promotion, and devrig-install results and failures. Plain BALLOON on purpose (owner call):
              every message here may auto-hide — a balloon is a nudge, and anything missed stays reachable
-             in the Notifications tool window. The id predates the merge (it was the update checker's) and
-             is kept stable so users' notification settings survive. Must match
-             MCP_STEROID_NOTIFICATION_GROUP in notifications/McpSteroidNotifications.kt. -->
-        <notificationGroup id="jonnyzzz.mcp.steroid.updates"
-                           displayType="BALLOON"/>
+             in the Notifications tool window. Must match MCP_STEROID_NOTIFICATION_GROUP in
+             notifications/McpSteroidNotifications.kt. -->
+        <notificationGroup id="io.github.crazycoder.mcp-steroid.notifications" displayType="BALLOON"/>
 
-        <!-- Settings | Tools | Devrig — MCP Steroid: informational page promoting the devrig CLI
+        <!-- Settings | Tools | MCP Steroid Plus: informational page promoting the devrig CLI
              setup, showing the MCP server status, and keeping the legacy HTTP connection info. -->
         <applicationConfigurable parentId="tools"
-                                 id="com.jonnyzzz.mcp-steroid.settings"
-                                 displayName="Devrig — MCP Steroid"
+                                 id="io.github.crazycoder.mcp-steroid.settings"
+                                 displayName="MCP Steroid Plus"
                                  instance="com.jonnyzzz.mcpSteroid.settings.McpSteroidConfigurable"/>
 
         <!-- Registry keys for configuration -->

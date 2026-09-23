@@ -636,8 +636,8 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                 failed_invariant="Remote Development plugin is installed"
                 test -d "$bundle/plugins/remote-dev-server"
                 failed_invariant="MCP Steroid plugin and EULA are installed in the backend cache"
-                test -d "$cache/plugins/mcp-steroid/lib"
-                test -f "$cache/plugins/mcp-steroid/EULA"
+                test -d "$cache/plugins/mcp-steroid-plus/lib"
+                test -f "$cache/plugins/mcp-steroid-plus/EULA"
                 failed_invariant="backend PID is alive"
                 kill -0 "$pid"
                 failed_invariant="backend process has unattended Remote Development environment"
@@ -652,9 +652,9 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                 fi
                 failed_invariant="MCP marker matches backend PID, home, build, and managed plugin path"
                 jq -e --argjson pid "$pid" --arg home "$(readlink -f "$bundle")" --arg build "$$IDE_BUILD" \
-                  --arg plugin "$(readlink -f "$cache/plugins/mcp-steroid")" \
+                  --arg plugin "$(readlink -f "$cache/plugins/mcp-steroid-plus")" \
                   '.pid == $pid and .ideHome == $home and .ide.build == $build and
-                   .plugin.id == "com.jonnyzzz.mcp-steroid" and .mcpSteroidServer.pluginPath == $plugin' "$marker" >/dev/null
+                   .plugin.id == "io.github.crazycoder.mcp-steroid" and .mcpSteroidServer.pluginPath == $plugin' "$marker" >/dev/null
                 failed_invariant="IDE log confirms Remote Development backend mode"
                 grep -R -F -- "IDE run mode: remote development (backend)" "$cache/logs" >/dev/null
 

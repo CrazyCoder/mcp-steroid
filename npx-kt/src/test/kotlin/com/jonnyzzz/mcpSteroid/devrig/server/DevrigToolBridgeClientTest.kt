@@ -962,7 +962,7 @@ class DevrigToolBridgeClientTest {
             rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:$port/mcp").rpcBaseUrl,
             bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
             ide = IdeInfo("IntelliJ IDEA", "2026.1", build),
-            plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+            plugin = PluginInfo("io.github.crazycoder.mcp-steroid", "MCP Steroid", "0.0.0-test"),
             ideHome = ideHome,
         )
 
@@ -981,7 +981,7 @@ class DevrigToolBridgeClientTest {
                 rpcBaseUrl = "http://127.0.0.1:$port/api/jonnyzzz/mcp-steroid/v1",
                 bridgeHeaders = mapOf("Authorization" to "Bearer $token"),
                 ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
-                plugin = PluginInfo("com.jonnyzzz.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+                plugin = PluginInfo("io.github.crazycoder.mcp-steroid", "MCP Steroid", "0.0.0-test"),
             ),
             projectInfo = IdeProjectState("original-project", tempDir.toString()),
             exposedProjectName = "original-project-abcdefgh",

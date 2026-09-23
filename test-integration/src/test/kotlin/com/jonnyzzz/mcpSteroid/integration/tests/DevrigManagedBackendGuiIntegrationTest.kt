@@ -55,8 +55,8 @@ class DevrigManagedBackendGuiIntegrationTest {
                 test -f "$backend_dir/backend.json"
                 jq -e --arg id "$$id" '.id == $id and .productKey == "idea-community" and (.launcherPath | length > 0)' "$backend_dir/backend.json" >/dev/null
                 test -f "$bundle/product-info.json" -o -f "$bundle/Contents/Resources/product-info.json"
-                test -d "/home/agent/.mcp-steroid/caches/$$id/plugins/mcp-steroid/lib"
-                test -f "/home/agent/.mcp-steroid/caches/$$id/plugins/mcp-steroid/EULA"
+                test -d "/home/agent/.mcp-steroid/caches/$$id/plugins/mcp-steroid-plus/lib"
+                test -f "/home/agent/.mcp-steroid/caches/$$id/plugins/mcp-steroid-plus/EULA"
                 vmoptions="$backend_dir/$(basename "$bundle").vmoptions"
                 test -f "$vmoptions"
                 echo "$vmoptions"
@@ -138,7 +138,7 @@ class DevrigManagedBackendGuiIntegrationTest {
                 deadline=$((SECONDS + 180))
                 found=0
                 while [ "$SECONDS" -lt "$deadline" ]; do
-                  if [ -f "$marker" ] && jq -e --argjson pid "$$pid" '.pid == $pid and (.mcpSteroidServer.mcpUrl | startswith("http" + "://")) and .ide.name and .plugin.id == "com.jonnyzzz.mcp-steroid"' "$marker" >/dev/null; then
+                  if [ -f "$marker" ] && jq -e --argjson pid "$$pid" '.pid == $pid and (.mcpSteroidServer.mcpUrl | startswith("http" + "://")) and .ide.name and .plugin.id == "io.github.crazycoder.mcp-steroid"' "$marker" >/dev/null; then
                     print_safe_marker "$marker"
                     found=1
                     break

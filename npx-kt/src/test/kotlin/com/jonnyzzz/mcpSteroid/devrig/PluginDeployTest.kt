@@ -21,7 +21,7 @@ class PluginDeployTest {
         val homePaths = HomePaths(tempDir.resolve("home"))
         val source = bundledPluginZipFixture(tempDir.resolve("dist/ij-plugin.zip"), version = "one")
         val stale = homePaths.cacheDir("idea-community-2025.3.3")
-            .resolve("plugins/mcp-steroid/stale/old.txt")
+            .resolve("plugins/mcp-steroid-plus/stale/old.txt")
         Files.createDirectories(stale.parent)
         Files.writeString(stale, "old")
 
@@ -33,7 +33,7 @@ class PluginDeployTest {
 
         val deployed = manager.deployMcpSteroidPlugin("idea-community-2025.3.3")
 
-        assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("plugins/mcp-steroid"), deployed)
+        assertEquals(homePaths.cacheDir("idea-community-2025.3.3").resolve("plugins/mcp-steroid-plus"), deployed)
         assertEquals("one", Files.readString(deployed.resolve("lib/plugin.txt")))
         assertTrue(deployed.resolve("bin/fixture-executable").toFile().canExecute(),
             "executable bit from bundled plugin fixture must survive deployment")
@@ -55,13 +55,13 @@ class PluginDeployTest {
 
         manager.download(parseBackendId("idea-community-2025.3.3"))
         val deployedFile = homePaths.cacheDir("idea-community-2025.3.3")
-            .resolve("plugins/mcp-steroid/lib/plugin.txt")
+            .resolve("plugins/mcp-steroid-plus/lib/plugin.txt")
         assertEquals("one", Files.readString(deployedFile))
         assertEquals(1, downloader.unpackCount)
 
         resolver.zip = bundledPluginZipFixture(tempDir.resolve("dist-v2/ij-plugin.zip"), version = "two")
         val stale = homePaths.cacheDir("idea-community-2025.3.3")
-            .resolve("plugins/mcp-steroid/stale.txt")
+            .resolve("plugins/mcp-steroid-plus/stale.txt")
         Files.writeString(stale, "stale")
 
         manager.download(parseBackendId("idea-community-2025.3.3"))

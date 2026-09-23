@@ -52,7 +52,7 @@ class BackendCommandJsonRenderTest {
         ideHome: String? = "/mock/ide/home",
     ): DiscoveredIde {
         val ideInfo = IdeInfo(name = name, version = version, build = build)
-        val pluginInfo = PluginInfo(id = "com.jonnyzzz.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
+        val pluginInfo = PluginInfo(id = "io.github.crazycoder.mcp-steroid", name = "MCP Steroid", version = "0.0.0-test")
         return DiscoveredIde(
             processId = pid,
             rpcBaseUrl = testDevrigEndpoint(mcpUrl).rpcBaseUrl,

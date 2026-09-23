@@ -1,4 +1,13 @@
-# MCP Steroid
+# MCP Steroid Plus
+
+A maintained continuation of [MCP Steroid](https://github.com/jonnyzzz/mcp-steroid)
+with fixes for current IntelliJ Platform builds. Plugin ID
+`io.github.crazycoder.mcp-steroid`. It installs into `plugins/mcp-steroid-plus`
+and disables the upstream `com.jonnyzzz.mcp-steroid` plugin when both are
+present. Download releases from
+[GitHub Releases](https://github.com/CrazyCoder/mcp-steroid/releases).
+
+## MCP Steroid
 
 <p align="center">
   <img src="website/static/pluginIcon.svg" alt="MCP Steroid Logo" width="120" height="120">
