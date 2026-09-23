@@ -5,7 +5,9 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.util.SystemInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -31,11 +33,18 @@ class PortPinWatcher(private val scope: CoroutineScope) {
                 val now = modified(file)
                 if (now == lastModified) continue
                 lastModified = now
-                val server = SteroidsMcpServer.getInstance()
-                val pinned = PortPins.pinnedPort(file, PathManager.getPluginsPath(), SystemInfo.isWindows)
-                val target = PortPins.rebindTarget(server.port, pinned) ?: continue
-                if (server.rebind(target) > 0) {
-                    ServerUrlWriter.getInstance().writeServerUrlToUserHome(server.mcpUrl)
+                // One failed move must not end the watch for the rest of the session.
+                try {
+                    val server = SteroidsMcpServer.getInstance()
+                    val pinned = PortPins.pinnedPort(file, PathManager.getPluginsPath(), SystemInfo.isWindows)
+                    val target = PortPins.rebindTarget(server.port, pinned) ?: continue
+                    if (server.rebind(target) > 0) {
+                        ServerUrlWriter.getInstance().writeServerUrlToUserHome(server.mcpUrl)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    thisLogger().warn("Could not apply the port pin from $file", e)
                 }
             }
         }

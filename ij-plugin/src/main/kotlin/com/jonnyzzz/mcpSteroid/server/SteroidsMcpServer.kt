@@ -140,11 +140,6 @@ class SteroidsMcpServer(
     }
 
     /**
-     * Logs the detected IDE run mode (INFO, always) plus a WARN when the IDE is plain headless —
-     * an unsupported (best-effort) environment for MCP Steroid (see mcp-steroid#177).
-     * Detection and logging only; the server still starts in every mode.
-     */
-    /**
      * Moves the running server to [newPort], falling back through the next nine ports when it is busy.
      * When all ten are busy the server goes back to its previous port. Returns the bound port, or 0
      * when none could be bound. Tools stay registered; only the listener is replaced.
@@ -165,6 +160,11 @@ class SteroidsMcpServer(
         if (previousPort > 0) startServerOnAvailablePort(bindHost, previousPort) else 0
     }
 
+    /**
+     * Logs the detected IDE run mode (INFO, always) plus a WARN when the IDE is plain headless —
+     * an unsupported (best-effort) environment for MCP Steroid (see mcp-steroid#177).
+     * Detection and logging only; the server still starts in every mode.
+     */
     private fun logIdeRunMode() {
         val mode = detectIdeRunMode()
         log.info(ideRunModeLogLine(mode))

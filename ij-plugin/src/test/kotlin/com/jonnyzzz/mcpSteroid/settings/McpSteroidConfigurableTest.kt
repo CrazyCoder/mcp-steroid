@@ -55,6 +55,18 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         configurable.disposeUIResources()
     }
 
+    fun `test the not-running hint names the port pin before the registry key`() {
+        val home = System.getProperty("user.home")
+        val hint = McpSteroidConfigurable.notRunningHint(home)
+        val pins = com.jonnyzzz.mcpSteroid.server.PortPins.pinsFile(Path.of(home)).toString()
+        assertTrue("the hint must name the pin file $pins; got: $hint", hint.contains(pins))
+        assertTrue("the hint must name the registry key; got: $hint", hint.contains("mcp.steroid.server.port"))
+        assertTrue(
+            "the pin file must come first, because it overrides the registry key; got: $hint",
+            hint.indexOf(pins) < hint.indexOf("mcp.steroid.server.port"),
+        )
+    }
+
     fun `test the default page hides the devrig section and keeps direct HTTP`() {
         val configurable = McpSteroidConfigurable()
         try {

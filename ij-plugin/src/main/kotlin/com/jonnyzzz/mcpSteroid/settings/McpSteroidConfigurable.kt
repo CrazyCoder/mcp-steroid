@@ -358,11 +358,7 @@ class McpSteroidConfigurable internal constructor(
                 // The one fix a user can apply from here is named outright: a taken port is the
                 // usual reason the bind fails, and the key to move it is on this very page. "Check
                 // the IDE log for bind errors" was homework in place of that action.
-                comment(
-                    "The server normally starts at IDE startup; a taken port is the usual reason it " +
-                        "could not. Set <code>mcp.steroid.server.port</code> via the registry keys " +
-                        "below and restart the IDE."
-                )
+                comment(notRunningHint(System.getProperty("user.home")))
             }
         }
         if (info != null) {
@@ -460,6 +456,16 @@ class McpSteroidConfigurable internal constructor(
 
         /** Title of the collapsed section holding the deprecated direct-HTTP setup. */
         const val HTTP_SECTION_TITLE = "Direct HTTP connection (deprecated)"
+
+        /**
+         * What to do when the server did not bind: a taken port is the usual reason. The pin file is
+         * named first because a pin for this IDE overrides `mcp.steroid.server.port`.
+         */
+        fun notRunningHint(userHome: String): String =
+            "The server normally starts at IDE startup; a taken port is the usual reason it could not. " +
+                "Change this IDE's port in <code>${PortPins.pinsFile(Path.of(userHome))}</code> if it has " +
+                "one there, otherwise set <code>mcp.steroid.server.port</code> via the registry keys below, " +
+                "and restart the IDE."
 
         /** Title of the server section when the devrig section is hidden and direct HTTP is the only path. */
         const val SERVER_SECTION_TITLE = "MCP server connection"
