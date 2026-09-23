@@ -19,6 +19,7 @@ class SteroidsMcpServerAppLifecycleListener : AppLifecycleListener {
             val server = SteroidsMcpServer.getInstance()
             server.startServerIfNeeded()
             ServerUrlWriter.getInstance().writeServerUrlToUserHome(server.mcpUrl)
+            PortPinWatcher.getInstance().start()
         }
     }
 }

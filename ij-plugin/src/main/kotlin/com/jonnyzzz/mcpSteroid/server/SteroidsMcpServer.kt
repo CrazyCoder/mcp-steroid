@@ -27,6 +27,7 @@ import org.jetbrains.annotations.TestOnly
 import java.net.BindException
 import java.net.ServerSocket
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -44,6 +45,7 @@ class SteroidsMcpServer(
 
     private val serverRef = AtomicReference<EmbeddedServer<*, *>?>(null)
     private val portRef = AtomicReference(0)
+    private val toolsRegistered = AtomicBoolean(false)
     private val scope = CoroutineScope(parentScope.coroutineContext + SupervisorJob() + Dispatchers.IO)
     private val startupLock = ReentrantLock()
     private val pluginVersion = com.jonnyzzz.mcpSteroid.PluginDescriptorProvider.getInstance().version
@@ -101,14 +103,16 @@ class SteroidsMcpServer(
             // mcp-steroid:// articles are NOT exposed via resources/list or
             // prompts/list — the steroid_fetch_resource tool is the only path
             // because it requires project_name for correct IDE-conditional rendering.
-            val tools = service<McpSteroidToolsIJ>()
-            tools.registerAll(mcpServer)
             // The in-IDE plugin is a single backend, so its steroid_open_project advertises
             // NO `backend_name` routing param (includeBackendName = false). devrig registers its
             // own backend_name-carrying spec. registerAll() no longer registers open_project.
-            mcpServer.toolRegistry.registerTool(
-                OpenProjectToolSpec(includeBackendName = false) { tools.handler<OpenProjectToolHandler>() }
-            )
+            if (toolsRegistered.compareAndSet(false, true)) {
+                val tools = service<McpSteroidToolsIJ>()
+                tools.registerAll(mcpServer)
+                mcpServer.toolRegistry.registerTool(
+                    OpenProjectToolSpec(includeBackendName = false) { tools.handler<OpenProjectToolHandler>() }
+                )
+            }
 
             val portKey = Registry.get("mcp.steroid.server.port")
             val pinned = PortPins.pinnedPort(
@@ -141,6 +145,22 @@ class SteroidsMcpServer(
      * an unsupported (best-effort) environment for MCP Steroid (see mcp-steroid#177).
      * Detection and logging only; the server still starts in every mode.
      */
+    /**
+     * Moves the running server to [newPort], falling back through the next nine ports when it is busy.
+     * Returns the bound port, or 0 when none could be bound. Tools stay registered; only the listener
+     * is replaced.
+     */
+    fun rebind(newPort: Int): Int = startupLock.withLock {
+        if (port == newPort) return newPort
+        val old = serverRef.getAndSet(null)
+        portRef.set(0)
+        old?.stop(1000, 2000)
+        val bindHost = Registry.stringValue("mcp.steroid.server.host").takeIf { it.isNotBlank() } ?: "127.0.0.1"
+        val bound = startServerOnAvailablePort(bindHost, newPort)
+        if (bound > 0) log.info("MCP Steroid server moved to $mcpUrl") else log.warn("MCP Steroid server could not bind near $newPort")
+        bound
+    }
+
     private fun logIdeRunMode() {
         val mode = detectIdeRunMode()
         log.info(ideRunModeLogLine(mode))
