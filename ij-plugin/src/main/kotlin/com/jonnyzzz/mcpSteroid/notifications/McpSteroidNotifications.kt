@@ -30,9 +30,6 @@ enum class McpSteroidNotificationKind {
     /** The once-per-run "Install devrig to connect an AI agent" promotion. */
     DEVRIG_INSTALL_OFFER,
 
-    /** "A new version of MCP Steroid is available" from the periodic update check. */
-    PLUGIN_UPDATE,
-
     /** The upstream MCP Steroid plugin was found enabled and has been disabled until the next restart. */
     UPSTREAM_DISABLED,
 }

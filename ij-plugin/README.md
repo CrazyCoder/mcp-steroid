@@ -98,7 +98,6 @@ call): a balloon is a nudge, and anything missed stays reachable in the Notifica
 |---|---|---|
 | `DEVRIG_INSTALL_OFFER` | the once-per-run promotion (key on, devrig missing): what devrig is, in the website's framing | **Install devrig**; **What is devrig?** (non-expiring; the site root + `?fromIntelliJInstallAction=<build>`) |
 | `DEVRIG_INSTALL` | the outcome of an install the user started: installed, already being installed by another process, or failed | **Open settings**; **Retry** on failure, carrying the installer's own reason |
-| `PLUGIN_UPDATE` | the periodic plugin-update check | **Download** (the releases page) |
 
 Cancelling an install produces **no** notification — it is a choice, not a failure, and the user already
 knows what they did.

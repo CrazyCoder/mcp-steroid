@@ -26,11 +26,6 @@
     notification is behind `mcp.steroid.devrig.widget.enabled` (default off; the key id predates the
     widget and stays stable) until we have run with it ourselves. "Every IDE run" was the wrong
     answer; we do not yet have a better one.
-  - **Two `version.json` fetch/parse stacks remain**: `ij-plugin`'s `UpdateChecker` (its own private
-    `VersionInfo` over `HttpRequests`) and `:npx-kt`'s `DevrigUpdateChecker`/`AutoUpdater`. Unifying
-    means promoting a shared version.json model + fetch into `:devrig-common` — new downloader code
-    there, deliberately NOT done as part of the onboarding collapse (out of scope). Follow-up only if
-    the two ever need to agree on more than `version-base`.
 
 - [ ] **dpaia/ee-dataset exporter strips trailing whitespace from patches (upstream fix)**: 11 of 304
   patches in the live `java-spring-ee-dataset.json` are damaged (blank context lines trimmed to empty,

@@ -53,6 +53,9 @@ jobs:
           (cd out && sha256sum mcp-steroid-plugin.zip > mcp-steroid-plugin.zip.sha256)
           release/scripts/make-release-json.sh out/mcp-steroid-plugin.zip "$base" > out/release.json
           cat out/release.json
+          zip_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/mcp-steroid-plus-$base.zip"
+          release/scripts/make-update-plugins-xml.sh out/mcp-steroid-plugin.zip "$zip_url" > out/updatePlugins.xml
+          cat out/updatePlugins.xml
 
       - name: Create GitHub release
         env:

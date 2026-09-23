@@ -7,7 +7,7 @@ version="$2"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-jar="$(unzip -Z1 "$zip" | grep -E '^mcp-steroid-plus/lib/ij-plugin-[^/]*\.jar$' | head -1)"
+jar="$(unzip -Z1 "$zip" | grep -E '^mcp-steroid-plus/lib/ij-plugin-[^/]*\.jar$' | head -1 || true)"
 [ -n "$jar" ] || { echo "$zip has no mcp-steroid-plus/lib/ij-plugin-*.jar" >&2; exit 3; }
 unzip -p "$zip" "$jar" > "$work/ij.jar"
 xml="$(unzip -p "$work/ij.jar" META-INF/plugin.xml)"

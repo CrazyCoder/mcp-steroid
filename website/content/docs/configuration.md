@@ -40,9 +40,9 @@ MCP Steroid can be configured via IntelliJ's Registry (`Help > Find Action > Reg
 
 ## Updates
 
-| Registry Key | Default | Description |
-|-------------|---------|-------------|
-| `mcp.steroid.updates.enabled` | `true` | Enable automatic update checks. |
+The IDE's own plugin update check covers MCP Steroid Plus: the plugin adds the latest release's
+`updatePlugins.xml` to the plugin repositories the IDE reads, so updates appear and install like
+Marketplace plugin updates.
 
 ---
 

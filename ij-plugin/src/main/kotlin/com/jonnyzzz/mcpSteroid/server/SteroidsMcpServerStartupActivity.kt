@@ -9,7 +9,6 @@ import com.intellij.openapi.vfs.LocalFileSystem
 import com.jonnyzzz.mcpSteroid.demo.DemoModeService
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigPromotion
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
-import com.jonnyzzz.mcpSteroid.updates.UpdateChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -28,8 +27,6 @@ class SteroidsMcpServerStartupActivity : ProjectActivity {
 
         ServerUrlWriter.getInstance().writeServerUrlToUserHome(server.mcpUrl)
         IdeaDescriptionWriter.getInstance().writeDescriptionFile(project, server.mcpUrl)
-
-        UpdateChecker.getInstance().startUpdates()
 
         DemoModeService.getInstance(project).startDemoNotifications()
 

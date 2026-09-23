@@ -113,9 +113,8 @@
         <registryKey key="mcp.steroid.demo.focusFrame" defaultValue="true"
             description="Bring project frame to front when showing overlay"/>
 
-        <!-- Update checker registry keys -->
-        <registryKey key="mcp.steroid.updates.enabled" defaultValue="true"
-            description="Enable automatic update checks"/>
+        <!-- The IDE's own plugin update check reads the latest release's updatePlugins.xml. -->
+        <updateSettingsProvider implementation="com.jonnyzzz.mcpSteroid.updates.PlusUpdateSettingsProvider"/>
 
         <!-- Devrig promotion: the once-per-IDE-run, delayed, non-sticky offer to install devrig when it
              is missing. Off by default: a startup balloon is not ours to take uninvited, and the settings

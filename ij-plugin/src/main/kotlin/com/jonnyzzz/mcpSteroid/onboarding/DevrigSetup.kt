@@ -80,7 +80,7 @@ class DevrigSetupRunner(
      * `childScope(pluginClass.name)`, whose `supervisor` parameter defaults to `true` — so a failed
      * download poller cannot cancel sibling coroutines or block the next install from launching, and
      * the platform cancels the scope when the plugin unloads. No hand-rolled `SupervisorJob` wrapper
-     * is needed; [com.jonnyzzz.mcpSteroid.updates.UpdateChecker] relies on the same contract.
+     * is needed.
      */
     private val scope: CoroutineScope,
 ) {

@@ -66,9 +66,9 @@ class McpSteroidNotificationsTest : BasePlatformTestCase() {
 
     fun `test different kinds never expire each other`() {
         val install = show(McpSteroidNotificationKind.DEVRIG_INSTALL)
-        val update = show(McpSteroidNotificationKind.PLUGIN_UPDATE)
+        val upstream = show(McpSteroidNotificationKind.UPSTREAM_DISABLED)
         assertFalse("a different kind must not supersede this one", install.isExpired)
-        assertFalse(update.isExpired)
+        assertFalse(upstream.isExpired)
     }
 
     fun `test a fresh notification after a user-expired one shows live`() {
@@ -87,10 +87,10 @@ class McpSteroidNotificationsTest : BasePlatformTestCase() {
         // the map entry, the OLD notification's expiry must not remove the NEW one. Observable through
         // notify() alone: were the successor untracked (one-arg remove bug), a THIRD notification could
         // not expire it — leaving two live balloons of the same kind.
-        val first = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "first")
-        val second = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "second")
+        val first = show(McpSteroidNotificationKind.UPSTREAM_DISABLED, "first")
+        val second = show(McpSteroidNotificationKind.UPSTREAM_DISABLED, "second")
         first.expire() // idempotent: notify() already expired it
-        val third = show(McpSteroidNotificationKind.PLUGIN_UPDATE, "third")
+        val third = show(McpSteroidNotificationKind.UPSTREAM_DISABLED, "third")
         assertTrue("the successor must have stayed tracked, so the third supersedes it", second.isExpired)
         assertFalse("the newest notification must stay live", third.isExpired)
     }
