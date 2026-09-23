@@ -135,6 +135,16 @@ There is intentionally **no "close a mid-run dialog and keep going" mode** — `
 fails. If a script must tolerate dialogs popping up while it runs, use `unleashed` and call
 `closeModalDialogs()` yourself when needed (and accept no PSI-consistency guarantees).
 
+**Working with an open dialog (`unleashed`):** background `readAction { }` / `smartReadAction { }` run
+normally, but `writeAction { }`, `withContext(Dispatchers.EDT)` and `invokeLater` without a modality wait
+until the dialog closes. Read or press the dialog's components on
+`Dispatchers.EDT + ModalityState.any().asContextElement()` (UI-only: never change PSI/VFS/project model
+there), or click it with `steroid_input`. Open a dialog with `invokeLater { … }` and return — answer it in
+the next call, never wait for it in the same script: you cannot answer while your own call is waiting.
+When `timeout` expires, the dialogs the run opened are closed (named in the result, as are all dialogs
+the default mode closes), and the call returns even if the script ignores cancellation — it is then left
+running, with its thread + coroutine dump in `timeout-dump.txt` in the execution folder.
+
 When a call fails on a modal (gate or monitor), the screenshot + thread dump are written to the execution's
 storage folder and their paths appear in the result text — read those before retrying. A separate
 `steroid_take_screenshot` captures *current* state, not the failure state. Also note: under

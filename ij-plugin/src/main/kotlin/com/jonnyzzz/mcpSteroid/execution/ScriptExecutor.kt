@@ -19,6 +19,7 @@ import com.intellij.util.concurrency.ThreadingAssertions
 import com.jonnyzzz.mcpSteroid.koltinc.LineMapping
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.intellij.diagnostic.ThreadDumper
+import com.intellij.diagnostic.dumpCoroutines
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
@@ -76,7 +77,9 @@ inline val Project.scriptExecutor: ScriptExecutor get() = service()
  */
 @Service(Service.Level.PROJECT)
 class ScriptExecutor(
-    private val project: Project
+    private val project: Project,
+    // Script bodies run here, so a body that ignores its timeout cannot hold the tool call.
+    private val serviceScope: CoroutineScope,
 ) : Disposable {
     private val log = Logger.getInstance(ScriptExecutor::class.java)
     override fun dispose() = Unit
@@ -318,8 +321,19 @@ class ScriptExecutor(
         executionId: ExecutionId,
         resultBuilder: ExecutionResultBuilder
     ) {
+        // Dialogs already showing when the body starts, such as the user's own under `unleashed`,
+        // are never closed by the timeout; only dialogs the run opened are.
+        val dialogsBeforeRun = dialogWindowsLookup().showingModalDialogWindows()
+        val closedAtTimeout = mutableListOf<String>()
         try {
-            withTimeout(exec.timeout.seconds) {
+            runBoundedByTimeout(
+                timeout = exec.timeout.seconds,
+                grace = TIMEOUT_GRACE,
+                detachIn = serviceScope,
+                closeDialogsOpenedDuringRun = { context.closeModalDialogsExcept(dialogsBeforeRun) },
+                onClosed = { closedAtTimeout += it },
+                onStuck = { writeTimeoutDump(executionId) },
+            ) {
                 val capturedBlocks = evalResult.result
                 for ((index, block) in capturedBlocks.withIndex()) {
                     yield()
@@ -331,6 +345,15 @@ class ScriptExecutor(
                 }
                 log.info("Execution $executionId completed normally")
             }
+        } catch (e: ScriptLeftRunningException) {
+            log.warn("Execution $executionId did not stop within ${exec.timeout}s; left running")
+            resultBuilder.reportFailed(
+                "Execution timed out after ${exec.timeout} seconds while running the script body " +
+                    "(modal=${exec.modal.wire}; pre-flight completed). The script ignored cancellation, for " +
+                    "example in Thread.sleep or blocking I/O, and is still running in the IDE" +
+                    closedAtTimeout.closedDialogsSuffix() + ". Its thread and coroutine dump is " +
+                    "$TIMEOUT_DUMP_FILE under execution '${executionId.executionId}'."
+            )
         } catch (e: TimeoutCancellationException) {
             // Timeout - report as error (must be caught before CancellationException since it's a subclass)
             log.warn("Execution $executionId timed out: ${e.message}")
@@ -339,7 +362,7 @@ class ScriptExecutor(
             // error itself must say the timeout hit the script body after pre-flight completed.
             resultBuilder.reportFailed(
                 "Execution timed out after ${exec.timeout} seconds while running the script body " +
-                    "(modal=${exec.modal.wire}; pre-flight completed)"
+                    "(modal=${exec.modal.wire}; pre-flight completed)" + closedAtTimeout.closedDialogsSuffix()
             )
         } catch (e: CancellationException) {
             throw e
@@ -360,6 +383,25 @@ class ScriptExecutor(
             val remappedMessage = evalResult.lineMapping.remapStackTrace(rawMessage)
             resultBuilder.logRemappedException("Unexpected error during execution: $remappedMessage", t, evalResult.lineMapping)
             resultBuilder.reportFailed("Unexpected error during execution: $remappedMessage")
+        }
+    }
+
+    private fun List<String>.closedDialogsSuffix(): String =
+        if (isEmpty()) "" else ". It was waiting on ${describeDialogs()}, which the timeout closed"
+
+    /** Thread + coroutine dump of a script that did not stop at its timeout (#215). */
+    private suspend fun writeTimeoutDump(executionId: ExecutionId) {
+        try {
+            val dump = buildString {
+                appendLine(ThreadDumper.dumpThreadsToString())
+                appendLine("---------- Coroutine dump ----------")
+                appendLine(dumpCoroutines() ?: "coroutine dump unavailable: kotlinx debug probes are not installed")
+            }
+            project.executionStorage.writeCodeExecutionData(executionId, TIMEOUT_DUMP_FILE, dump)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Failed to write the timeout dump for $executionId: ${e.message}", e)
         }
     }
 
@@ -435,3 +477,9 @@ suspend fun awaitDialoglessModality(
         if (!isModalEdt()) return DialoglessModalityWait.CLEARED
     }
 }
+
+/** How long after its timeout a script body gets to stop before the watchdog steps in. */
+private val TIMEOUT_GRACE = 2.seconds
+
+/** The execution-folder file with the dump of a script that did not stop at its timeout. */
+internal const val TIMEOUT_DUMP_FILE = "timeout-dump.txt"

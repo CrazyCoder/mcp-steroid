@@ -55,6 +55,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
+import java.awt.Window
 import java.io.File
 import java.nio.file.FileSystems
 import java.nio.file.Path
@@ -253,18 +254,26 @@ class McpScriptContextImpl(
 
     override suspend fun closeModalDialogs(): Int {
         checkDisposed()
-        val found = dialogWindowsLookup().withDialogWindows(project) { it.size }
+        return closeModalDialogsExcept(emptySet()).size
+    }
+
+    /**
+     * Closes the showing modal dialogs except the [keep] windows, and returns the closed titles.
+     * Each closed dialog is named in the tool result, with a screenshot and a thread dump.
+     */
+    internal suspend fun closeModalDialogsExcept(keep: Set<Window>): List<String> {
+        val found = dialogWindowsLookup().withDialogWindows(project) { dialogs -> dialogs.count { it.window !in keep } }
         // Nothing to close (the common case under smart_non_modal) — don't attach a diagnostic dump.
-        if (found == 0) return 0
+        if (found == 0) return emptyList()
         captureThreadDump("closeModalDialogs")
         // killProjectDialogs captures a screenshot before closing each dialog (VisionService).
-        dialogKiller().killProjectDialogs(
+        return dialogKiller().killProjectDialogs(
             project = project,
             executionId = executionId,
             logMessage = { resultBuilder.logMessage(it) },
             forceEnabled = true,
+            keep = keep,
         )
-        return found
     }
 
     override fun monitorAndCloseModalDialogs() {
@@ -280,9 +289,9 @@ class McpScriptContextImpl(
                 if (!hasModalDialog) continue
                 log.warn("[$executionId] modal dialog appeared while running — closing and failing the execution")
                 captureThreadDump("modal-monitor")
-                val closed = closeModalDialogs()
+                val closed = closeModalDialogsExcept(emptySet())
                 throw ToolCallErrorException(
-                    "A modal dialog appeared while the script was running — closed $closed dialog(s) and " +
+                    "A modal dialog appeared while the script was running — closed ${closed.describeDialogs()} and " +
                         "failed the run. If your script opens a dialog on purpose, call allowModalDialog() " +
                         "first. See the screenshot + thread dump under execution '${executionId.executionId}'."
                 )

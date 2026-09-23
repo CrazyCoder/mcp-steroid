@@ -17,6 +17,7 @@ import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.vision.VisionService
 import java.awt.Dialog
 import java.awt.Frame
+import java.awt.Window
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
@@ -72,37 +73,42 @@ class DialogKiller {
     /**
      * Kill all modal dialogs owned by the project frame.
      *
-     * Captures a screenshot before closing dialogs.
+     * Captures a screenshot before closing dialogs, and reports each closed dialog through
+     * [logMessage] by its title.
      *
      * @param project The project whose frame dialogs should be closed
      * @param executionId Execution ID for logging and screenshot naming
+     * @param keep dialog windows to leave open, such as those already showing when a run started
+     * @return the titles of the dialogs that were closed
      */
     suspend fun killProjectDialogs(
         project: Project,
         executionId: ExecutionId,
         logMessage: (String) -> Unit,
         forceEnabled: Boolean? = null,
-    ) {
+        keep: Set<Window> = emptySet(),
+    ): List<String> {
         if (ApplicationManager.getApplication().isHeadlessEnvironment) {
-            return
+            return emptyList()
         }
 
         // forceEnabled == false → skip entirely
         // forceEnabled == true → skip registry check, force enable
         // forceEnabled == null → use registry setting (default behavior)
         if (forceEnabled == false) {
-            return
+            return emptyList()
         }
 
         if (forceEnabled == null && !Registry.`is`("mcp.steroid.dialog.killer.enabled")) {
-            return
+            return emptyList()
         }
 
         return mutex.withPermit {
             withContext(Dispatchers.IO + CoroutineName("DialogKiller")) {
+                val closed = mutableListOf<String>()
                 coroutineScope {
                     try {
-                        doLookupDialogs(executionId, project, logMessage)
+                        doLookupDialogs(executionId, project, logMessage, keep, closed)
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: ProcessCanceledException) {
@@ -111,6 +117,7 @@ class DialogKiller {
                         log.warn("Failed to kill dialogs. ${e.message}", e)
                     }
                 }
+                closed
             }
         }
     }
@@ -119,19 +126,20 @@ class DialogKiller {
         executionId: ExecutionId,
         project: Project,
         logMessage: (String) -> Unit,
+        keep: Set<Window>,
+        closed: MutableList<String>,
         iteration: Int = 0,
     ) {
         if (iteration > 5) return
 
         val lookup = dialogWindowsLookup()
         val dialogToClose = lookup.withDialogWindows(project) { dialogs ->
-            if (dialogs.isEmpty()) {
-                null
-            } else {
+            // Pick the deepest dialog (already sorted deepest-first by withDialogWindows)
+            val candidate = dialogs.firstOrNull { it.window !in keep }
+            if (candidate != null) {
                 log.info("Modal state detected, starting dialog killer (execution: $executionId, iteration: $iteration, dialogs: ${dialogs.size})")
-                // Pick the deepest dialog (already sorted deepest-first by withDialogWindows)
-                dialogs.firstOrNull()
             }
+            candidate
         } ?: return
 
         // Yield to allow other coroutines to run
@@ -156,51 +164,57 @@ class DialogKiller {
 
         // Close the dialog (restores ModalityState.nonModal()) on EDT with ModalityState.any().
         log.info("DialogKiller: about to close dialog (execution: $executionId, iteration: $iteration)")
-        closeDialog(dialogToClose, 1, 1, executionId)
+        val title = closeDialog(dialogToClose, 1, 1, executionId)
         log.info("DialogKiller: closeDialog returned (execution: $executionId, iteration: $iteration)")
+        if (title != null) {
+            closed += title
+            logMessage("Closed modal dialog '$title' (Cancel).")
+        }
 
         yield()
-        doLookupDialogs(executionId, project, logMessage, iteration + 1)
+        doLookupDialogs(executionId, project, logMessage, keep, closed, iteration + 1)
     }
 
     /**
      * Close a single dialog and verify closure.
      * Runs on EDT with ModalityState.any() to work even when dialogs are present.
+     *
+     * @return the dialog's title when it was closed, null when it was already hidden or failed to close
      */
     private suspend fun closeDialog(
         dialog: DialogWrapper,
         index: Int,
         total: Int,
         executionId: ExecutionId,
-    ) {
-        withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-            try {
-                val window = dialog.window
-                val title = (window as? Frame)?.title
-                    ?: (window as? Dialog)?.title
-                    ?: "Unknown"
+    ): String? = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+        try {
+            val window = dialog.window
+            val title = (window as? Frame)?.title
+                ?: (window as? Dialog)?.title
+                ?: "Unknown"
 
-                log.warn("Closing dialog $index/$total: '$title' (execution: $executionId)")
+            log.warn("Closing dialog $index/$total: '$title' (execution: $executionId)")
 
-                // Check if dialog is still showing
-                val wasShowing = window?.isShowing == true
-                if (!wasShowing) {
-                    log.info("Dialog already hidden: '$title'")
-                    return@withContext
-                }
-
-                // Close the dialog
-                dialog.close(DialogWrapper.CANCEL_EXIT_CODE, ExitActionType.CANCEL)
-
-                // Let it pump events!
-                delay(10.milliseconds)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: ProcessCanceledException) {
-                throw e
-            } catch (e: Exception) {
-                log.warn("Failed to close dialog: ${e.message}", e)
+            // Check if dialog is still showing
+            val wasShowing = window?.isShowing == true
+            if (!wasShowing) {
+                log.info("Dialog already hidden: '$title'")
+                return@withContext null
             }
+
+            // Close the dialog
+            dialog.close(DialogWrapper.CANCEL_EXIT_CODE, ExitActionType.CANCEL)
+
+            // Let it pump events!
+            delay(10.milliseconds)
+            title
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: ProcessCanceledException) {
+            throw e
+        } catch (e: Exception) {
+            log.warn("Failed to close dialog: ${e.message}", e)
+            null
         }
     }
 }

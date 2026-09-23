@@ -14,8 +14,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.time.Duration.Companion.seconds
 
 /**
  * Fire-and-forget VFS refresh after every [steroid_execute_code] MCP call.
@@ -92,7 +90,9 @@ class VfsRefreshService(
      * Uses the platform's coroutine-native [RefreshQueue.refresh] (suspend
      * overload), which runs on a background write action and propagates
      * cancellation through the coroutine context. Hard-capped at 30 s so a
-     * pathological refresh cannot hang compilation forever.
+     * pathological refresh cannot hang compilation forever. Never waits behind a
+     * modal dialog: that write action cannot run until the dialog closes, see
+     * [awaitRefreshUnlessModal].
      */
     suspend fun awaitRefresh() {
         // #318: a recursive project-root scan awaited from the EDT monopolizes it — a 31s
@@ -107,6 +107,7 @@ class VfsRefreshService(
             )
         }
         val base = projectBaseVf() ?: return
+        val lookup = dialogWindowsLookup()
         // Use the platform's coroutine-native [RefreshQueue.refresh] (suspend
         // overload). The callback-based variant uses an EDT-side
         // `finishRunnable` which deadlocks when the calling coroutine is
@@ -114,21 +115,27 @@ class VfsRefreshService(
         // default) — the EDT is parked, so the runnable never fires and the
         // CompletableDeferred never completes. The suspend overload runs on a
         // background write action and propagates cancellation through the
-        // coroutine context, no EDT round-trip.
-        val result = try {
-            withTimeoutOrNull(30.seconds) {
-                RefreshQueue.getInstance().refresh(/* recursive = */ true, listOf(base))
-            }
-        } catch (e: CancellationException) {
-            // Outer-coroutine cancellation must propagate so the request slot
-            // frees promptly; it is NOT a non-fatal VFS refresh failure.
-            throw e
-        } catch (e: Exception) {
-            log.debug("awaitRefresh failed (non-fatal)", e)
-            return
-        }
-        if (result == null) {
-            log.warn("awaitRefresh timed out after 30 s; compilation will proceed against possibly stale VFS")
+        // coroutine context, no EDT round-trip. It runs in the service scope, so
+        // a wait that stops early leaves it to finish on its own.
+        val outcome = awaitRefreshUnlessModal(
+            isModal = { lookup.isModalEdt() },
+            refresh = {
+                try {
+                    RefreshQueue.getInstance().refresh(/* recursive = */ true, listOf(base))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.debug("awaitRefresh failed (non-fatal)", e)
+                }
+            },
+            launchIn = coroutineScope,
+        )
+        when (outcome) {
+            RefreshWait.DONE -> Unit
+            RefreshWait.SKIPPED_MODAL, RefreshWait.STOPPED_MODAL ->
+                log.info("awaitRefresh: not waiting for the VFS refresh behind a modal dialog ($outcome); it completes when the dialog closes")
+            RefreshWait.TIMED_OUT ->
+                log.warn("awaitRefresh timed out after 30 s; compilation will proceed against possibly stale VFS")
         }
     }
 

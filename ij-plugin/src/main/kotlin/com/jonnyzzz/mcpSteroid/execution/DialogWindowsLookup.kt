@@ -143,11 +143,16 @@ class DialogWindowsLookup {
     }
 
     /**
-     * Find all [DialogWrapper] instances that are owned (directly or transitively)
-     * by the given window. Only returns dialogs that are currently showing and modal.
-     *
-     * Must be called on EDT.
+     * The windows of all showing modal [DialogWrapper]s, taken so that a later sweep can
+     * leave these alone and close only dialogs that opened afterwards.
      */
+    suspend fun showingModalDialogWindows(): Set<Window> {
+        if (ApplicationManager.getApplication().isHeadlessEnvironment) return emptySet()
+        return withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+            findAllShowingModalDialogs().mapNotNull { it.window }.toSet()
+        }
+    }
+
     /**
      * All currently showing modal [DialogWrapper] windows in the IDE, regardless of
      * owner. The single source of truth for "is a blocking modal up" — used by the
@@ -161,6 +166,12 @@ class DialogWindowsLookup {
             if (w.isShowing && w is DialogWrapperDialog) w.dialogWrapper?.takeIf { it.isModal } else null
         }
 
+    /**
+     * Find all [DialogWrapper] instances that are owned (directly or transitively)
+     * by the given window. Only returns dialogs that are currently showing and modal.
+     *
+     * Must be called on EDT.
+     */
     private fun findDialogsOwnedBy(ownerWindow: Window): List<DialogWrapper> {
         val result = mutableListOf<DialogWrapper>()
         for (window in Window.getWindows()) {
