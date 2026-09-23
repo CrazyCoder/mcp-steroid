@@ -6,7 +6,6 @@ import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.util.SystemInfo
-import com.intellij.openapi.util.registry.Registry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -34,8 +33,7 @@ class PortPinWatcher(private val scope: CoroutineScope) {
                 lastModified = now
                 val server = SteroidsMcpServer.getInstance()
                 val pinned = PortPins.pinnedPort(file, PathManager.getPluginsPath(), SystemInfo.isWindows)
-                val registryChanged = Registry.get("mcp.steroid.server.port").isChangedFromDefault()
-                val target = PortPins.rebindTarget(server.port, registryChanged, pinned) ?: continue
+                val target = PortPins.rebindTarget(server.port, pinned) ?: continue
                 if (server.rebind(target) > 0) {
                     ServerUrlWriter.getInstance().writeServerUrlToUserHome(server.mcpUrl)
                 }

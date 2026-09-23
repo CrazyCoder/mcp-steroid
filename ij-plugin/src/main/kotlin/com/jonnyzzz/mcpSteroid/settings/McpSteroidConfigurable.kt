@@ -35,6 +35,7 @@ import com.jonnyzzz.mcpSteroid.devrig.devrigInstallOneLiner
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
 import com.jonnyzzz.mcpSteroid.devrig.resolveHomePaths
 import com.jonnyzzz.mcpSteroid.onboarding.DevrigSetupRunner
+import com.jonnyzzz.mcpSteroid.server.PortPins
 import com.jonnyzzz.mcpSteroid.server.SteroidsMcpServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -398,7 +399,9 @@ class McpSteroidConfigurable internal constructor(
             comment(
                 "Port and bind address are configurable via the IDE Registry: " +
                     "<code>mcp.steroid.server.port</code> (0 = auto-assign) and " +
-                    "<code>mcp.steroid.server.host</code>."
+                    "<code>mcp.steroid.server.host</code>. A port for this IDE in " +
+                    "<code>${PortPins.pinsFile(Path.of(System.getProperty("user.home")))}</code> overrides " +
+                    "<code>mcp.steroid.server.port</code>."
             )
         }
     }

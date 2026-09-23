@@ -47,37 +47,27 @@ class PortPinsTest {
     }
 
     @Test
-    fun `registry value changed by the user wins over the pin`() {
-        assertEquals(7000, PortPins.resolve(registryChanged = true, registryPort = 7000, pinned = 6320))
+    fun `pin wins over a registry value the user set`() {
+        assertEquals(6320, PortPins.resolve(registryPort = 7000, pinned = 6320))
     }
 
     @Test
-    fun `pin wins over the registry default`() {
-        assertEquals(6320, PortPins.resolve(registryChanged = false, registryPort = 6315, pinned = 6320))
-    }
-
-    @Test
-    fun `no pin keeps the registry default`() {
-        assertEquals(6315, PortPins.resolve(registryChanged = false, registryPort = 6315, pinned = null))
+    fun `no pin keeps the registry value`() {
+        assertEquals(6315, PortPins.resolve(registryPort = 6315, pinned = null))
     }
 
     @Test
     fun `rebind target is the new pin`() {
-        assertEquals(6322, PortPins.rebindTarget(currentPort = 6315, registryChanged = false, pinned = 6322))
+        assertEquals(6322, PortPins.rebindTarget(currentPort = 6315, pinned = 6322))
     }
 
     @Test
     fun `no rebind when the pin is removed`() {
-        assertNull(PortPins.rebindTarget(currentPort = 6315, registryChanged = false, pinned = null))
+        assertNull(PortPins.rebindTarget(currentPort = 6315, pinned = null))
     }
 
     @Test
     fun `no rebind when the port already matches`() {
-        assertNull(PortPins.rebindTarget(currentPort = 6322, registryChanged = false, pinned = 6322))
-    }
-
-    @Test
-    fun `no rebind when the user set the registry value`() {
-        assertNull(PortPins.rebindTarget(currentPort = 6315, registryChanged = true, pinned = 6322))
+        assertNull(PortPins.rebindTarget(currentPort = 6322, pinned = 6322))
     }
 }

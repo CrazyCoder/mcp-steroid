@@ -114,13 +114,12 @@ class SteroidsMcpServer(
                 )
             }
 
-            val portKey = Registry.get("mcp.steroid.server.port")
             val pinned = PortPins.pinnedPort(
                 PortPins.pinsFile(Path.of(System.getProperty("user.home"))),
                 PathManager.getPluginsPath(),
                 SystemInfo.isWindows,
             )
-            val configuredPort = PortPins.resolve(portKey.isChangedFromDefault(), portKey.asInteger(), pinned)
+            val configuredPort = PortPins.resolve(Registry.intValue("mcp.steroid.server.port"), pinned)
 
             // By default, bind to localhost only per MCP security requirements.
             // For Docker testing, set mcp.steroid.server.host to "0.0.0.0"

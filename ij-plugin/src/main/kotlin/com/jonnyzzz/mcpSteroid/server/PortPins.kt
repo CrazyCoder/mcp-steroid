@@ -13,7 +13,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * The port pin file `~/.mcp-steroid/ports.json`, written by external tooling:
  * `{"version":1,"ports":{"<plugins dir>":<port>}}`. Keys are compared after [normalize],
- * so the writer and the IDE may spell the same directory differently.
+ * so the writer and the IDE may spell the same directory differently. A pin
+ * wins over `mcp.steroid.server.port`: the tooling that writes it pins each IDE
+ * to the port its MCP client configuration expects.
  */
 object PortPins {
     private val warnedMalformed = AtomicBoolean(false)
@@ -46,9 +48,8 @@ object PortPins {
         return pins[normalize(pluginsPath, windows)]
     }
 
-    fun resolve(registryChanged: Boolean, registryPort: Int, pinned: Int?): Int =
-        if (registryChanged) registryPort else pinned ?: registryPort
+    fun resolve(registryPort: Int, pinned: Int?): Int = pinned ?: registryPort
 
-    fun rebindTarget(currentPort: Int, registryChanged: Boolean, pinned: Int?): Int? =
-        if (registryChanged || pinned == null || pinned == currentPort) null else pinned
+    fun rebindTarget(currentPort: Int, pinned: Int?): Int? =
+        if (pinned == null || pinned == currentPort) null else pinned
 }
