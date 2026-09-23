@@ -72,6 +72,17 @@ class McpServerCoreTest {
     }
 
     @Test
+    fun `test initialize echoes 2025-03-26, the version the Junie MCP client requests`() = runBlocking {
+        // Junie bundles the Kotlin MCP SDK 0.7.7: it requests 2025-03-26 and accepts only
+        // 2025-03-26 or 2024-11-05 back, so any other answer ends the connection.
+        val responseJson = server.handleMessage(initializeRequest(protocolVersion = "2025-03-26"), session)
+        val response = McpJson.decodeFromString<JsonRpcResponse>(responseJson!!)
+        val result = McpJson.decodeFromJsonElement<InitializeResult>(response.result!!)
+
+        assertEquals("2025-03-26", result.protocolVersion)
+    }
+
+    @Test
     fun `test initialize falls back to latest for an unsupported protocol version`() = runBlocking {
         val request = initializeRequest(protocolVersion = "1999-01-01")
 
