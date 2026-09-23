@@ -306,6 +306,7 @@ interface McpScriptContext {
      * ```kotlin
      * val file = findProjectFile("src/Main.kt") ?: error("File not found")
      *
+     * // import com.intellij.codeInspection.ProblemDescriptorUtil
      * val problems = runInspectionsDirectly(file)
      * problems.forEach { (toolId, descriptors) ->
      *     descriptors.forEach { problem ->

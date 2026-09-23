@@ -403,6 +403,8 @@ class McpScriptContextImpl(
 
         if (editor == null) {
             log.warn("[$executionId] No text editor found for ${file.name}, cannot wait for highlighting")
+            resultBuilder.logMessage("WARNING: ${file.name} is not open in an editor, so the daemon does not analyze it: " +
+                "open it with FileEditorManager.getInstance(project).openFile(file, true) on the EDT first.")
             return false
         }
 

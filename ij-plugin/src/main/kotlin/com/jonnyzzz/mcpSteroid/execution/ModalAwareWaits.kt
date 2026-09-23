@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -13,6 +14,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 /** How [awaitRefreshUnlessModal] ended. */
 internal enum class RefreshWait { DONE, SKIPPED_MODAL, STOPPED_MODAL, TIMED_OUT }
@@ -122,7 +124,7 @@ internal suspend fun awaitHighlighting(
     restartAfter: Duration = 1.seconds,
     poll: Duration = 50.milliseconds,
 ): HighlightingWait {
-    val start = kotlin.time.TimeSource.Monotonic.markNow()
+    val start = TimeSource.Monotonic.markNow()
     var restarted = false
     return withTimeoutOrNull(timeout) {
         while (!isCompleted()) {
@@ -130,7 +132,7 @@ internal suspend fun awaitHighlighting(
                 restart()
                 restarted = true
             }
-            kotlinx.coroutines.delay(poll)
+            delay(poll)
         }
         HighlightingWait.COMPLETED
     } ?: HighlightingWait.TIMED_OUT
