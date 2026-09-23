@@ -322,7 +322,7 @@ class ScriptExecutor(
         resultBuilder: ExecutionResultBuilder
     ) {
         // Dialogs already showing when the body starts, such as the user's own under `unleashed`,
-        // are never closed by the timeout; only dialogs the run opened are.
+        // are never closed by the timeout; only dialogs opened during the run are.
         val dialogsBeforeRun = dialogWindowsLookup().showingModalDialogWindows()
         val closedAtTimeout = mutableListOf<String>()
         try {

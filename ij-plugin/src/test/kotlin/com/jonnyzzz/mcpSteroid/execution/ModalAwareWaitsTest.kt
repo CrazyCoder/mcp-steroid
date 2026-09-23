@@ -9,6 +9,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -214,6 +215,38 @@ class ModalAwareWaitsTest {
             // With no dialog to close, nothing can release the block, so the call returns right after the grace.
             assertTrue("returned after ${elapsed}ms, expected about timeout + one grace", elapsed < 1_000)
             release.complete(Unit)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `a failing block rethrows and leaves the detach scope usable`(): Unit = timeoutRunBlocking(10.seconds) {
+        val scope = detachScope()
+        try {
+            try {
+                runBoundedByTimeout(
+                    timeout = 5.seconds,
+                    grace = 100.milliseconds,
+                    detachIn = scope,
+                    closeDialogsOpenedDuringRun = { emptyList() },
+                    onClosed = { },
+                    onStuck = { },
+                ) { error("script failed") }
+                fail("expected the script's exception")
+            } catch (e: IllegalStateException) {
+                assertEquals("script failed", e.message)
+            }
+            assertTrue("a failing script must not cancel the long-lived scope", scope.isActive)
+            val next = runBoundedByTimeout(
+                timeout = 5.seconds,
+                grace = 100.milliseconds,
+                detachIn = scope,
+                closeDialogsOpenedDuringRun = { emptyList() },
+                onClosed = { },
+                onStuck = { },
+            ) { "next run" }
+            assertEquals("next run", next)
         } finally {
             scope.cancel()
         }
