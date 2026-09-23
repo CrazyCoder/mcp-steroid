@@ -64,7 +64,7 @@ internal class ScriptLeftRunningException(val timeout: Duration) :
  * Coroutine cancellation cannot interrupt a thread-blocking call. The common case is a script
  * parked in a modal dialog's nested event loop (`Messages.show…` on the EDT), which returns only
  * when the dialog closes. So [block] runs in [detachIn] with the caller's context, and the caller
- * waits for it. If it has not stopped [grace] after the deadline, [onStuck] runs (for diagnostics),
+ * waits for it. If it has not stopped [grace] after the deadline, [onStuck] gets its job (for diagnostics),
  * then [closeDialogsOpenedDuringRun] closes the dialogs the run opened, which releases such a
  * script; each batch of closed titles goes to [onClosed]. A block that still does not stop is left
  * running and [ScriptLeftRunningException] is thrown. A cooperative block behaves exactly as under
@@ -76,7 +76,7 @@ internal suspend fun <T> runBoundedByTimeout(
     detachIn: CoroutineScope,
     closeDialogsOpenedDuringRun: suspend () -> List<String>,
     onClosed: (List<String>) -> Unit,
-    onStuck: suspend () -> Unit,
+    onStuck: suspend (run: Job) -> Unit,
     block: suspend CoroutineScope.() -> T,
 ): T {
     // A supervisor per run, so a failing script never cancels the long-lived detachIn scope.
@@ -86,7 +86,7 @@ internal suspend fun <T> runBoundedByTimeout(
     suspend fun stoppedWithin(wait: Duration) = withTimeoutOrNull(wait) { run.join() } != null
     try {
         if (!stoppedWithin(timeout + grace)) {
-            onStuck()
+            onStuck(run)
             var rounds = 0
             while (rounds++ < MAX_DIALOG_CLOSE_ROUNDS) {
                 val closed = closeDialogsOpenedDuringRun()

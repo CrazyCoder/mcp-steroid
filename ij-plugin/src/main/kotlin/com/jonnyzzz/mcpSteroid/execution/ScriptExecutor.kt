@@ -332,7 +332,7 @@ class ScriptExecutor(
                 detachIn = serviceScope,
                 closeDialogsOpenedDuringRun = { context.closeModalDialogsExcept(dialogsBeforeRun) },
                 onClosed = { closedAtTimeout += it },
-                onStuck = { writeTimeoutDump(executionId) },
+                onStuck = { run -> writeTimeoutDump(executionId, run) },
             ) {
                 val capturedBlocks = evalResult.result
                 for ((index, block) in capturedBlocks.withIndex()) {
@@ -390,12 +390,13 @@ class ScriptExecutor(
         if (isEmpty()) "" else ". It was waiting on ${describeDialogs()}, which the timeout closed"
 
     /** Thread + coroutine dump of a script that did not stop at its timeout (#215). */
-    private suspend fun writeTimeoutDump(executionId: ExecutionId) {
+    private suspend fun writeTimeoutDump(executionId: ExecutionId, run: Job) {
         try {
             val dump = buildString {
                 appendLine(ThreadDumper.dumpThreadsToString())
                 appendLine("---------- Coroutine dump ----------")
-                appendLine(dumpCoroutines() ?: "coroutine dump unavailable: kotlinx debug probes are not installed")
+                // Only the script's own coroutines: the whole IDE's tree is megabytes.
+                appendLine(dumpCoroutines(CoroutineScope(run)) ?: "coroutine dump unavailable: kotlinx debug probes are not installed")
             }
             project.executionStorage.writeCodeExecutionData(executionId, TIMEOUT_DUMP_FILE, dump)
         } catch (e: CancellationException) {
