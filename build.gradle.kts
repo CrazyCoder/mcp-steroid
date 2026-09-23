@@ -9,7 +9,11 @@ plugins {
 }
 
 group = "com.jonnyzzz.intellij"
-val baseVersion = file("VERSION").readText().trim()
+val baseVersion = file("VERSION").readText().trim().also {
+    require(Regex("""\d+(\.\d+)+""").matches(it)) {
+        "VERSION must be dot-separated numbers like 0.103, got '$it'"
+    }
+}
 
 /**
  * Short git hash (7 chars) for the current HEAD. On CI we read the full SHA from the
