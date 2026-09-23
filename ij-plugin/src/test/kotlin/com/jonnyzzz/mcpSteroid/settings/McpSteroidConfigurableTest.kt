@@ -55,8 +55,29 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
         configurable.disposeUIResources()
     }
 
-    fun `test panel promotes devrig, renders statuses as value fields, and deprecates direct HTTP`() {
+    fun `test the default page hides the devrig section and keeps direct HTTP`() {
         val configurable = McpSteroidConfigurable()
+        try {
+            val texts = collectTexts(configurable.createComponent())
+            val joined = texts.joinToString("\n")
+            assertFalse(
+                "the default page must not render the devrig section; found:\n$joined",
+                joined.contains("devrig", ignoreCase = true),
+            )
+            assertFalse(
+                "the only connection path must not be marked deprecated; found:\n$joined",
+                joined.contains("Deprecated"),
+            )
+            assertContainsText(texts, McpSteroidConfigurable.SERVER_SECTION_TITLE)
+            assertContainsText(texts, "mcp.steroid.server.port")
+            assertContainsText(texts, "Report an issue on GitHub")
+        } finally {
+            configurable.disposeUIResources()
+        }
+    }
+
+    fun `test panel promotes devrig, renders statuses as value fields, and deprecates direct HTTP`() {
+        val configurable = McpSteroidConfigurable(showDevrigUi = true)
         val uiScope = CoroutineScope(Job())
         try {
             val component = configurable.createComponent()
@@ -381,7 +402,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
      * must render THIS OS's form, verbatim, one field per agent.
      */
     fun `test each agent gets a display-only copyable field with the absolute install command`() {
-        val configurable = McpSteroidConfigurable()
+        val configurable = McpSteroidConfigurable(showDevrigUi = true)
         val uiScope = CoroutineScope(Job())
         try {
             val component = configurable.createComponent()
@@ -439,7 +460,7 @@ class McpSteroidConfigurableTest : BasePlatformTestCase() {
      * sides are deterministic on any machine.
      */
     fun `test the install block promotes the CLI one-liner next to a trivial Install button`() {
-        val configurable = McpSteroidConfigurable()
+        val configurable = McpSteroidConfigurable(showDevrigUi = true)
         val uiScope = CoroutineScope(Job())
         try {
             val component = configurable.createComponent()

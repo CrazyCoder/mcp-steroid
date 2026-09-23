@@ -76,7 +76,11 @@ import javax.swing.JComponent
  * platform's own MCP-server settings page and the Terminal's shell-path detection use the same
  * on-show idiom.)
  */
-class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
+class McpSteroidConfigurable internal constructor(
+    /** Whether the page renders the devrig section; tests of that section pass `true`. */
+    private val showDevrigUi: Boolean,
+) : BoundConfigurable(DISPLAY_NAME) {
+    constructor() : this(SHOW_DEVRIG_UI)
 
     /** The one state-dependent block, swapped in place as its state is computed. EDT-confined. */
     private var installStatus: Placeholder? = null
@@ -109,25 +113,27 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
             // One group for the whole recommended path: why it exists, then where both ends of it stand.
             // It was two groups — a Status one and a Devrig one — which split one story across two boxes
             // and made the pitch outlive its usefulness by sitting between the reader and the state.
-            group("Devrig") {
-                // One line, then a link. The long version of this pitch is what made the page unreadable:
-                // by the time a user got to something clickable they had read a dozen lines of prose.
-                row {
-                    text(
-                        "One bridge between your agent and <b>every</b> IntelliJ IDE you have open. It survives " +
-                            "IDE restarts and port changes, and can even start an IDE on demand for headless runs."
-                    )
-                }
-                row {
-                    browserLink("What is devrig?", whatIsDevrigUrl())
-                }
+            if (showDevrigUi) {
+                group("Devrig") {
+                    // One line, then a link. The long version of this pitch is what made the page unreadable:
+                    // by the time a user got to something clickable they had read a dozen lines of prose.
+                    row {
+                        text(
+                            "One bridge between your agent and <b>every</b> IntelliJ IDE you have open. It survives " +
+                                "IDE restarts and port changes, and can even start an IDE on demand for headless runs."
+                        )
+                    }
+                    row {
+                        browserLink("What is devrig?", whatIsDevrigUrl())
+                    }
 
-                // A placeholder, not a plain row: the state is computed off the EDT after the page is
-                // shown, and an install finishes minutes later — the block must be replaceable in place.
-                row {
-                    installStatus = placeholder().align(AlignX.FILL)
+                    // A placeholder, not a plain row: the state is computed off the EDT after the page is
+                    // shown, and an install finishes minutes later — the block must be replaceable in place.
+                    row {
+                        installStatus = placeholder().align(AlignX.FILL)
+                    }
+                    installStatus?.component = checkingPanel()
                 }
-                installStatus?.component = checkingPanel()
             }
 
             httpSection(port, portPhrase, info)
@@ -144,14 +150,16 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         // the platform's own settings pages (MCP server clients detection, Terminal shell-path detection)
         // use the same idiom for slow disk answers. The EDT only launches, awaits and applies; the one
         // fact read is the devrigInstalled() file probe, on Dispatchers.IO.
-        panel.launchOnShow("McpSteroidConfigurable devrig state") {
-            installStatus?.component = checkingPanel()
-            applyDevrigInstalled(this, withContext(Dispatchers.IO) { DevrigSetupRunner.devrigInstalled() })
-            // The scope must outlive the populate: the install button just rendered launches its
-            // await-and-render child on it, and that must be dialog-scoped the same way the
-            // populate is. launchOnShow cancels this coroutine when the panel stops showing and
-            // restarts it on re-show — which is exactly the populate-on-show contract.
-            awaitCancellation()
+        if (showDevrigUi) {
+            panel.launchOnShow("McpSteroidConfigurable devrig state") {
+                installStatus?.component = checkingPanel()
+                applyDevrigInstalled(this, withContext(Dispatchers.IO) { DevrigSetupRunner.devrigInstalled() })
+                // The scope must outlive the populate: the install button just rendered launches its
+                // await-and-render child on it, and that must be dialog-scoped the same way the
+                // populate is. launchOnShow cancels this coroutine when the panel stops showing and
+                // restarts it on re-show — which is exactly the populate-on-show contract.
+                awaitCancellation()
+            }
         }
         return panel
     }
@@ -317,7 +325,16 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
      * (devrig finds every running IDE on its own).
      */
     private fun Panel.httpSection(port: Int, portPhrase: String, info: McpConnectionInfo?) {
-        collapsibleGroup(HTTP_SECTION_TITLE) {
+        if (showDevrigUi) {
+            collapsibleGroup(HTTP_SECTION_TITLE) { httpRows(port, portPhrase, info, deprecated = true) }
+        } else {
+            group(SERVER_SECTION_TITLE) { httpRows(port, portPhrase, info, deprecated = false) }
+        }
+    }
+
+    /** The server state, URL, per-agent commands, JSON and registry keys; [deprecated] adds the devrig warning. */
+    private fun Panel.httpRows(port: Int, portPhrase: String, info: McpConnectionInfo?, deprecated: Boolean) {
+        if (deprecated) {
             row {
                 icon(AllIcons.General.Warning)
                 text(
@@ -327,62 +344,62 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
                         "IDE automatically and keeps working across restarts and port changes."
                 )
             }
-            if (info != null) {
-                row("MCP server:") {
-                    cell(valueTextField("Running on port $port")).align(AlignX.FILL)
-                }
-            } else {
-                row("MCP server:") {
-                    cell(valueTextField("Not running")).align(AlignX.FILL)
-                }
-                row {
-                    // The one fix a user can apply from here is named outright: a taken port is the
-                    // usual reason the bind fails, and the key to move it is on this very page. "Check
-                    // the IDE log for bind errors" was homework in place of that action.
-                    comment(
-                        "The server normally starts at IDE startup; a taken port is the usual reason it " +
-                            "could not. Set <code>mcp.steroid.server.port</code> via the registry keys " +
-                            "below and restart the IDE."
-                    )
-                }
+        }
+        if (info != null) {
+            row("MCP server:") {
+                cell(valueTextField("Running on port $port")).align(AlignX.FILL)
             }
-            if (info != null) {
-                row("Server URL:") {
-                    cell(copyableTextField(info.serverUrl)).align(AlignX.FILL)
-                }
-                row {
-                    text("If you still want a direct streamable-HTTP connection to this single IDE instance:")
-                }.topGap(TopGap.SMALL)
-                for ((name, command) in info.commands) {
-                    row("$name:") {
-                        cell(copyableTextField(command)).align(AlignX.FILL)
-                    }
-                }
-                group("JSON Config") {
-                    val json = info.jsonConfig.trim()
-                    row {
-                        // Size the area to the content so the whole block is visible without
-                        // an inner scrollbar.
-                        val textArea = JBTextArea(json).apply {
-                            isEditable = false
-                            rows = json.lines().size.coerceAtLeast(3)
-                        }
-                        cell(JBScrollPane(textArea)).align(Align.FILL)
-                    }.topGap(TopGap.NONE)
-                    row {
-                        button("Copy JSON Config") { event ->
-                            copyWithFeedback(json, event.source as? JComponent)
-                        }
-                    }
-                }
+        } else {
+            row("MCP server:") {
+                cell(valueTextField("Not running")).align(AlignX.FILL)
             }
             row {
+                // The one fix a user can apply from here is named outright: a taken port is the
+                // usual reason the bind fails, and the key to move it is on this very page. "Check
+                // the IDE log for bind errors" was homework in place of that action.
                 comment(
-                    "Port and bind address are configurable via the IDE Registry: " +
-                        "<code>mcp.steroid.server.port</code> (0 = auto-assign) and " +
-                        "<code>mcp.steroid.server.host</code>."
+                    "The server normally starts at IDE startup; a taken port is the usual reason it " +
+                        "could not. Set <code>mcp.steroid.server.port</code> via the registry keys " +
+                        "below and restart the IDE."
                 )
             }
+        }
+        if (info != null) {
+            row("Server URL:") {
+                cell(copyableTextField(info.serverUrl)).align(AlignX.FILL)
+            }
+            row {
+                text("If you still want a direct streamable-HTTP connection to this single IDE instance:")
+            }.topGap(TopGap.SMALL)
+            for ((name, command) in info.commands) {
+                row("$name:") {
+                    cell(copyableTextField(command)).align(AlignX.FILL)
+                }
+            }
+            group("JSON Config") {
+                val json = info.jsonConfig.trim()
+                row {
+                    // Size the area to the content so the whole block is visible without
+                    // an inner scrollbar.
+                    val textArea = JBTextArea(json).apply {
+                        isEditable = false
+                        rows = json.lines().size.coerceAtLeast(3)
+                    }
+                    cell(JBScrollPane(textArea)).align(Align.FILL)
+                }.topGap(TopGap.NONE)
+                row {
+                    button("Copy JSON Config") { event ->
+                        copyWithFeedback(json, event.source as? JComponent)
+                    }
+                }
+            }
+        }
+        row {
+            comment(
+                "Port and bind address are configurable via the IDE Registry: " +
+                    "<code>mcp.steroid.server.port</code> (0 = auto-assign) and " +
+                    "<code>mcp.steroid.server.host</code>."
+            )
         }
     }
 
@@ -429,6 +446,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         }
 
     companion object {
+        /** The devrig section stays in the code but is not shown: this build does not ship devrig. */
+        private const val SHOW_DEVRIG_UI = false
+
         /** Must match the id attribute of the applicationConfigurable EP in plugin.xml. */
         const val CONFIGURABLE_ID = "io.github.crazycoder.mcp-steroid.settings"
 
@@ -437,6 +457,9 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
 
         /** Title of the collapsed section holding the deprecated direct-HTTP setup. */
         const val HTTP_SECTION_TITLE = "Direct HTTP connection (deprecated)"
+
+        /** Title of the server section when the devrig section is hidden and direct HTTP is the only path. */
+        const val SERVER_SECTION_TITLE = "MCP server connection"
 
         /** Title of the collapsed section with the manual stdio config for clients devrig cannot register. */
         const val OTHER_CLIENTS_SECTION_TITLE = "Another MCP client (Cursor, Windsurf, …)"
@@ -471,7 +494,7 @@ class McpSteroidConfigurable : BoundConfigurable(DISPLAY_NAME) {
         ): String = DEVRIG_SITE_URL + "?" + FROM_INTELLIJ_PARAM + "=" +
             URLEncoder.encode(ideBuild, StandardCharsets.UTF_8)
 
-        const val FEEDBACK_URL = "https://github.com/jonnyzzz/mcp-steroid/issues"
+        const val FEEDBACK_URL = "https://github.com/CrazyCoder/mcp-steroid/issues"
 
         /** What the confirmation says. Short on purpose: it is a receipt, not a message. */
         const val COPIED_HINT = "Copied"

@@ -93,7 +93,7 @@ class AnalyticsBeacon(
     }
 
     fun capture(event: String, project: Project? = null, properties: Map<String, Any> = emptyMap()) {
-        if (!Registry.`is`("mcp.steroid.analytics.enabled", true)) return
+        if (!Registry.`is`("mcp.steroid.analytics.enabled", false)) return
 
         coroutineScope.launch(Dispatchers.IO) {
             try {

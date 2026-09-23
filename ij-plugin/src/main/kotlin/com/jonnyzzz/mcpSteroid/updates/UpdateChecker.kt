@@ -21,8 +21,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -30,7 +28,7 @@ import kotlin.time.Duration.Companion.seconds
 /**
  * Application-level service that periodically checks for plugin updates.
  *
- * Fetches version info from https://devrig.dev/version.json
+ * Fetches release.json from the latest GitHub release ([RELEASE_JSON_URL])
  * and notifies the user ONCE per IDE session when a newer version is available.
  *
  * The check continues running even after an update is detected, but the notification
@@ -58,12 +56,12 @@ class UpdateChecker(
     private val notificationShown = AtomicBoolean(false)
 
     /**
-     * Fetch the published `version-base` from version.json, or null when the request or parse fails.
+     * Fetch the version of the latest release, or null when the request or parse fails.
      */
     private suspend fun fetchLatestBaseVersion(): String? {
         val currentVersion = getBuildVersion()
         val ijBuild = ApplicationInfo.getInstance().build.asString()
-        val url = "https://devrig.dev/version.json?intellij-version=$ijBuild"
+        val url = RELEASE_JSON_URL
         log.debug("Checking for updates at $url (current version: $currentVersion)")
 
         val response = withContext(Dispatchers.IO) {
@@ -79,13 +77,7 @@ class UpdateChecker(
             }
         } ?: return null
 
-        val versionInfo = try {
-            json.decodeFromString<VersionInfo>(response)
-        } catch (e: Exception) {
-            log.debug("Failed to parse version response: ${e.message}")
-            return null
-        }
-        return versionInfo.versionBase
+        return parseReleaseVersion(response)
     }
 
     private suspend fun checkForUpdates() {
@@ -126,14 +118,10 @@ class UpdateChecker(
     private fun showUpdateNotification(currentVersion: String, newVersion: String) {
         McpSteroidNotifications.getInstance().notify(
             McpSteroidNotificationKind.PLUGIN_UPDATE, null, NotificationType.INFORMATION,
-            "MCP Steroid plugin update available",
-            "A new version of MCP Steroid is available: $newVersion (current: ${
-                extractBaseVersion(
-                    currentVersion
-                )
-            })",
-            NotificationAction.createSimpleExpiring("Download") {
-                BrowserUtil.browse("https://devrig.dev/releases/")
+            "MCP Steroid Plus update available",
+            "MCP Steroid Plus $newVersion is available (current: ${extractBaseVersion(currentVersion)}).",
+            NotificationAction.createSimpleExpiring("Open release") {
+                BrowserUtil.browse(RELEASES_PAGE_URL)
             },
         )
     }
@@ -174,15 +162,7 @@ class UpdateChecker(
         }
     }
 
-    private val json = Json { ignoreUnknownKeys = true }
-
     companion object {
         fun getInstance(): UpdateChecker = service()
     }
 }
-
-@Serializable
-private data class VersionInfo(
-    @kotlinx.serialization.SerialName("version-base")
-    val versionBase: String
-)

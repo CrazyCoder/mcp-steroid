@@ -130,7 +130,7 @@
         <registryKey key="mcp.steroid.idea.description.enabled" defaultValue="true"
             description="Generate .idea/mcp-steroid.md description file in projects"/>
 
-        <registryKey key="mcp.steroid.analytics.enabled" defaultValue="true"
+        <registryKey key="mcp.steroid.analytics.enabled" defaultValue="false"
             description="Toggles minimalistic analytics from the plugin"/>
 
         <!-- Kotlinc configuration -->
