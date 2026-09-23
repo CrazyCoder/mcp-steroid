@@ -220,6 +220,11 @@ dependencies {
     // PostHog analytics
     implementation("com.posthog:posthog-server:2.3.0")
 
+    // printJson serializer. Bundled because the platform's Jackson is a separate
+    // content module (intellij.libraries.jackson.databind) that 263+ no longer
+    // exposes to a non-bundled plugin's classloader.
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.2")
+
     // Testing
     testImplementation("junit:junit:4.13.2")
     testImplementation(project(":intellij-downloader"))
@@ -667,6 +672,9 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             //libraries
             "lib/config-1.4.5.jar",
             "lib/gson-2.10.1.jar",
+            "lib/jackson-annotations-2.22.jar",
+            "lib/jackson-core-2.22.2.jar",
+            "lib/jackson-databind-2.22.2.jar",
             "lib/jansi-2.4.2.jar",
 
             "lib/ktor-events-jvm-3.3.2.jar",
