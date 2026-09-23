@@ -32,6 +32,9 @@ enum class McpSteroidNotificationKind {
 
     /** "A new version of MCP Steroid is available" from the periodic update check. */
     PLUGIN_UPDATE,
+
+    /** The upstream MCP Steroid plugin was found enabled and has been disabled until the next restart. */
+    UPSTREAM_DISABLED,
 }
 
 /**
