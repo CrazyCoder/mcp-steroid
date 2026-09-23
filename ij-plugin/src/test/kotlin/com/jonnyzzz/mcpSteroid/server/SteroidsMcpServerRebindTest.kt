@@ -9,6 +9,20 @@ import java.net.URI
 class SteroidsMcpServerRebindTest : BasePlatformTestCase() {
     private fun freePort(): Int = ServerSocket(0).use { it.localPort }
 
+    /** The whole range a rebind tries: the pinned port and the nine after it. */
+    private fun occupyTenConsecutivePorts(): List<ServerSocket> {
+        repeat(50) {
+            val base = freePort()
+            val opened = mutableListOf<ServerSocket>()
+            for (p in base until base + 10) {
+                opened += runCatching { ServerSocket(p) }.getOrNull() ?: break
+            }
+            if (opened.size == 10) return opened
+            opened.forEach { it.close() }
+        }
+        error("could not occupy ten consecutive ports")
+    }
+
     private fun responds(port: Int): Boolean = try {
         val c = URI("http://127.0.0.1:$port/.well-known/mcp.json").toURL().openConnection() as HttpURLConnection
         c.connectTimeout = 2000
@@ -35,6 +49,20 @@ class SteroidsMcpServerRebindTest : BasePlatformTestCase() {
         assertEquals(target, server.port)
         assertTrue(responds(target))
         assertFalse(responds(old))
+    }
+
+    fun testRebindKeepsTheOldPortWhenTheWholeNewRangeIsBusy() {
+        val server = SteroidsMcpServer.getInstance()
+        server.startServerIfNeeded()
+        val old = server.port
+        val busy = occupyTenConsecutivePorts()
+        try {
+            assertEquals(old, server.rebind(busy.first().localPort))
+            assertEquals(old, server.port)
+            assertTrue(responds(old))
+        } finally {
+            busy.forEach { it.close() }
+        }
     }
 
     fun testRebindToABusyPortFallsBackToTheNextFreeOne() {

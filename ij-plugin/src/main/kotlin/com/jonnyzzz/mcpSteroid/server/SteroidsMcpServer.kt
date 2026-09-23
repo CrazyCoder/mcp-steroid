@@ -146,18 +146,23 @@ class SteroidsMcpServer(
      */
     /**
      * Moves the running server to [newPort], falling back through the next nine ports when it is busy.
-     * Returns the bound port, or 0 when none could be bound. Tools stay registered; only the listener
-     * is replaced.
+     * When all ten are busy the server goes back to its previous port. Returns the bound port, or 0
+     * when none could be bound. Tools stay registered; only the listener is replaced.
      */
     fun rebind(newPort: Int): Int = startupLock.withLock {
-        if (port == newPort) return newPort
+        val previousPort = port
+        if (previousPort == newPort) return newPort
         val old = serverRef.getAndSet(null)
         portRef.set(0)
         old?.stop(1000, 2000)
         val bindHost = Registry.stringValue("mcp.steroid.server.host").takeIf { it.isNotBlank() } ?: "127.0.0.1"
         val bound = startServerOnAvailablePort(bindHost, newPort)
-        if (bound > 0) log.info("MCP Steroid server moved to $mcpUrl") else log.warn("MCP Steroid server could not bind near $newPort")
-        bound
+        if (bound > 0) {
+            log.info("MCP Steroid server moved to $mcpUrl")
+            return bound
+        }
+        log.warn("MCP Steroid server could not bind near $newPort; staying on $previousPort")
+        if (previousPort > 0) startServerOnAvailablePort(bindHost, previousPort) else 0
     }
 
     private fun logIdeRunMode() {
