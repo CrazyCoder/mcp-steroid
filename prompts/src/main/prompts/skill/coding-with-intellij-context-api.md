@@ -345,7 +345,7 @@ val completed = waitForEditorHighlighting(file, timeout = 30.seconds)
 println("Highlighting completed: $completed")
 
 // Get highlights (warnings/errors) when daemon finishes
-// NOTE: may return stale results if IDE window is not focused — use runInspectionsDirectly() instead
+// NOTE: needs the active project window; on a timeout it returns the last analysis with a warning
 val highlights = getHighlightsWhenReady(file)
 highlights.forEach { info ->
     println("${info.severity}: ${info.description}")

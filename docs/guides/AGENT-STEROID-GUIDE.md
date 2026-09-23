@@ -539,7 +539,7 @@ if (problems.isEmpty()) {
 }
 ```
 
-**Note**: The daemon-based `getHighlightsWhenReady()` may return stale results if the IDE window is not focused. Use `runInspectionsDirectly()` for MCP automation.
+**Note**: The daemon analyzes only the active project window, so `getHighlightsWhenReady()` needs it in front (`ProjectUtil.focusProjectWindow(project, true)` on the EDT); on a timeout it returns the last analysis with a warning. `runInspectionsDirectly()` works in any window but runs local inspections only, without the unused-symbol pass.
 
 ### Execute Actions
 

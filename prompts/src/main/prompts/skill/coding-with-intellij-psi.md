@@ -353,7 +353,7 @@ println("NEXT_MIGRATION=V" + nextVersion)
 
 ### Run Inspections Directly (Recommended)
 
-**WARNING**: The daemon code analyzer returns stale results if the IDE window is not focused. Always use `runInspectionsDirectly()` for reliable results.
+**Note**: The daemon analyzes only the active project window, so `getHighlightsWhenReady()` needs it in front (`ProjectUtil.focusProjectWindow(project, true)` on the EDT); on a timeout it returns the last analysis with a warning. `runInspectionsDirectly()` works in any window but runs local inspections only, without the unused-symbol pass.
 ```kotlin
 // RECOMMENDED - Reliable regardless of window focus
 val file = requireNotNull(findProjectFile("src/main/kotlin/MyClass.kt")) { "File not found" }
@@ -383,9 +383,9 @@ if (problems.isEmpty()) {
 
 **Returns:** `Map<String, List<ProblemDescriptor>>` - inspection tool ID to problems found
 
-### Get Errors and Warnings (Daemon-based, requires window focus)
+### Get Errors and Warnings (Daemon-based, requires the active project window)
 
-**Note**: May return stale results if the IDE window is not focused. Prefer `runInspectionsDirectly()` for MCP use cases.
+**Note**: The daemon analyzes only the active project window, so `getHighlightsWhenReady()` needs it in front (`ProjectUtil.focusProjectWindow(project, true)` on the EDT); on a timeout it returns the last analysis with a warning. `runInspectionsDirectly()` works in any window but runs local inspections only, without the unused-symbol pass. These are the highlights the user sees in the editor.
 
 ```kotlin
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
