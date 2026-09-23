@@ -38,9 +38,10 @@ inline val Project.scriptExecutor: ScriptExecutor get() = service()
  *
  * Execution flow:
  * 1. Script is compiled and evaluated to capture runnable script blocks
- * 2. Lambdas are executed in FIFO order inside a supervisorScope
+ * 2. Lambdas are executed in FIFO order, detached from the tool call (see [runBoundedByTimeout])
  * 3. Any failure marks the whole execution as complete
- * 4. On timeout or cancellation, the Disposable is disposed and coroutine canceled
+ * 4. On timeout or cancellation the blocks are cancelled and the Disposable is disposed; blocks that
+ *    ignore cancellation are left running, so the tool call still returns
  *
  * Editing-guard pre/post-flight (former McpEditingGuard, inlined here as the
  * only caller):
@@ -72,8 +73,8 @@ inline val Project.scriptExecutor: ScriptExecutor get() = service()
  * count for the modality check; the script runs to completion against the
  * non-modal-dialog-visible IDE state.
  *
- * IMPORTANT: This executor runs the captured suspend block inside a supervisorScope.
- * The script code gets the coroutine context implicitly - no runBlocking needed.
+ * IMPORTANT: The captured suspend blocks run in this service's scope with the caller's coroutine
+ * context. The script code gets that context implicitly - no runBlocking needed.
  */
 @Service(Service.Level.PROJECT)
 class ScriptExecutor(
