@@ -96,7 +96,7 @@
             description="How long modal=smart_non_modal waits for a dialog-less elevated modality (modal progress without any dialog window, e.g. the platform's freeze-protection event pumping during indexing/VFS refresh) to pass before failing the pre-flight gate. 0 disables the wait."/>
 
         <registryKey key="mcp.steroid.server.port" defaultValue="6315"
-            description="MCP server port (0 for auto-assign)"/>
+            description="MCP server port (0 for auto-assign). A port for this IDE in ~/.mcp-steroid/ports.json overrides it"/>
 
         <registryKey key="mcp.steroid.server.host" defaultValue="127.0.0.1"
             description="MCP server bind address (use 0.0.0.0 for Docker access)"/>

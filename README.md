@@ -247,7 +247,7 @@ MCP Steroid can be configured via IntelliJ's Registry (`Help > Find Action > Reg
 
 | Registry Key | Default | Description |
 |--------------|---------|-------------|
-| `mcp.steroid.server.port` | 6315 | MCP server port (0 for auto-assign) |
+| `mcp.steroid.server.port` | 6315 | MCP server port (0 for auto-assign). A port for this IDE in `~/.mcp-steroid/ports.json` overrides it |
 | `mcp.steroid.server.host` | 127.0.0.1 | Bind address (use 0.0.0.0 for Docker) |
 | `mcp.steroid.storage.path` | (empty) | Custom storage path (default: `~/.mcp-steroid/runs/`) |
 
