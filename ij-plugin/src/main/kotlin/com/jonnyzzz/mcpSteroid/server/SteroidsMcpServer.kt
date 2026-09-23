@@ -3,9 +3,11 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.util.registry.Registry
 import com.jonnyzzz.mcpSteroid.aiAgents.claudeMcpAddCommand
 import com.jonnyzzz.mcpSteroid.mcp.*
@@ -24,6 +26,7 @@ import kotlinx.coroutines.*
 import org.jetbrains.annotations.TestOnly
 import java.net.BindException
 import java.net.ServerSocket
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
@@ -107,7 +110,13 @@ class SteroidsMcpServer(
                 OpenProjectToolSpec(includeBackendName = false) { tools.handler<OpenProjectToolHandler>() }
             )
 
-            val configuredPort = Registry.intValue("mcp.steroid.server.port")
+            val portKey = Registry.get("mcp.steroid.server.port")
+            val pinned = PortPins.pinnedPort(
+                PortPins.pinsFile(Path.of(System.getProperty("user.home"))),
+                PathManager.getPluginsPath(),
+                SystemInfo.isWindows,
+            )
+            val configuredPort = PortPins.resolve(portKey.isChangedFromDefault(), portKey.asInteger(), pinned)
 
             // By default, bind to localhost only per MCP security requirements.
             // For Docker testing, set mcp.steroid.server.host to "0.0.0.0"
