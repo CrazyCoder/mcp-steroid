@@ -26,7 +26,7 @@ element has these attributes, and the live `Component` as user data under `"comp
 |---|---|
 | `class` | Simple class name: `ActionButton`, `JButton`, `SeTextField` |
 | `javaclass` | Fully qualified class name |
-| `classhierarchy` | Class and superclasses, space-separated: match with `contains(@classhierarchy,'javax.swing.JTree')` |
+| `classhierarchy` | Superclasses up to `JComponent`, joined with ` -> `, without the class itself: `contains(@classhierarchy,'javax.swing.JTree') or @javaclass='javax.swing.JTree'` |
 | `accessiblename` | Accessible name: button labels, tool window names, tree descriptions |
 | `tooltiptext` | Tooltip, often a full file path or the action name |
 | `visible_text` | Text the component paints: tree and list rows, tabs, editor text. Separate strings are joined with a double-pipe separator, which `uiSnapshot` below splits on |
@@ -110,8 +110,9 @@ component to read its text, so a whole Settings window takes seconds and a small
 ## Drive a dialog in one call
 
 Open the window with `invokeLater` and return from the lambda, then wait for it in the script. Find the new
-window by its content: titles and window classes differ between versions. In 2026.2, Settings is a
-non-modal frame titled `Settings – <project>`, not a `JDialog`.
+window by its content, not by title or window class. Settings, for one, opens either as a modal
+`JDialog` or as a non-modal frame titled `Settings – <project>`, depending on a user preference and the
+current modality.
 
 Send input with `Component.dispatchEvent` on the EDT. It reaches the component directly, so it works while
 the IDE is in the background and never moves the user's mouse. Events posted to the event queue instead
@@ -221,7 +222,8 @@ println(rows.collectExpandedPaths().take(20).joinToString("\n") { "${it.row}: ${
 println("Selected: " + rows.collectSelectedPaths().map { it.path })
 ```
 
-`JListTextFixture(robot, list).contents()` and `JTableTextFixture(robot, table)` work the same way. To click
+`JListTextFixture(robot, list).contents()` and `JTableTextFixture(robot, table).contents()` return list and
+table rows the same way. To click
 a row, take its bounds from `tree.getRowBounds(row)` or `list.getCellBounds(i, i)` and dispatch the click to
 the tree or list at that point.
 
