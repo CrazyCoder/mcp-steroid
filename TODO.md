@@ -360,3 +360,10 @@
   stderr. Left as is deliberately: the parsed flag has no other consumer, `@argfile` is not a documented
   devrig invocation form, and the alternative is a logback `reset()` + `JoranConfigurator` re-read after
   parsing. Pick that up only if a real client trips on it.
+
+- [ ] **Screenshot metadata from the remote-driver UI model**. `screenshot-tree.md` lists class names and the
+  text of labels, buttons and text fields only. The Performance Testing plugin's `XpathDataModelCreator`
+  (taught in `mcp-steroid://ide/ui-driving`) adds accessible names, tooltips and painted text: tree and list
+  rows, tabs, editor text. Using it in `SwingComponentTreeProvider` means plugin code against an internal
+  module of a bundled plugin, with a fallback for when that plugin is disabled. Decide after seeing how
+  agents use the recipe.

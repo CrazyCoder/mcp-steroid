@@ -55,6 +55,12 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 | `mcp-steroid://ide/run-configuration` | Run Configuration | List and execute run configs |
 | `mcp-steroid://ide/demo-debug-test` | Demo Debug Test | End-to-end debug run with test results |
 
+### IDE UI
+
+| Resource | Operation | Description |
+|----------|-----------|-------------|
+| `mcp-steroid://ide/ui-driving` | Drive UI Controls | Snapshot the Swing UI, find controls with XPath, click, type and close dialogs in one call |
+
 ## Usage
 
 1. Read a specific example resource to get the complete code snippet.
@@ -81,6 +87,7 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 - Code Hygiene: `verify-after-edit`, `jps-build-errors`, `module-inspection-sweep`, `optimize-imports`, `inspect-and-fix`, `inspection-summary`, `find-duplicates`
 - Navigation & Generation: `generate-override`, `hierarchy-search`, `call-hierarchy`, `generate-constructor`
 - Project Intelligence: `project-dependencies`, `project-search`, `run-configuration`
+- IDE UI: `ui-driving`
 
 See `mcp-steroid://ide/<id>` for specific examples (e.g., `mcp-steroid://ide/extract-method`)
 

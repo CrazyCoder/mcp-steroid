@@ -141,6 +141,8 @@ until the dialog closes. Read or press the dialog's components on
 `Dispatchers.EDT + ModalityState.any().asContextElement()` (UI-only: never change PSI/VFS/project model
 there), or click it with `steroid_input`. Open a dialog with `invokeLater { … }` and return — answer it in
 the next call, never wait for it in the same script: you cannot answer while your own call is waiting.
+A script can also drive a dialog it opened itself, finding controls by name or painted text: see
+`mcp-steroid://ide/ui-driving`.
 When `timeout` expires, the dialogs opened during the run are closed (named in the result, as are all dialogs
 the default mode closes), and the call returns even if the script ignores cancellation — it is then left
 running, with its thread + coroutine dump in `timeout-dump.txt` in the execution folder.
