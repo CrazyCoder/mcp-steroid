@@ -151,31 +151,22 @@ class ScriptClassLoaderFactoryTest : BasePlatformTestCase() {
         // splitting, or serves as a canary if ideClasspath() logic changes.
         val ideEntries = scriptClassLoaderFactory.ideClasspath().map { it.normalize() }.toSet()
 
-        val missingJars = mutableListOf<String>()
-        for (descriptor in com.intellij.ide.plugins.PluginManagerCore.loadedPlugins) {
-            if (!com.intellij.ide.plugins.PluginManagerCore.isLoaded(descriptor.pluginId)) continue
-
-            val contentModules = try {
-                descriptor::class.java.getMethod("getContentModules").invoke(descriptor) as? List<*>
-            } catch (_: NoSuchMethodException) {
-                null
-            } ?: continue
-
-            for (cm in contentModules) {
-                val loader = try {
-                    cm!!::class.java.getMethod("getPluginClassLoader").invoke(cm)
-                        as? com.intellij.util.lang.UrlClassLoader
-                } catch (_: Exception) {
-                    null
-                } ?: continue
-
-                for (file in loader.files) {
-                    if (java.nio.file.Files.exists(file) && file.normalize() !in ideEntries) {
-                        missingJars += "${descriptor.pluginId} -> $file"
-                    }
-                }
+        // Content modules often share one loader (the sandbox folds 1000+ modules into a single
+        // loader of 1400+ files), so visit each loader and each file once; checking every file
+        // of every module took 50 s on Windows.
+        val visitedLoaders = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ClassLoader, Boolean>())
+        val ownerByFile = LinkedHashMap<Path, String>()
+        for (descriptor in PluginManagerCore.loadedPlugins) {
+            if (!PluginManagerCore.isLoaded(descriptor.pluginId)) continue
+            for (cm in descriptor.contentModules) {
+                val loader = cm.pluginClassLoader as? com.intellij.util.lang.UrlClassLoader ?: continue
+                if (!visitedLoaders.add(loader)) continue
+                for (file in loader.files) ownerByFile.putIfAbsent(file.normalize(), descriptor.pluginId.idString)
             }
         }
+        val missingJars = ownerByFile
+            .filter { (file, _) -> file !in ideEntries && Files.exists(file) }
+            .map { (file, pluginId) -> "$pluginId -> $file" }
 
         assertTrue(
             "ideClasspath() is missing ${missingJars.size} JARs from plugin content modules.\n" +
