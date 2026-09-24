@@ -251,11 +251,17 @@ abstract class KtBlockCompilationTestBase {
             }
         }
 
+        /**
+         * Every jar under [home] except those in a `lib/rt` folder. `lib/rt` holds jars for processes the
+         * IDE starts (IDEA's has `xml-apis.jar`, a DOM Level 2 `org.w3c.dom` without `Node.getUserData`),
+         * and no IDE classloader loads them, so a script compiled at runtime never sees them either.
+         */
         private fun classpathFor(home: String): List<Path> {
             return classpathCache.getOrPut(home) {
-                Path.of(home)
-                    .walk()
+                val root = Path.of(home)
+                root.walk()
                     .filter { it.isRegularFile() && it.name.endsWith(".jar") }
+                    .filterNot { jar -> root.relativize(jar).map { it.toString() }.windowed(2).contains(listOf("lib", "rt")) }
                     .toList()
             }
         }
