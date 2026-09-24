@@ -523,6 +523,8 @@ contentRoots.forEach { root ->
 Use `runInspectionsDirectly()` for reliable inspection results - it bypasses the daemon's focus-dependent caching:
 
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 val file = requireNotNull(findProjectFile("src/main/kotlin/MyClass.kt")) { "File not found" }
 
 // Recommended: bypasses daemon, works regardless of window focus
@@ -531,9 +533,12 @@ val problems = runInspectionsDirectly(file)
 if (problems.isEmpty()) {
     println("No problems found!")
 } else {
-    problems.forEach { (inspectionId, descriptors) ->
-        descriptors.forEach { problem ->
-            println("[$inspectionId] ${problem.descriptionTemplate}")
+    readAction {
+        problems.forEach { (inspectionId, descriptors) ->
+            descriptors.forEach { problem ->
+                // The template holds placeholders such as <code>#ref</code>; render it for the text the user sees.
+                println("[$inspectionId] ${ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)}")
+            }
         }
     }
 }

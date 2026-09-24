@@ -174,6 +174,8 @@ waitForSmartMode()
 ```
 **Phase 4: Verify compilation before running tests (~5s vs 90s for Maven)**
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 // Run IDE inspection on all newly created files — much faster than ./mvnw test-compile
 for (path in listOf(
     "src/main/java/eval/sample/security/JwtService.java",
@@ -183,7 +185,7 @@ for (path in listOf(
     val vf = findProjectFile(path) ?: run { println("NOT FOUND: $path"); continue }
     val problems = runInspectionsDirectly(vf)
     if (problems.isEmpty()) println("OK: $path")
-    else problems.forEach { (id, d) -> d.forEach { println("[$id] $path: ${it.descriptionTemplate}") } }
+    else problems.forEach { (id, d) -> d.forEach { println("[$id] $path: ${readAction { ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement) }}") } }
 }
 // Only if all OK: proceed to Maven test run
 ```
@@ -478,11 +480,13 @@ repo?.methods?.forEach { method ->
 > **Rule**: Inspect every file you **modify** — not just files you **create**. The most common undetected error pattern is: inspections pass on all newly created files, but the modified repository has a subtly invalid method name that causes a 90+ second Maven test failure. Catching it with `runInspectionsDirectly` (~5s) prevents that wasted turn.
 
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 // After modifying a Spring Data JPA repository (adding new findBy... methods):
 val repoVf = findProjectFile("src/main/java/com/example/CommentRepository.java")!!
 val problems = runInspectionsDirectly(repoVf)
 if (problems.isEmpty()) println("OK: repository methods are valid")
-else problems.forEach { (id, d) -> d.forEach { println("[$id] ${it.descriptionTemplate}") } }
+else problems.forEach { (id, d) -> d.forEach { println("[$id] ${readAction { ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement) }}") } }
 // Spring Data Plugin reports: SpringDataMethodInconsistency, invalid derived query names, etc.
 // Example valid derived queries for a Comment entity with Feature and ParentComment fields:
 //   findByFeature_Code(String code)       → traverses Comment.feature.code
@@ -492,6 +496,8 @@ else problems.forEach { (id, d) -> d.forEach { println("[$id] ${it.descriptionTe
 
 **Batch: inspect multiple modified files at once**
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 // Inspect both modified file AND newly created files in a single call
 for (path in listOf(
     "src/main/java/com/example/CommentRepository.java",   // ← MODIFIED (added findBy methods)
@@ -501,7 +507,7 @@ for (path in listOf(
     val vf = findProjectFile(path) ?: run { println("NOT FOUND: $path"); continue }
     val problems = runInspectionsDirectly(vf)
     if (problems.isEmpty()) println("OK: $path")
-    else problems.forEach { (id, d) -> d.forEach { println("[$id] $path: ${it.descriptionTemplate}") } }
+    else problems.forEach { (id, d) -> d.forEach { println("[$id] $path: ${readAction { ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement) }}") } }
 }
 ```
 
@@ -1073,6 +1079,7 @@ println(result.inputStream.bufferedReader().readText())
 **`VfsUtil.saveText()` replaces the ENTIRE file** — if you only need to add one method, use PSI surgery instead. This avoids overwriting code you haven't read and reduces the risk of accidentally losing other methods.
 
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.psi.JavaPsiFacade
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.psi.search.GlobalSearchScope
@@ -1100,7 +1107,7 @@ if (psiClass != null) {
     // Run inspection to verify syntax
     val vf = psiClass.containingFile.virtualFile
     val problems = runInspectionsDirectly(vf)
-    if (problems.isEmpty()) println("No compile errors") else problems.forEach { (id, ds) -> ds.forEach { println("[$id] ${it.descriptionTemplate}") } }
+    if (problems.isEmpty()) println("No compile errors") else problems.forEach { (id, ds) -> ds.forEach { println("[$id] ${readAction { ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement) }}") } }
 } else println("Class not found — check the FQN")
 ```
 
@@ -1890,6 +1897,8 @@ withTimeout(5.minutes) { result.await() }
 > to catch Spring startup failures in ~5s instead of waiting for a 90s Maven cold-start.
 
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 // Faster than 'mvn test' — returns IDE inspection results in seconds
 // Run this after creating/modifying files, BEFORE running ./mvnw test
 val vf = findProjectFile("src/main/java/com/example/Product.java")!!
@@ -1898,7 +1907,7 @@ if (problems.isEmpty()) {
     println("No problems found — safe to run tests")
 } else {
     problems.forEach { (id, descs) ->
-        descs.forEach { println("[$id] ${it.descriptionTemplate}") }
+        descs.forEach { println("[$id] ${readAction { ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement) }}") }
     }
     println("Fix the above errors before running tests")
 }
@@ -1911,7 +1920,7 @@ for (depPath in listOf(
     val depProblems = runInspectionsDirectly(depVf)
     if (depProblems.isNotEmpty()) {
         println("Problems in $depPath:")
-        depProblems.forEach { (id, descs) -> descs.forEach { println("  [$id] ${it.descriptionTemplate}") } }
+        depProblems.forEach { (id, descs) -> descs.forEach { println("  [$id] ${readAction { ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement) }}") } }
     }
 }
 ```

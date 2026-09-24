@@ -263,6 +263,8 @@ println(String(appProps.contentsToByteArray(), appProps.charset))
 ### IDE Utilities
 
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 // IDE utilities:
 waitForSmartMode()                        // Wait for indexing; asserts non-modal (auto under modal=smart_non_modal)
 closeModalDialogs()                       // Close leftover modal dialogs now (returns count; auto under smart_non_modal)
@@ -287,7 +289,7 @@ if (buildFile != null) {
             descriptors.map { descriptor ->
                 mapOf(
                     "toolId" to toolId,
-                    "message" to descriptor.descriptionTemplate,
+                    "message" to ProblemDescriptorUtil.renderDescriptionMessage(descriptor, descriptor.psiElement),
                     "elementText" to (descriptor.psiElement?.text ?: "")
                 )
             }

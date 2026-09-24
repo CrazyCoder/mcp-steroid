@@ -105,7 +105,8 @@ val result = readAction {
                             if (problemCount <= 10) {
                                 val probOffset = problem.psiElement?.textOffset ?: 0
                                 val probLine = document.getLineNumber(probOffset) + 1
-                                appendLine("  Line $probLine: ${problem.descriptionTemplate.take(60)}")
+                                val message = ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)
+                                appendLine("  Line $probLine: ${message.take(60)}")
 
                                 // List available fixes
                                 val fixes = problem.fixes

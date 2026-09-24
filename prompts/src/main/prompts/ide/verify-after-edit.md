@@ -54,6 +54,7 @@ the check you intended.
 ## File inspection DTO pattern
 
 ```kotlin[AI,IC,IU]
+import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.openapi.fileEditor.FileDocumentManager
 
 val targetPath = "src/main/java/com/example/Foo.java" // TODO: changed file
@@ -86,7 +87,7 @@ val findings = readAction {
                 "toolId" to toolId,
                 "path" to (file?.path ?: vf.path),
                 "line" to line,
-                "message" to descriptor.descriptionTemplate,
+                "message" to ProblemDescriptorUtil.renderDescriptionMessage(descriptor, element),
                 "elementText" to (element?.text ?: ""),
             )
         }

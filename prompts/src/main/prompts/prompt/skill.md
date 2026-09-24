@@ -315,6 +315,8 @@ The IDE has hundreds of inspections — `DuplicatedCode`, `RedundantCast`, `Unus
 **Pitfall — do not `printJson(result)` from `runInspectionsDirectly`.** The result is Map-compatible for legacy callers, but each `ProblemDescriptor` carries live PSI/VFS objects and can recurse through Jackson. Snapshot the descriptors under a read action, include `failedTools`, and compute an explicit status:
 
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 val vf = findProjectFile("src/main/java/com/example/Foo.java") ?: error("file not found")
 val result = runInspectionsDirectly(vf)
 
@@ -323,7 +325,7 @@ val findings = readAction {
         descriptors.map { descriptor ->
             mapOf(
                 "toolId" to toolId,
-                "message" to descriptor.descriptionTemplate,
+                "message" to ProblemDescriptorUtil.renderDescriptionMessage(descriptor, descriptor.psiElement),
                 "elementText" to (descriptor.psiElement?.text ?: "")
             )
         }

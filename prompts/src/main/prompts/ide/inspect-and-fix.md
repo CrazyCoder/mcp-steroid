@@ -16,6 +16,7 @@ inspection with its short-name (e.g. `UnusedDeclaration`, `RedundantCast`,
 import com.intellij.codeInspection.CommonProblemDescriptor
 import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
+import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.codeInspection.QuickFix
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.openapi.progress.EmptyProgressIndicator
@@ -78,7 +79,7 @@ if (problems.isEmpty()) {
 
 val problemInfo = readAction {
     val firstProblem = problems.first()
-    val description = firstProblem.descriptionTemplate
+    val description = ProblemDescriptorUtil.renderDescriptionMessage(firstProblem, firstProblem.psiElement)
     val fix = firstProblem.fixes?.firstOrNull()
     ProblemInfo(firstProblem, description, fix, fix?.name)
 }
@@ -145,6 +146,7 @@ call (`PsiManager`, the profile manager, `smartReadAction`):
 ```kotlin
 import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
+import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.ProjectManager
@@ -187,7 +189,9 @@ val problems: List<ProblemDescriptor> = smartReadAction(target) {
 }
 
 println("Found ${problems.size} problem(s) in ${target.name}:$filePath")
-problems.take(10).forEach { println("- ${it.descriptionTemplate}") }
+readAction {
+    problems.take(10).forEach { println("- ${ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement)}") }
+}
 ```
 
 Applying a quick fix in the other project works exactly like the main recipe — substitute

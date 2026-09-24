@@ -355,6 +355,8 @@ println("NEXT_MIGRATION=V" + nextVersion)
 
 **Note**: The daemon analyzes only the active project window, so `getHighlightsWhenReady()` needs it in front (`ProjectUtil.focusProjectWindow(project, true)` on the EDT); on a timeout it returns the last analysis with a warning. `runInspectionsDirectly()` works in any window but runs local inspections only, without the unused-symbol pass.
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 // RECOMMENDED - Reliable regardless of window focus
 val file = requireNotNull(findProjectFile("src/main/kotlin/MyClass.kt")) { "File not found" }
 
@@ -363,15 +365,19 @@ val problems = runInspectionsDirectly(file)
 if (problems.isEmpty()) {
     println("No problems found!")
 } else {
-    problems.forEach { (inspectionId, descriptors) ->
-        descriptors.forEach { problem ->
-            val element = problem.psiElement
-            val line = if (element != null) {
-                val doc = com.intellij.psi.PsiDocumentManager.getInstance(project)
-                    .getDocument(element.containingFile)
-                doc?.getLineNumber(element.textOffset)?.plus(1) ?: "?"
-            } else "?"
-            println("[$inspectionId] Line $line: ${problem.descriptionTemplate}")
+    readAction {
+        problems.forEach { (inspectionId, descriptors) ->
+            descriptors.forEach { problem ->
+                val element = problem.psiElement
+                val line = if (element != null) {
+                    val doc = com.intellij.psi.PsiDocumentManager.getInstance(project)
+                        .getDocument(element.containingFile)
+                    doc?.getLineNumber(element.textOffset)?.plus(1) ?: "?"
+                } else "?"
+                // The template holds placeholders such as <code>#ref</code>; render it for the text the user sees.
+                val message = ProblemDescriptorUtil.renderDescriptionMessage(problem, element)
+                println("[$inspectionId] Line $line: $message")
+            }
         }
     }
 }

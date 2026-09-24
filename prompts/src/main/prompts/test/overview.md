@@ -251,12 +251,15 @@ println("Compile errors: ${result.hasErrors()}, aborted: ${result.isAborted()}")
 
 Run this BEFORE `./mvnw` to catch errors early:
 ```kotlin
+import com.intellij.codeInspection.ProblemDescriptorUtil
+
 val vf = findProjectFile("src/main/java/com/example/NewClass.java")!!
 val result = runInspectionsDirectly(vf)
 val findings = readAction {
     result.entries.flatMap { (id, descs) ->
         descs.map { descriptor ->
-            mapOf("toolId" to id, "message" to descriptor.descriptionTemplate)
+            val message = ProblemDescriptorUtil.renderDescriptionMessage(descriptor, descriptor.psiElement)
+            mapOf("toolId" to id, "message" to message)
         }
     }
 }

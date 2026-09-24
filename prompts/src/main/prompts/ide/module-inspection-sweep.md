@@ -12,6 +12,7 @@ reference graph, such as some unused-declaration analyses. For those, use the
 IDE UI or a dedicated, reviewed public recipe when one exists.
 
 ```kotlin[AI,IC,IU]
+import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.roots.ModuleRootManager
@@ -94,7 +95,7 @@ for (file in files) {
                     "toolId" to toolId,
                     "path" to vf.path,
                     "line" to line,
-                    "message" to descriptor.descriptionTemplate,
+                    "message" to ProblemDescriptorUtil.renderDescriptionMessage(descriptor, element),
                     "elementText" to (element?.text ?: ""),
                 )
             }
