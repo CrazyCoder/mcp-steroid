@@ -102,6 +102,7 @@ class ProcessAiAgentCliRunner(
         } else {
             Files.createTempFile("devrig-agent-cli-", ".out")
         }
+        var interrupted = false
         try {
             val process = try {
                 ProcessBuilder(listOf(invocation.binary) + invocation.args)
@@ -117,7 +118,7 @@ class ProcessAiAgentCliRunner(
             } catch (e: InterruptedException) {
                 // A live child keeps the output file open, and Windows then refuses to delete it.
                 killProcessTreeAndAwait(process, invocation.binary)
-                Thread.currentThread().interrupt()
+                interrupted = true
                 throw e
             }
             if (!finished) {
@@ -130,11 +131,13 @@ class ProcessAiAgentCliRunner(
             return AiAgentCliResult(process.exitValue(), Files.readString(outputFile, Charsets.UTF_8))
         } finally {
             deleteOutputFileWithRetry(outputFile)
+            // Re-set after the delete: a set flag makes the delete's retry sleep throw and give up.
+            if (interrupted) Thread.currentThread().interrupt()
         }
     }
 
     /**
-     * Forcibly kills the timed-out child AND its descendants, then waits (bounded) for them
+     * Forcibly kills the child AND its descendants, then waits (bounded) for them
      * to actually die. `destroyForcibly()` only INITIATES the kill, and the child's stdout IS
      * an open handle on the redirect file; NTFS refuses to delete a file with an open handle
      * (POSIX unlink-while-open is fine) — deleting in `finally` while the tree was still going
@@ -143,8 +146,8 @@ class ProcessAiAgentCliRunner(
      * child's death (relevant once jonnyzzz/mcp-steroid#342 wraps `.cmd` shims in `cmd.exe`).
      * All waits share ONE [KILL_WAIT_MS] deadline, so a kill-resistant tree cannot re-introduce
      * the unbounded hang this runner exists to prevent. An interrupt while waiting re-sets the
-     * interrupt flag and returns, so the caller still throws the documented timeout
-     * [IllegalStateException].
+     * interrupt flag and returns, so the caller still throws its own exception: the timeout
+     * [IllegalStateException] or the [InterruptedException] of an interrupted wait.
      */
     private fun killProcessTreeAndAwait(process: Process, binary: String) {
         // snapshot BEFORE killing the parent — the kill re-parents children, emptying descendants()
@@ -170,7 +173,7 @@ class ProcessAiAgentCliRunner(
                     )
                 } catch (e: ExecutionException) {
                     // onExit() should never complete exceptionally; log defensively, never rethrow —
-                    // the caller's timeout IllegalStateException must win
+                    // the caller's own exception must win
                     System.err.println(
                         "[mcp-steroid] failed to await killed descendant pid=${handle.pid()} of '$binary': $e",
                     )

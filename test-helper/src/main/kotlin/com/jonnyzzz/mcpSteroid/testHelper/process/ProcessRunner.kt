@@ -70,8 +70,8 @@ private val isWindowsHost = System.getProperty("os.name").startsWith("Windows", 
 
 /**
  * On Windows, Java joins the arguments into one command line and wraps an argument with spaces in quotes, but
- * it does not escape the double quotes inside it, so `docker exec ... bash -c '<script with "quotes">'` reaches
- * docker split in the wrong places. An argument with a double quote is quoted here instead; Java passes an
+ * it does not escape the double quotes inside it, so a `bash -c` script argument containing double quotes reaches
+ * `docker exec` split in the wrong places. An argument with a double quote is quoted here instead; Java passes an
  * already quoted argument through unchanged.
  */
 private fun toHostCommandLineArg(arg: String): String =
