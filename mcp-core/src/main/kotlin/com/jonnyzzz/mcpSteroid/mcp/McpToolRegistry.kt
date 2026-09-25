@@ -44,9 +44,6 @@ class McpToolRegistry : McpToolRegistrar {
      * Call a tool by name.
      */
     suspend fun callTool(params: ToolCallParams, session: McpSession): ToolCallResult {
-        val textParams = jsonToLogMessages.encodeToString(params.rawArguments)
-        log.info("callTool with parameters: $textParams")
-
         val progressToken = params.rawArguments["arguments"]
             ?.jsonObject
             ?.get("_meta")
@@ -81,6 +78,9 @@ class McpToolRegistry : McpToolRegistrar {
      * notifications. The Split Mode backend bridge streams these lines to the frontend.
      */
     suspend fun callTool(params: ToolCallParams, session: McpSession, progress: McpProgressReporter): ToolCallResult {
+        val textParams = jsonToLogMessages.encodeToString(params.rawArguments)
+        log.info("callTool with parameters: $textParams")
+
         val tool = tools[params.name]
             ?: return ToolCallResult(
                 content = listOf(ContentItem.Text(text = "Tool not found: ${params.name}")),
