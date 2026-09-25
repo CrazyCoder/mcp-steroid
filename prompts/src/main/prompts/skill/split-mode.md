@@ -81,7 +81,7 @@ Many action IDs exist on both sides. In the client, those that do project work (
 - **Editors.** A file the backend opens in `FileEditorManager` opens in the client. Document edits and caret
   moves on the backend show up there, but not at once: text typed with `steroid_input` right after a
   backend caret move can land at the old caret. Read the caret in a `side=frontend` script before typing.
-- **Tool windows whose content the backend draws**, such as the Commit tool window in 2026.1, hold a
+- **Tool windows whose content the backend draws**, such as the Commit tool window, hold a
   `LuxFrontendPanel` in the client, and the client's focus owner is that panel. Read the focused control and
   the other controls from a backend script. Keys pressed in the client reach them.
 - **Dialogs** that a backend script or action opens appear in the client as a modal dialog that holds only
