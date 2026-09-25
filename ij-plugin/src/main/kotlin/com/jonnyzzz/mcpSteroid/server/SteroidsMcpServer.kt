@@ -13,6 +13,9 @@ import com.jonnyzzz.mcpSteroid.aiAgents.claudeMcpAddCommand
 import com.jonnyzzz.mcpSteroid.mcp.*
 import com.jonnyzzz.mcpSteroid.prompts.generated.McpSteroidInfoPrompt
 import com.jonnyzzz.mcpSteroid.prompts.generated.prompt.SkillPromptArticle
+import com.jonnyzzz.mcpSteroid.server.split.RoutedTool
+import com.jonnyzzz.mcpSteroid.server.split.activeSplitFrontendBridge
+import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 import com.jonnyzzz.mcpSteroid.updates.analyticsBeacon
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -90,6 +93,30 @@ class SteroidsMcpServer(
         }
     )
 
+    /**
+     * Registers all MCP tools explicitly (no extension point). Also called by the Split Mode
+     * backend bridge, which runs forwarded calls through this registry without the HTTP server.
+     *
+     * mcp-steroid:// articles are NOT exposed via resources/list or prompts/list — the
+     * steroid_fetch_resource tool is the only path because it requires project_name for correct
+     * IDE-conditional rendering. The in-IDE plugin is a single backend, so its steroid_open_project
+     * advertises NO `backend_name` routing param (includeBackendName = false). devrig registers its
+     * own backend_name-carrying spec.
+     *
+     * Every tool is wrapped in [RoutedTool], which forwards backend-side tools in a Split Mode frontend.
+     */
+    fun ensureToolsRegistered() {
+        startupLock.withLock {
+            if (!toolsRegistered.compareAndSet(false, true)) return
+            val tools = service<McpSteroidToolsIJ>()
+            val specs = tools.commonToolSpecs() +
+                OpenProjectToolSpec(includeBackendName = false) { tools.handler<OpenProjectToolHandler>() }
+            specs.forEach { spec ->
+                mcpServer.toolRegistry.registerTool(RoutedTool(spec, ::currentSplitRole, ::activeSplitFrontendBridge))
+            }
+        }
+    }
+
     fun startServerIfNeeded() {
         // Fast check without lock
         if (port > 0) return
@@ -99,20 +126,7 @@ class SteroidsMcpServer(
             // Double-check after acquiring lock
             if (port > 0) return
 
-            // Register all MCP tools explicitly (no extension point).
-            // mcp-steroid:// articles are NOT exposed via resources/list or
-            // prompts/list — the steroid_fetch_resource tool is the only path
-            // because it requires project_name for correct IDE-conditional rendering.
-            // The in-IDE plugin is a single backend, so its steroid_open_project advertises
-            // NO `backend_name` routing param (includeBackendName = false). devrig registers its
-            // own backend_name-carrying spec. registerAll() no longer registers open_project.
-            if (toolsRegistered.compareAndSet(false, true)) {
-                val tools = service<McpSteroidToolsIJ>()
-                tools.registerAll(mcpServer)
-                mcpServer.toolRegistry.registerTool(
-                    OpenProjectToolSpec(includeBackendName = false) { tools.handler<OpenProjectToolHandler>() }
-                )
-            }
+            ensureToolsRegistered()
 
             val pinned = PortPins.pinnedPort(
                 PortPins.pinsFile(Path.of(System.getProperty("user.home"))),

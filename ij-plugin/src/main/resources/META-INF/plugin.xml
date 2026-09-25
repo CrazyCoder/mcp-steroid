@@ -35,6 +35,11 @@
             name="screenshotMetadataProvider"
             interface="com.jonnyzzz.mcpSteroid.vision.ScreenshotMetadataProvider"
             dynamic="true"/>
+        <!-- Split Mode frontend -> backend bridge, implemented by the mcp-steroid.frontend content module -->
+        <extensionPoint
+            qualifiedName="com.jonnyzzz.mcpSteroid.splitFrontendBridge"
+            interface="com.jonnyzzz.mcpSteroid.server.split.SplitFrontendBridge"
+            dynamic="true"/>
     </extensionPoints>
 
     <!-- MCP tools, resources, and prompts are wired explicitly in McpToolRegistrations.kt -->
