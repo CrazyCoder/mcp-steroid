@@ -227,6 +227,11 @@ table rows the same way. To click
 a row, take its bounds from `tree.getRowBounds(row)` or `list.getCellBounds(i, i)` and dispatch the click to
 the tree or list at that point.
 
+A list or tree popup (`ListPopupImpl`, `TreePopupImpl`) picks its row on hover, not on the press: it ignores a
+press on any row but the selected one, and it ignores the first mouse move it sees. Before the click, dispatch
+two `MOUSE_MOVED` events to the list at different points, the second at the row. `steroid_input` clicks do
+this for you.
+
 ## Close what you opened
 
 Escape does not close a popup when the event reaches the component directly: popups handle it through the
