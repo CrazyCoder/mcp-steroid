@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.koltinc
 
+import com.intellij.diagnostic.PluginException
 import com.intellij.ide.plugins.IdeaPluginDescriptor
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.plugins.contentModules
@@ -100,6 +101,8 @@ class ScriptClassLoaderFactory {
                         return loader.loadClass(name)
                     } catch (_: ClassNotFoundException) {
                         //nop
+                    } catch (_: PluginException) {
+                        //nop
                     }
                 }
 
@@ -113,6 +116,9 @@ class ScriptClassLoaderFactory {
                         break
                     } catch (_: ClassNotFoundException) {
                         //nop
+                    } catch (_: PluginException) {
+                        // A main plugin loader refuses a class from one of its content modules' packages;
+                        // the content module's own loader comes later in the candidates.
                     }
                 }
 

@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.koltinc
 
+import com.intellij.diagnostic.PluginException
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.plugins.contentModules
 import com.intellij.testFramework.common.timeoutRunBlocking
@@ -119,6 +120,23 @@ class ScriptClassLoaderFactoryTest : BasePlatformTestCase() {
             contentCl,
             loaded.classLoader,
         )
+    }
+
+    fun testIdeDelegateSkipsLoaderThatRefusesContentModuleClass(): Unit = timeoutRunBlocking(30.seconds) {
+        // A plugin's main PluginClassLoader throws PluginException, not ClassNotFoundException, for a
+        // class in one of its content modules' packages. In a JetBrains Client the Performance Testing
+        // main loader is asked before its remoteDriver content module, and the exception failed the script.
+        val root = Files.createTempDirectory("ide-cl-refuse")
+        val contentJar = createSyntheticClassJar(root, "content.jar", "ScriptClassLoaderRefusedRegression")
+        val refusing = object : ClassLoader(null) {
+            override fun loadClass(name: String, resolve: Boolean): Class<*> =
+                throw PluginException("must not be requested from main classloader", null)
+        }
+        val contentCl = URLClassLoader(arrayOf(contentJar.toUri().toURL()), null)
+
+        val delegate = scriptClassLoaderFactory.newIdeDelegateLoaderForTests(listOf(refusing, contentCl))
+        val loaded = delegate.loadClass("ScriptClassLoaderRefusedRegression")
+        assertSame(contentCl, loaded.classLoader)
     }
 
     fun testIdeClasspathContainsContentModuleClasses(): Unit = timeoutRunBlocking(30.seconds) {
