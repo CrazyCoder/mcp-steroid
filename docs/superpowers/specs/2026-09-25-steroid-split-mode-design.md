@@ -116,8 +116,9 @@ interface SteroidBridgeApi : RemoteApi<Unit> {
   execution storage point at the process that ran the code.
 - **Markers.** They gain `role` with the same values. It replaces
   `remoteDevelopmentBackend`, which nothing reads. JetDesk (sub-project 2) uses
-  `role` to register the frontend endpoint and skip the backend one in Split
-  Mode.
+  `role` to register the frontend endpoint as the agent's endpoint in Split
+  Mode, and the backend one only on request (see
+  [Direct backend endpoint](#direct-backend-endpoint)).
 
 ## Errors
 
@@ -126,6 +127,28 @@ interface SteroidBridgeApi : RemoteApi<Unit> {
   says the backend is not connected. It never hangs.
 - An unknown tool name in `ToolRouter` fails loudly. It never falls back to
   running locally.
+
+## Direct backend endpoint
+
+The backend keeps its own MCP endpoint in Split Mode and writes a marker with
+`role` `backend`. It is a troubleshooting path for when the frontend cannot
+reach the backend: a broken or reconnecting Remote Development connection makes
+every forwarded tool fail with "backend not connected", and only a direct
+connection can still run code there to inspect the session state, logs, threads
+and open projects.
+
+- The plugin needs no change for this. The endpoint and its marker exist on
+  every backend.
+- JetDesk (sub-project 2) never registers it by default. The agent keeps one
+  endpoint. On request, JetDesk registers it as a second, separately named
+  server (for example `mcp-steroid-backend`).
+- When the backend runs on the agent's machine, JetDesk reads the URL from the
+  backend marker. When it is remote, the endpoint listens on that machine's
+  localhost: the agent runs there, or reaches it through an SSH tunnel. JetDesk
+  documents the tunnel and does not set it up.
+- The backend is headless. `execute_code`, `list_projects` and `open_project`
+  work there. `take_screenshot`, `input` and `list_windows` have no frames to
+  act on. The agent guidance (sub-project 4) says so.
 
 ## Build
 
@@ -216,7 +239,8 @@ Live checks:
 ## Out of scope
 
 - JetDesk discovery of the client's plugins directory, installing on both sides,
-  and `.mcp.json` routing (sub-project 2).
+  and `.mcp.json` routing, including the opt-in direct backend server
+  (sub-project 2).
 - Input on Lux pages, popup menu items, and safe Settings opening
   (sub-project 3).
 - Split-mode prompts and resources for agents, and JetDesk docs (sub-project 4).
