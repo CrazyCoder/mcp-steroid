@@ -31,8 +31,9 @@ import kotlinx.serialization.Serializable
  *
  * This tool initiates opening a project in IntelliJ. A devrig-managed backend cold start may
  * block until MCP is reachable; after forwarding the request, it does NOT wait for the project
- * to fully open. A frontend client can interact with dialogs that appear (such as the trust
- * project dialog) using screenshot/input tools.
+ * to fully open, and it returns while a dialog the open shows is waiting for an answer. A
+ * frontend client can then answer that dialog (such as the trust project dialog) using
+ * screenshot/input tools.
  *
  * The tool can optionally trust the project path before opening, which allows skipping
  * the trust dialog.
@@ -160,6 +161,7 @@ Verification Workflow:
 Dialog Handling:
 - If trust_project=true (default), the trust dialog is skipped automatically
 - Other dialogs (project type, SDK selection, etc.) may still appear in a frontend IDE
+- The call returns while such a dialog waits for an answer, and its result says so
 - When steroid_list_windows reports modalDialogShowing=true, use steroid_take_screenshot + steroid_input"""
 
         val BACKEND_NAME_DESCRIPTION = """Choosing a backend (multiple IDEs):
@@ -205,7 +207,7 @@ interface OpenProjectToolHandler {
 }
 
 val OPEN_PROJECT_VERIFICATION_WORKFLOW = """
-    Project opening initiated. The process runs in the background.
+    The project can still be opening, importing, or indexing after this call returns.
 
     READINESS WORKFLOW:
     1. Poll steroid_list_projects every 2-3 seconds until the target path appears. Keep its opaque project_name
