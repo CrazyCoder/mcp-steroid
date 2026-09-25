@@ -171,6 +171,17 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         .withDefaultValue(ModalMode.SMART_NON_MODAL)
         .registerToSchema()
 
+    /** Read by Split Mode routing from the raw arguments, before the handler runs; the handler ignores it. */
+    val side = InputSchemaElement.param("side")
+        .description(
+            "Split Mode only: where the script runs. 'backend' (default) holds the project model; " +
+                "'frontend' is the JetBrains Client process, for client-only UI state. " +
+                "In a regular IDE both run in the same process."
+        )
+        .cliSynopsis("split mode side: frontend or backend")
+        .enumString(mapOf("frontend" to "frontend", "backend" to "backend"))
+        .registerToSchema()
+
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val projectName = context[projectName]
         val code = context[code]

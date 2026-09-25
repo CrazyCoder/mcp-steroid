@@ -94,7 +94,7 @@ class ToolSpecCliMetadataTest {
     @Test
     fun `asCliParams returns one spec per registered param for execute_code`() {
         assertEquals(
-            listOf("project_name", "code", "task_id", "reason", "timeout", "modal"),
+            listOf("project_name", "code", "task_id", "reason", "timeout", "modal", "side"),
             executeCode.schema.asCliParams().map { it.name },
         )
     }
