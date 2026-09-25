@@ -23,11 +23,11 @@ class McpSteroidIdeTargetsTest {
     }
 
     @Test
-    fun `verifier covers exactly 261 and 262`() {
+    fun `verifier covers exactly 261, 262 and 263`() {
         assertEquals(
             "verifierTargets must enumerate every major the plugin claims to support; " +
                 "missing or extra entries indicate a silent EAP slide.",
-            setOf("261", "262"),
+            setOf("261", "262", "263"),
             McpSteroidIdeTargets.verifierTargets.map { it.major }.toSet(),
         )
     }
@@ -42,6 +42,13 @@ class McpSteroidIdeTargetsTest {
             "262-EAP-SNAPSHOT",
             target!!.version,
         )
+    }
+
+    @Test
+    fun `263 entry uses the named per-major EAP snapshot tag`() {
+        val target = McpSteroidIdeTargets.verifierTargets.singleOrNull { it.major == "263" }
+        assertNotNull("263 verifier entry must exist", target)
+        assertEquals("263-EAP-SNAPSHOT", target!!.version)
     }
 
     @Test

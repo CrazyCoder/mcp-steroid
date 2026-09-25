@@ -6,7 +6,7 @@ package com.jonnyzzz.mcpSteroid.ideDownloader
  *
  * [major] is the platform build-number major (e.g. "261", "262") and acts as
  * the per-major scope — every entry MUST be locked to one major, so a future
- * EAP cut (263) cannot silently take its place inside our verifier matrix.
+ * EAP cut (264) cannot silently take its place inside our verifier matrix.
  *
  * [version] is what the IntelliJ Platform Gradle Plugin / the downloader's
  * products-API resolver consumes. It may be:
@@ -50,12 +50,13 @@ object McpSteroidIdeTargets {
      * deterministic Gradle task naming; the matrix-shape test
      * (`McpSteroidIdeTargetsTest`) enforces the per-major contract.
      *
-     * 262 uses the named EAP tag explicitly so a future 263 EAP cut surfaces
+     * 262 and 263 use the named per-major EAP tags, so a future 264 EAP cut surfaces
      * as a missing-major test failure, not a silent slide.
      */
     val verifierTargets: List<IdeTarget> = listOf(
         IdeTarget(major = "261", version = "2026.1"),
         IdeTarget(major = "262", version = "262-EAP-SNAPSHOT"),
+        IdeTarget(major = "263", version = "263-EAP-SNAPSHOT"),
     )
 
     /** All IDE entries the build cares about, deduplicated. */

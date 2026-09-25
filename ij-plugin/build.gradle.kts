@@ -461,7 +461,7 @@ val verifyBundledKotlinCompatibility = tasks.register<VerifyBundledKotlinCompati
 // bundle. A LinkageError in the forked JVM fails the build at :check time
 // (wired below) and at :verifyPlugin time.
 //
-// One sub-task per verifierTargets entry, so 262 EAP is exercised alongside 261.
+// One sub-task per verifierTargets entry, so every verified major gets its own check.
 val verifyBundledKotlinxRuntimeTasks = McpSteroidIdeTargets.verifierTargets.map { target ->
     tasks.register("verifyBundledKotlinxRuntime${target.major}", VerifyBundledKotlinxRuntimeTask::class) {
         group = "verification"
