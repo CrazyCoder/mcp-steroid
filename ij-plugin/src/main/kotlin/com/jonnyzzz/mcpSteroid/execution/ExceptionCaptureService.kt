@@ -33,8 +33,8 @@ data class CapturedIdeException(
  * Application-level service that captures IDE exceptions from the [Logger].
  *
  * This service installs a j.u.l. [Handler] on the root logger lazily on first use and emits
- * exceptions to a SharedFlow with no buffer - only active subscribers receive
- * exceptions at the moment they occur.
+ * exceptions to a SharedFlow with no replay - only active subscribers receive
+ * exceptions that occur while they are subscribed.
  *
  * ## Usage
  *
@@ -55,11 +55,13 @@ class ExceptionCaptureService : Disposable {
 
     /**
      * SharedFlow of captured IDE exceptions.
-     * No replay, no buffer - only delivers to currently subscribed collectors.
+     * No replay - only delivers to currently subscribed collectors. The buffer holds a burst logged
+     * faster than a collector runs, such as several errors from one loop; only a flood beyond it
+     * drops the oldest.
      */
     private val _exceptions = MutableSharedFlow<CapturedIdeException>(
         replay = 0,
-        extraBufferCapacity = 1,
+        extraBufferCapacity = 256,
         onBufferOverflow = BufferOverflow.DROP_OLDEST
     )
 
@@ -140,7 +142,7 @@ class ExceptionCaptureService : Disposable {
             pluginId = pluginId
         )
 
-        // Try to emit - if no subscribers, the exception is dropped (no buffer)
+        // Try to emit - if no subscribers, the exception is dropped (no replay)
         _exceptions.tryEmit(captured)
     }
 

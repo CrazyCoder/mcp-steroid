@@ -6,6 +6,9 @@ import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 import java.util.logging.Level
 import java.util.logging.LogRecord
@@ -39,6 +42,28 @@ class ExceptionCaptureServiceTest : BasePlatformTestCase() {
             assertSame("The original throwable should be preserved", failure, captured.throwable)
             assertEquals("Failure while testing: boom\ndetail-1", captured.message)
             assertTrue(captured.stacktrace.contains("IllegalStateException: boom"))
+        } finally {
+            service.dispose()
+        }
+    }
+
+    fun testBurstOfErrorsReachesTheCollector(): Unit = timeoutRunBlocking(100.seconds) {
+        val service = ExceptionCaptureService()
+        try {
+            val logger = Logger.getLogger("${ExceptionCaptureServiceTest::class.java.name}.burst")
+            val failures = (1..5).map { IllegalStateException("burst $it") }
+
+            val flow = service.exceptions
+            val collected = async(start = CoroutineStart.UNDISPATCHED) {
+                withTimeoutOrNull(5.seconds) { flow.take(failures.size).toList() }
+            }
+            // Logged back to back on this thread, before the collector gets to run.
+            for (failure in failures) {
+                logger.log(LogRecord(Level.SEVERE, "burst").apply { thrown = failure })
+            }
+
+            val captured = collected.await()
+            assertEquals(failures.map { it.message }, captured?.map { it.throwable.message })
         } finally {
             service.dispose()
         }
