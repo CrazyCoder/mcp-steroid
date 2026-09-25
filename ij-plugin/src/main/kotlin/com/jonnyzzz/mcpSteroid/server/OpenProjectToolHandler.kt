@@ -1,16 +1,14 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.ide.GeneralSettings
+import com.intellij.ide.impl.OpenProjectTask
 import com.intellij.ide.trustedProjects.TrustedProjects
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.ProjectManager
-import com.intellij.util.concurrency.AppExecutorUtil
+import com.intellij.openapi.project.ex.ProjectManagerEx
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
-import kotlinx.coroutines.asCoroutineDispatcher
-import kotlinx.coroutines.withContext
 import java.nio.file.Path
 
 class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
@@ -59,25 +57,19 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
 
             builder.addTextContent("Initiating project open: $projectPath")
 
-            withContext(AppExecutorUtil.getAppExecutorService().asCoroutineDispatcher()) {
-                val settings = GeneralSettings.getInstance()
-                val originalOpenProjectMode = settings.confirmOpenNewProject
-                try {
-                    settings.confirmOpenNewProject = GeneralSettings.OPEN_PROJECT_NEW_WINDOW
-
-                    val result = ProjectManager.getInstance().loadAndOpenProject(projectPath.toString())
-                    if (result != null) {
-                        logger.info("Project opened successfully: ${result.name}")
-                    } else {
-                        logger.warn("Project opening returned null (may have been cancelled): $projectPath")
-                    }
-                } catch (e: ProcessCanceledException) {
-                    throw e
-                } catch (e: Exception) {
-                    logger.warn("Project opening failed: $projectPath - ${e.message}", e)
-                } finally {
-                    settings.confirmOpenNewProject = originalOpenProjectMode
-                }
+            // Always a new frame: no "This Window / New Window" question, and no attach to another project.
+            // Reusing a frame makes the platform consult the last focused frame's project, which can be a
+            // closed, disposed one when the IDE window is not focused; 2026.3 then throws
+            // ProcessCanceledException from WorkspaceAttachProcessor and nothing opens.
+            // build().withForceOpenInNewFrame() rather than the inline OpenProjectTask { } builder: the builder
+            // inlines accessors that 2026.3 removed, so a plugin compiled against 261 fails with NoSuchMethodError.
+            @Suppress("DEPRECATION")
+            val task = OpenProjectTask.build().withForceOpenInNewFrame(true)
+            val result = ProjectManagerEx.getInstanceEx().openProjectAsync(projectPath, task)
+            if (result != null) {
+                logger.info("Project opened successfully: ${result.name}")
+            } else {
+                logger.warn("Project opening returned null (may have been cancelled): $projectPath")
             }
 
             builder.addTextContent(OPEN_PROJECT_VERIFICATION_WORKFLOW)
