@@ -10,9 +10,10 @@ class ClickEventSequenceTest {
     private val shift = InputEvent.SHIFT_DOWN_MASK
 
     @Test
-    fun `a left click is move, press with the down mask, release, click`() {
+    fun `a left click is two moves, press with the down mask, release, click`() {
         assertEquals(
             listOf(
+                ClickEvent(MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, shift, 0, false, approach = true),
                 ClickEvent(MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, shift, 0, false),
                 ClickEvent(MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON1, shift or InputEvent.BUTTON1_DOWN_MASK, 1, false),
                 ClickEvent(MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON1, shift, 1, false),
@@ -26,6 +27,7 @@ class ClickEventSequenceTest {
     fun `a right click is a popup trigger with the button 3 down mask on press`() {
         assertEquals(
             listOf(
+                ClickEvent(MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, 0, 0, false, approach = true),
                 ClickEvent(MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, 0, 0, false),
                 ClickEvent(MouseEvent.MOUSE_PRESSED, MouseEvent.BUTTON3, InputEvent.BUTTON3_DOWN_MASK, 1, true),
                 ClickEvent(MouseEvent.MOUSE_RELEASED, MouseEvent.BUTTON3, 0, 1, true),

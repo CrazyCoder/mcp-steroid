@@ -121,12 +121,24 @@ data class ScreenshotArtifacts(
  * boxes use image pixels, while `steroid_input` targets, `steroid_list_windows` bounds and the component tree
  * use logical ones. Null when the two match.
  */
-/** One mouse event of a click, before it gets a source and a point. */
-internal data class ClickEvent(val id: Int, val button: Int, val modifiers: Int, val clickCount: Int, val popupTrigger: Boolean)
+/**
+ * One mouse event of a click, before it gets a source and a point. An [approach] event lands one pixel away from
+ * the click point.
+ */
+internal data class ClickEvent(
+    val id: Int,
+    val button: Int,
+    val modifiers: Int,
+    val clickCount: Int,
+    val popupTrigger: Boolean,
+    val approach: Boolean = false,
+)
 
 /**
- * The events of one click, as AWT reports a real one: a move to the point, then press, release and click. The
- * press alone carries the button's down mask. [modifiers] are the keyboard modifiers held during the click.
+ * The events of one click, as AWT reports a real one: the pointer arrives with two moves, then press, release and
+ * click. List and tree popups ignore the first move they see, so that a popup opening under a resting pointer does
+ * not select a row; only a move from a different position selects the row under it. The press alone carries the
+ * button's down mask. [modifiers] are the keyboard modifiers held during the click.
  */
 internal fun clickEventSequence(button: Int, modifiers: Int): List<ClickEvent> {
     val downMask = when (button) {
@@ -137,6 +149,7 @@ internal fun clickEventSequence(button: Int, modifiers: Int): List<ClickEvent> {
     }
     val popupTrigger = button == MouseEvent.BUTTON3
     return listOf(
+        ClickEvent(MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, modifiers, 0, false, approach = true),
         ClickEvent(MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, modifiers, 0, false),
         ClickEvent(MouseEvent.MOUSE_PRESSED, button, modifiers or downMask, 1, popupTrigger),
         ClickEvent(MouseEvent.MOUSE_RELEASED, button, modifiers, 1, popupTrigger),
@@ -608,9 +621,9 @@ class VisionService(
         /**
          * Delivers the click to the window, in window coordinates, the way the OS delivers a real one. AWT's
          * LightweightDispatcher then picks the component: it skips a glass pane with no mouse listeners (the
-         * Settings dialog keeps a visible one over everything) and sends the enter and exit events. The move
-         * before the press matters too: a list popup selects its row on the move and ignores a press on any
-         * other row.
+         * Settings dialog keeps a visible one over everything) and sends the enter and exit events. The moves
+         * before the press matter too: a list popup selects its row on a move and ignores a press on any other
+         * row ([clickEventSequence]).
          */
         private fun click(component: Component, step: InputStep.Click) {
             val window = component as? Window ?: SwingUtilities.getWindowAncestor(component)
@@ -629,9 +642,12 @@ class VisionService(
                 MouseButton.MIDDLE -> MouseEvent.BUTTON2
             }
 
+            // One pixel to the left, or to the right at the window's left edge, so it stays inside the window.
+            val approachPoint = Point(if (point.x > 0) point.x - 1 else point.x + 1, point.y)
+
             for (event in clickEventSequence(button, currentModifiers(step.modifiers))) {
                 if (event.id != MouseEvent.MOUSE_PRESSED) {
-                    dispatchMouse(window, event, point)
+                    dispatchMouse(window, event, if (event.approach) approachPoint else point)
                     continue
                 }
                 // A following press:/type: step must reach the clicked component (issue #309, problem 2), and

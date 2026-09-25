@@ -52,8 +52,12 @@ Settings window.
    `IdeEventQueue` still runs its dispatchers, so keymap mouse shortcuts keep
    working. A window-level dispatch selected Settings tree rows through the
    visible glass pane and toggled the Lux checkbox.
-2. A click is `MOUSE_MOVED`, `MOUSE_PRESSED`, `MOUSE_RELEASED`, `MOUSE_CLICKED`,
-   in that order, at one point.
+2. A click is two `MOUSE_MOVED` events, then `MOUSE_PRESSED`, `MOUSE_RELEASED`
+   and `MOUSE_CLICKED`. The first move lands one pixel away from the click
+   point, the rest at the point. `ListPopupImpl` and `TreePopupImpl` ignore the
+   first move they see (`isMouseMoved`), so that a popup opening under a
+   resting pointer does not select a row. With a single move, the smoke test
+   of a fresh popup failed.
 3. No change for opening Settings. Without the call that broke, there is nothing
    to fix. We ask the field tester for it; the agent guidance (sub-project 4)
    points at `ShowSettingsUtil.showSettingsDialog`, which works on both sides.
@@ -76,7 +80,9 @@ Only `SwingInputExecutor.click` and its helpers in `VisionService.kt` change.
   `SwingUtilities.convertPointFromScreen` against the window. The clamping to
   the root component's bounds stays.
 - **Events.** Each event is built with the window as its source.
-  - `MOUSE_MOVED`: no button, click count 0, the step's keyboard modifiers.
+  - `MOUSE_MOVED`, twice: no button, click count 0, the step's keyboard
+    modifiers. The first one pixel to the left of the point, or to the right
+    at the window's left edge.
   - `MOUSE_PRESSED`: the button, click count 1, the modifiers plus the
     button's down mask (`BUTTON1_DOWN_MASK` and so on), as AWT reports a real
     press.
