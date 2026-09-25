@@ -48,10 +48,13 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.NodeList
 
-// RemoteDriverDataModelExtension registers every component with the JMX test driver. A normal IDE has no
-// driver, and building the model fails with "Invoker is not registered" unless the extension is dropped.
+// RemoteDriverDataModelExtension, and in a Split Mode client the Remote Development extensions, call the JMX
+// test driver. A normal IDE has no driver, and building the model fails with "Invoker is not registered"
+// unless those extensions are dropped.
 fun uiModel(root: Component?): Document =
-    XpathDataModelCreator().apply { elementProcessors.removeIf { it is RemoteDriverDataModelExtension } }.create(root)
+    XpathDataModelCreator().apply {
+        elementProcessors.removeIf { it is RemoteDriverDataModelExtension || it.isRemDevExtension }
+    }.create(root)
 
 fun uiElements(root: Component?, xpath: String): List<Element> {
     val nodes = XPathFactory.newInstance().newXPath().compile(xpath)
@@ -141,8 +144,9 @@ import org.w3c.dom.Element
 import org.w3c.dom.NodeList
 
 fun uiFind(root: Component?, xpath: String): List<Component> {
-    val model = XpathDataModelCreator().apply { elementProcessors.removeIf { it is RemoteDriverDataModelExtension } }
-        .create(root)
+    val model = XpathDataModelCreator().apply {
+        elementProcessors.removeIf { it is RemoteDriverDataModelExtension || it.isRemDevExtension }
+    }.create(root)
     val nodes = XPathFactory.newInstance().newXPath().compile(xpath).evaluate(model, XPathConstants.NODESET) as NodeList
     return (0 until nodes.length).mapNotNull { (nodes.item(it) as Element).getUserData("component") as? Component }
 }
