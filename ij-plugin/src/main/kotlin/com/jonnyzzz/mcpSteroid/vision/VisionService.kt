@@ -1,6 +1,12 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.vision
 
+import com.intellij.ide.IdeEventQueue
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.ex.AnActionListener
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
@@ -37,6 +43,7 @@ import java.nio.file.StandardCopyOption
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 
@@ -359,12 +366,24 @@ class VisionService(
         }
     }
 
+    /** Runs [steps] and returns the IDs of the IDE actions that ran while they were delivered. */
     suspend fun executeInput(
         windowId: String,
         steps: List<InputStep>,
-    ) {
-        val executor = SwingInputExecutor(windowId)
-        executor.execute(steps)
+    ): List<String> {
+        val performed = Collections.synchronizedList(mutableListOf<String>())
+        val connection = ApplicationManager.getApplication().messageBus.connect()
+        connection.subscribe(AnActionListener.TOPIC, object : AnActionListener {
+            override fun beforeActionPerformed(action: AnAction, event: AnActionEvent) {
+                performed += ActionManager.getInstance().getId(action) ?: action.javaClass.name
+            }
+        })
+        try {
+            SwingInputExecutor(windowId).execute(steps)
+        } finally {
+            connection.disconnect()
+        }
+        return performed.toList()
     }
 
     private data class CaptureInfo(
@@ -667,7 +686,12 @@ class VisionService(
                 keyCode,
                 char
             )
-            component.dispatchEvent(event)
+            // Keymap shortcuts are matched only inside IdeEventQueue.dispatchEvent (IdeKeyEventDispatcher);
+            // component.dispatchEvent skips it and reaches only Swing bindings, so a shortcut such as
+            // press:META+1 would run no action (GitHub issue #1). Remote Development injects client
+            // keystrokes the same way. The event is not posted, so the queue still delivers it to
+            // [component] without retargeting.
+            IdeEventQueue.getInstance().dispatchEvent(event)
         }
 
         private fun dispatchMouse(component: Component, id: Int, point: Point, button: Int, modifiers: Int) {

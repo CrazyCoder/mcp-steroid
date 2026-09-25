@@ -49,10 +49,17 @@ class VisionInputToolHandlerIJ : VisionInputToolHandler {
             log("WARNING: Heavy endpoint. Prefer the code-execution tool or command for regular automation.")
             log("Using window_id: $windowId")
 
-            withTimeout(timeoutMs.milliseconds) {
+            val actions = withTimeout(timeoutMs.milliseconds) {
                 VisionService.getInstance(project).executeInput(windowId, inputParams.sequence)
             }
-            log("Input sequence executed successfully.")
+            log("Input sequence delivered.")
+            // Delivery does not prove an effect: say which actions ran, so a shortcut that ran
+            // nothing is visible to the caller (GitHub issue #1).
+            if (actions.isEmpty()) {
+                log("IDE actions performed: none. If a press: step was meant to run a keymap shortcut, it did not.")
+            } else {
+                log("IDE actions performed: ${actions.joinToString(", ")}")
+            }
         } catch (e: TimeoutCancellationException) {
             // A domain error the agent must see, not a control-flow signal — caught BEFORE the
             // generic CancellationException rethrow (same pattern as ScriptExecutor.executeCodeBlocks).
