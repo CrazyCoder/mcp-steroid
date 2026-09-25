@@ -176,7 +176,7 @@ class ScriptExecutor(
             }
         }
 
-        monitorExceptions(context, executionDisposable)
+        monitorExceptions(context, executionId, executionDisposable)
 
         log.info("[$executionId] [RUN] script (modal=${exec.modal.wire}, timeout=${exec.timeout}s)")
         executeCodeBlocks(exec, context, evalResult, executionId, resultBuilder)
@@ -294,19 +294,22 @@ class ScriptExecutor(
 
     private fun CoroutineScope.monitorExceptions(
         context: McpScriptContextImpl,
+        executionId: ExecutionId,
         executionDisposable: Disposable
     ) {
+        val storage = project.executionStorage
+        val report = CapturedExceptionReport(storage.resolveExecutionPath(executionId, CapturedExceptionReport.FILE_NAME))
         launch {
             service<ExceptionCaptureService>().exceptions.collect { ex ->
-                context.println(buildString {
-                    appendLine("=== IDE Exception Captured ===")
-                    appendLine("Time: ${ex.timestamp}")
-                    ex.pluginId?.let { appendLine("Plugin: $it") }
-                    appendLine("Message: ${ex.message}")
-                    appendLine("Stacktrace:")
-                    append(ex.stacktrace)
-                    appendLine("=== END ===")
-                })
+                val summary = report.add(ex)
+                try {
+                    storage.writeCodeExecutionData(executionId, CapturedExceptionReport.FILE_NAME, report.fullText)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.warn("Failed to write captured IDE exceptions for $executionId: ${e.message}")
+                }
+                context.println(summary.trimEnd())
             }
         }.also {
             Disposer.register(executionDisposable) {
