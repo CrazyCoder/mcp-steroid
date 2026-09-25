@@ -83,8 +83,9 @@ class AgentCliNotLaunchableException(
  * On timeout the child is killed and [IllegalStateException] is thrown:
  * a loud, bounded failure instead of an unbounded hang.
  *
- * The temp file is deleted on every path — success, timeout, and launch
- * failure. Windows needs care here (issue #407): the child (and any
+ * The temp file is deleted on every path — success, timeout, launch
+ * failure, and an interrupt, which also kills the child and re-sets the
+ * interrupt flag. Windows needs care here (issue #407): the child (and any
  * descendant that inherited the redirect) holds an open handle on the
  * redirect file, and NTFS forbids deleting a file with an open handle, so
  * the runner waits for the killed process tree to actually die and retries
@@ -92,9 +93,15 @@ class AgentCliNotLaunchableException(
  */
 class ProcessAiAgentCliRunner(
     private val timeout: Duration = 120.seconds,
+    /** Where the output file is created; null for the system temp directory. */
+    private val outputDir: Path? = null,
 ) : AiAgentCliRunner {
     override fun run(invocation: AiAgentCliInvocation): AiAgentCliResult {
-        val outputFile = Files.createTempFile("devrig-agent-cli-", ".out")
+        val outputFile = if (outputDir != null) {
+            Files.createTempFile(outputDir, "devrig-agent-cli-", ".out")
+        } else {
+            Files.createTempFile("devrig-agent-cli-", ".out")
+        }
         try {
             val process = try {
                 ProcessBuilder(listOf(invocation.binary) + invocation.args)
@@ -105,7 +112,15 @@ class ProcessAiAgentCliRunner(
                 throw AgentCliNotLaunchableException(invocation.binary, e)
             }
             runCatching { process.outputStream.close() } // stdin: immediate EOF
-            if (!process.waitFor(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)) {
+            val finished = try {
+                process.waitFor(timeout.inWholeMilliseconds, TimeUnit.MILLISECONDS)
+            } catch (e: InterruptedException) {
+                // A live child keeps the output file open, and Windows then refuses to delete it.
+                killProcessTreeAndAwait(process, invocation.binary)
+                Thread.currentThread().interrupt()
+                throw e
+            }
+            if (!finished) {
                 killProcessTreeAndAwait(process, invocation.binary)
                 throw IllegalStateException(
                     "'${invocation.binary} ${invocation.args.joinToString(" ")}' " +

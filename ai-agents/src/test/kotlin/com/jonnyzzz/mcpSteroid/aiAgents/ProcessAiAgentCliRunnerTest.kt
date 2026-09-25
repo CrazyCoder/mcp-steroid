@@ -65,20 +65,45 @@ class ProcessAiAgentCliRunnerTest {
 
     @Test
     fun `no temp output files are left behind`() {
-        val before = tempOutputFiles()
-        ProcessAiAgentCliRunner().run(agentCliFixtureInvocation("echo", "0"))
+        val outputDir = Files.createDirectory(tempDir.resolve("outputs"))
+        ProcessAiAgentCliRunner(outputDir = outputDir).run(agentCliFixtureInvocation("echo", "0"))
         assertThrows(IllegalStateException::class.java) {
-            ProcessAiAgentCliRunner(timeout = 2.seconds).run(agentCliFixtureInvocation("sleep", tempDir.resolve("p.pid").toString()))
+            ProcessAiAgentCliRunner(timeout = 2.seconds, outputDir = outputDir)
+                .run(agentCliFixtureInvocation("sleep", tempDir.resolve("p.pid").toString()))
         }
-        val after = tempOutputFiles()
-        assertEquals(before, after, "runner must clean up its temp output files on success AND on timeout")
-        assertFalse(after.any { it.contains("devrig-agent-cli") && !before.contains(it) })
+        assertEquals(emptyList<String>(), outputFiles(outputDir), "runner must clean up its temp output files on success AND on timeout")
     }
 
-    private fun tempOutputFiles(): Set<String> {
-        val tmp = Path.of(System.getProperty("java.io.tmpdir"))
-        return Files.list(tmp).use { stream ->
-            stream.map { it.fileName.toString() }.filter { it.startsWith("devrig-agent-cli-") }.toList().toSet()
+    @Test
+    fun `an interrupted wait kills the agent CLI, deletes its output and keeps the interrupt`() {
+        val outputDir = Files.createDirectory(tempDir.resolve("outputs"))
+        val pidFile = tempDir.resolve("interrupted.pid")
+        var thrown: Throwable? = null
+        var interruptedAfter = false
+        val worker = Thread {
+            try {
+                ProcessAiAgentCliRunner(timeout = 60.seconds, outputDir = outputDir)
+                    .run(agentCliFixtureInvocation("sleep", pidFile.toString()))
+            } catch (e: Throwable) {
+                thrown = e
+                interruptedAfter = Thread.currentThread().isInterrupted
+            }
         }
+        worker.start()
+        awaitTrue("the fixture to report its pid") { pidFile.exists() && pidFile.readText().isNotBlank() }
+        val pid = pidFile.readText().trim().toLong()
+        worker.interrupt()
+        worker.join(30_000)
+
+        assertFalse(worker.isAlive, "the runner must return after the interrupt")
+        assertTrue(thrown is InterruptedException) { "expected InterruptedException, got $thrown" }
+        assertTrue(interruptedAfter, "the runner must re-set the interrupt flag")
+        awaitTrue("interrupted agent CLI process $pid to be killed") {
+            ProcessHandle.of(pid).map { !it.isAlive }.orElse(true)
+        }
+        assertEquals(emptyList<String>(), outputFiles(outputDir), "the output file must be deleted after an interrupt")
     }
+
+    private fun outputFiles(dir: Path): List<String> =
+        Files.list(dir).use { stream -> stream.map { it.fileName.toString() }.toList() }
 }

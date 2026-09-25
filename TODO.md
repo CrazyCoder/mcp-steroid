@@ -48,15 +48,6 @@
   fences stick to platform-level APIs, but if it ever matters, extend `KtBlockCompilationTestBase`
   with a GoLand or WebStorm distribution — repo-wide infra task, not specific to any one article.
 
-- [ ] **ProcessAiAgentCliRunner follow-ups** (issue #407 quorum review, all minor, non-gating):
-  - [ ] An `InterruptedException` from the FIRST `waitFor(timeout)` propagates without killing the
-    child, so on Windows the temp output file stays locked and leaks (loudly logged after the
-    bounded delete retries). Kill the process tree on that interrupt lane too, then re-interrupt.
-  - [ ] `ProcessAiAgentCliRunnerTest."no temp output files are left behind"` scans the
-    machine-global `java.io.tmpdir`, so a concurrent run of the same suite on one machine can
-    flake it (observed once during the quorum review). Make the runner's temp-file parent
-    injectable and point the test at `@TempDir` for an isolated scan.
-
 - [ ] **KtBlock matrix ignores the production kotlinc language/api pin (drift).**
   `CodeEvalManager` compiles every `steroid_execute_code` script with the
   `mcp.steroid.kotlinc.parameters` registry extras (`-language-version 2.3 -api-version 2.3` since
