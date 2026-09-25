@@ -706,7 +706,9 @@ class VisionService(
                 button == MouseEvent.BUTTON3,
                 button
             )
-            component.dispatchEvent(event)
+            // Keymap mouse shortcuts (Ctrl+Click for GotoDeclaration and others) are matched only by
+            // IdeMouseEventDispatcher inside IdeEventQueue.dispatchEvent, as for keys in [dispatchKey].
+            IdeEventQueue.getInstance().dispatchEvent(event)
         }
     }
 }
