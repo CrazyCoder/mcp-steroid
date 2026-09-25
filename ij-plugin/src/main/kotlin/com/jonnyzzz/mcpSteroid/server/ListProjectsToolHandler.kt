@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.server.split.SplitFrontendBridge
 import com.jonnyzzz.mcpSteroid.server.split.SplitRole
 import com.jonnyzzz.mcpSteroid.server.split.activeSplitFrontendBridge
 import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
@@ -25,8 +26,10 @@ fun localProjectNameFor(project: Project): String =
  * when the backend knows the project, so both sides name a project the same way; otherwise
  * [localProjectNameFor].
  */
-fun projectNameFor(project: Project): String =
-    activeSplitFrontendBridge()?.backendKeyFor(project) ?: localProjectNameFor(project)
+fun projectNameFor(project: Project): String = projectNameFor(project, activeSplitFrontendBridge())
+
+internal fun projectNameFor(project: Project, bridge: SplitFrontendBridge?): String =
+    bridge?.backendKeyFor(project) ?: localProjectNameFor(project)
 
 /**
  * Direct in-IDE `steroid_list_projects`. No top-level `ide`/`plugin`/`pid` header (the responding

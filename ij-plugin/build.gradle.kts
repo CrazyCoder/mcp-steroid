@@ -18,6 +18,7 @@ plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
     id("org.jetbrains.intellij.platform")
+    id("rpc") apply false
 }
 
 
@@ -155,22 +156,25 @@ fun ideRootProviderFor(
 ): Provider<File> =
     providers.provider { ideRootFor(target, product) }
 
+// IntelliJ Ultimate goes through the in-repo `intellij-downloader`:
+// archive resolution + download + unpack happen at script-eval time
+// and the unpacked IDE root is fed to IPGP's `local(file)` selector.
+// `useInstaller = true` is no longer applicable (we own the archive).
+// PyCharm Professional also routes through intellij-downloader.
+// Folder name becomes PY-<build>-<os>-<arch>; the resolver hits
+// the same products API on the PCP product code.
+// The Split Mode content modules (subprojects below) compile against the same IDE.
+val buildIdeRoot: Provider<File> = when (targetIdeProduct) {
+    JetBrainsIdeProduct.IntelliJIdeaUltimate -> ideRootProviderFor(buildIdeTarget)
+    JetBrainsIdeProduct.PyCharm -> ideRootProviderFor(buildIdeTarget, IdeProduct.PyCharm)
+    JetBrainsIdeProduct.GoLand,
+    JetBrainsIdeProduct.WebStorm,
+    -> error("Plugin build targets IntelliJ IDEA or PyCharm only. GoLand/WebStorm are for integration tests.")
+}
+
 dependencies {
     intellijPlatform {
-        when (targetIdeProduct) {
-            // IntelliJ Ultimate goes through the in-repo `intellij-downloader`:
-            // archive resolution + download + unpack happen at script-eval time
-            // and the unpacked IDE root is fed to IPGP's `local(file)` selector.
-            // `useInstaller = true` is no longer applicable (we own the archive).
-            JetBrainsIdeProduct.IntelliJIdeaUltimate -> local(ideRootProviderFor(buildIdeTarget))
-            // PyCharm Professional also routes through intellij-downloader.
-            // Folder name becomes PY-<build>-<os>-<arch>; the resolver hits
-            // the same products API on the PCP product code.
-            JetBrainsIdeProduct.PyCharm -> local(ideRootProviderFor(buildIdeTarget, IdeProduct.PyCharm))
-            JetBrainsIdeProduct.GoLand,
-            JetBrainsIdeProduct.WebStorm,
-            -> error("Plugin build targets IntelliJ IDEA or PyCharm only. GoLand/WebStorm are for integration tests.")
-        }
+        local(buildIdeRoot)
         // Java + Kotlin plugins are TEST-ONLY. Two safety nets keep
         // production code free of either plugin's types:
         // `NoForbiddenPluginImportsTest` (compile-time) and
@@ -187,6 +191,12 @@ dependencies {
         // `PluginManagerCore.getPluginSet().enabledPlugins`.
         bundledPlugin("com.intellij.mcpServer")
         testFramework(TestFrameworkType.Platform)
+
+        // Split Mode content modules; see "Split mode" in the root CLAUDE.md. Not `implementation`:
+        // the modules compile against this module's classes, and the main module never sees theirs.
+        pluginModule(project(":ij-plugin:shared"))
+        pluginModule(project(":ij-plugin:backend"))
+        pluginModule(project(":ij-plugin:frontend"))
     }
 
     implementation(project(":mcp-core"))
@@ -285,6 +295,9 @@ val pluginDirName = "mcp-steroid-plus"
 
 intellijPlatform {
     projectName = pluginDirName
+    // -Pmcp.splitMode=true runs runIde as a frontend + backend pair (Run IDE (Split Mode)).
+    splitMode = providers.gradleProperty("mcp.splitMode").map(String::toBoolean).orElse(false)
+    pluginInstallationTarget = org.jetbrains.intellij.platform.gradle.tasks.aware.SplitModeAware.PluginInstallationTarget.BOTH
     caching {
         ides {
             enabled = true
@@ -659,6 +672,10 @@ val verifyBundledLibraries = tasks.register("verifyBundledLibraries") {
             "NOTICE",
 
             //our binaires
+            // Split Mode content modules, named after their modules (see the subprojects block)
+            "lib/modules/mcp-steroid.backend.jar",
+            "lib/modules/mcp-steroid.frontend.jar",
+            "lib/modules/mcp-steroid.shared.jar",
             "lib/ai-agents-$pluginVersion.jar",
             "lib/devrig-common-$pluginVersion.jar",
             "lib/ij-plugin-$pluginVersion.jar",
@@ -899,6 +916,42 @@ val deployPluginLocallyToIntelliJMain = tasks.register<Sync>("deployPluginLocall
         eachFile {
             println(this)
             this.path = this.path.substringAfter("/")
+        }
+    }
+}
+
+// Split Mode content modules (`:ij-plugin:shared`, `:backend`, `:frontend`). They compile against the
+// same IDE as this module and against this module's classes, which their classloader sees at runtime.
+// Each module applies its plugins in its own `plugins {}` block, which gives its script the typed accessors.
+subprojects {
+
+    plugins.withId("org.jetbrains.kotlin.jvm") {
+        // The platform provides Kotlin and kotlinx at runtime, as for the main module.
+        configurations.named("implementation") {
+            exclude(group = "org.jetbrains.kotlin")
+            exclude(group = "org.jetbrains.kotlinx")
+        }
+        extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
+            jvmToolchain(25)
+        }
+    }
+
+    plugins.withId("org.jetbrains.intellij.platform.module") {
+        // The IDE loads a content module from `lib/modules/<module name>.jar`, so the jar is named after
+        // the module (`mcp-steroid.backend`), not after the Gradle path (`mcp-steroid.ij-plugin.backend`).
+        tasks.named<org.gradle.jvm.tasks.Jar>("composedJar") {
+            archiveFileName.set("mcp-steroid.${project.name}.jar")
+        }
+        repositories {
+            mavenCentral()
+            intellijPlatform {
+                defaultRepositories()
+            }
+        }
+        dependencies {
+            intellijPlatform {
+                local(buildIdeRoot)
+            }
         }
     }
 }

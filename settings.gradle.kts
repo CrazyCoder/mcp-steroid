@@ -10,6 +10,17 @@ pluginManagement {
             }
         }
         gradlePluginPortal()
+        // The `rpc` plugin (fleet RPC compiler plugin) for the Split Mode content modules.
+        maven("https://packages.jetbrains.team/maven/p/ij/intellij-dependencies/") {
+            content {
+                includeGroup("rpc")
+                includeGroup("com.jetbrains.fleet")
+            }
+        }
+    }
+    plugins {
+        // Must match the Kotlin version in the root build script.
+        id("rpc") version "2.3.20-0.1"
     }
 }
 
@@ -102,6 +113,9 @@ include(":intellij-downloader")
 include(":devrig-common")
 
 include(":ij-plugin")
+include(":ij-plugin:shared")
+include(":ij-plugin:backend")
+include(":ij-plugin:frontend")
 include(":mcp-core")
 include(":mcp-http")
 include(":mcp-stdio")

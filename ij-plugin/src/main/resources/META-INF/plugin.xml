@@ -29,6 +29,13 @@
     -->
     <depends optional="true" config-file="mcpServer-integration.xml">com.intellij.mcpServer</depends>
 
+    <!-- Split Mode: see "Split mode" in the root CLAUDE.md -->
+    <content>
+        <module name="mcp-steroid.shared" loading="required"/>
+        <module name="mcp-steroid.backend"/>
+        <module name="mcp-steroid.frontend"/>
+    </content>
+
     <extensionPoints>
         <!-- Extension point for screenshot metadata providers -->
         <extensionPoint

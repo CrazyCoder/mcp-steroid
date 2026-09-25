@@ -21,16 +21,21 @@ class SplitProjectKeysTest : BasePlatformTestCase() {
     }
 
     fun testBackendKeyWinsWhenTheBridgeKnowsTheProject() {
-        ExtensionTestUtil.maskExtensions(SPLIT_FRONTEND_BRIDGE_EP, listOf(bridge("backend-key")), testRootDisposable)
-        assertEquals("backend-key", projectNameFor(project))
+        assertEquals("backend-key", projectNameFor(project, bridge("backend-key")))
     }
 
     fun testUnknownProjectFallsBackToTheLocalKey() {
-        ExtensionTestUtil.maskExtensions(SPLIT_FRONTEND_BRIDGE_EP, listOf(bridge(null)), testRootDisposable)
-        assertEquals(localProjectNameFor(project), projectNameFor(project))
+        assertEquals(localProjectNameFor(project), projectNameFor(project, bridge(null)))
     }
 
     fun testNoBridgeUsesTheLocalKey() {
+        assertEquals(localProjectNameFor(project), projectNameFor(project, null))
+    }
+
+    // The frontend content module also loads in a monolith, so its bridge extension is registered there.
+    fun testMonolithIgnoresARegisteredBridge() {
+        ExtensionTestUtil.maskExtensions(SPLIT_FRONTEND_BRIDGE_EP, listOf(bridge("backend-key")), testRootDisposable)
+        assertNull(activeSplitFrontendBridge())
         assertEquals(localProjectNameFor(project), projectNameFor(project))
     }
 }

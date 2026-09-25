@@ -1,0 +1,10 @@
+<idea-plugin>
+    <dependencies>
+        <module name="intellij.platform.frontend"/>
+        <module name="mcp-steroid.shared"/>
+    </dependencies>
+
+    <extensions defaultExtensionNs="com.jonnyzzz.mcpSteroid">
+        <splitFrontendBridge implementation="com.jonnyzzz.mcpSteroid.split.frontend.RpcSplitFrontendBridge"/>
+    </extensions>
+</idea-plugin>

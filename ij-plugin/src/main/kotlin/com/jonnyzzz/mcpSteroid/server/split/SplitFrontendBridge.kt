@@ -28,4 +28,9 @@ interface SplitFrontendBridge {
 val SPLIT_FRONTEND_BRIDGE_EP: ExtensionPointName<SplitFrontendBridge> =
     ExtensionPointName("com.jonnyzzz.mcpSteroid.splitFrontendBridge")
 
-fun activeSplitFrontendBridge(): SplitFrontendBridge? = SPLIT_FRONTEND_BRIDGE_EP.extensionList.firstOrNull()
+/**
+ * The bridge, only in a Split Mode frontend. The `mcp-steroid.frontend` module also loads in a monolith,
+ * where its extension is registered but there is no separate backend to reach.
+ */
+fun activeSplitFrontendBridge(): SplitFrontendBridge? =
+    if (currentSplitRole() == SplitRole.FRONTEND) SPLIT_FRONTEND_BRIDGE_EP.extensionList.firstOrNull() else null
