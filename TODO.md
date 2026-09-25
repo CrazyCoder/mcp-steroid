@@ -367,3 +367,31 @@
   rows, tabs, editor text. Using it in `SwingComponentTreeProvider` means plugin code against an internal
   module of a bundled plugin, with a fallback for when that plugin is disabled. Decide after seeing how
   agents use the recipe.
+
+## Split mode follow-ups (from the 2026-09-25 split-plugin review)
+
+Minor findings deferred from the split-plugin work (`docs/superpowers/specs/2026-09-25-steroid-split-mode-design.md`).
+
+- [ ] **`side` rejects non-string values with a stack trace**. `routeTool` reads `side` through
+  `jsonPrimitive`, so an object or array value throws `IllegalArgumentException` and the client gets a
+  "Tool execution error" with a stack trace instead of the clean "Unsupported side" message.
+- [ ] **`list_windows.project_path` in the JetBrains Client is the client's synthetic path**. The client's
+  project lives under `config/.../projects/<hash>`, so `project_path` does not match the backend path that
+  `list_projects` reports. `project_name` is correct (it comes from the backend through the bridge).
+- [ ] **`project_name` depends on the drive-letter case of the path**. `localProjectNameFor` hashes
+  `project.basePath` as text, so the same folder opened as `c:/…` and as `C:/…` gets two keys (seen when
+  `steroid_open_project` reopened `support-toolkit`). Normalize the path before hashing, or accept the
+  key change and say so.
+- [ ] **The HTTP transport never delivers progress notifications**. `McpHttpTransport` answers GET SSE with
+  405 and POST with plain JSON, so `notifications/progress` from `McpToolRegistry` never reach an HTTP
+  client, in any mode. The split bridge relays progress correctly; the gap is the transport's.
+- [ ] **The settings page is registered in the main module**. DevKit's `SplitModeXmlApiUsage` reports that
+  `applicationConfigurable` in `plugin.xml` belongs in a frontend module. Move it to `mcp-steroid.frontend`
+  if the settings page should appear only in the client.
+- [ ] **Bridged calls skip the backend's "callTool with parameters" log line**. `executeBridgedTool` calls
+  the registry overload that takes a progress reporter, which does not log the arguments. Log them on
+  the backend so a forwarded call is traceable in `idea.log`.
+- [ ] **Screenshots and click coordinates use different scales on HiDPI**. On a 1.5x display the
+  screenshot image is 1.5 times the window's logical size, while `click:` takes logical coordinates, so an
+  agent must divide by the scale itself. Report the scale in the tool output, or accept image-pixel
+  coordinates.
