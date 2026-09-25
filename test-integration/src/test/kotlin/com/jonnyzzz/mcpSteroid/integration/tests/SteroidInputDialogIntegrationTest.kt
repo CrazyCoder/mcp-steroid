@@ -59,8 +59,8 @@ class SteroidInputDialogIntegrationTest {
     }
 
     /** Opens a DialogWrapper carrying a named, initially-unselected JCheckBox; fire-and-forget on EDT. */
-    private fun openDialog(title: String, modal: Boolean) {
-        console.writeStep("Opening test dialog '$title' (modal=$modal)")
+    private fun openDialog(title: String, modal: Boolean, visibleGlassPane: Boolean = false) {
+        console.writeStep("Opening test dialog '$title' (modal=$modal, visibleGlassPane=$visibleGlassPane)")
         session.mcpSteroid.mcpExecuteCode(
             modal = ModalMode.UNLEASHED,
             code = $$"""
@@ -84,6 +84,9 @@ class SteroidInputDialogIntegrationTest {
                         }
                     }
                     dialog.show()
+                    // Like the Settings dialog: a visible glass pane over the whole window, with no mouse
+                    // listeners. Set after show(), so only for a non-modal dialog, whose show() returns.
+                    if ($$visibleGlassPane) dialog.rootPane.glassPane.isVisible = true
                 }
 
                 kotlinx.coroutines.delay(1500)
@@ -129,7 +132,8 @@ class SteroidInputDialogIntegrationTest {
                             "\nCHECKBOX_AT: " + center.x + "," + center.y +
                             "\nSELECTED: " + cb.isSelected +
                             "\nFOCUS_OWNER: " + focusDesc +
-                            "\nCHECKBOX_HAS_FOCUS: " + (focusOwner === cb)
+                            "\nCHECKBOX_HAS_FOCUS: " + (focusOwner === cb) +
+                            "\nDEEPEST: " + javax.swing.SwingUtilities.getDeepestComponentAt(w, center.x, center.y)?.javaClass?.simpleName
                 }
                 println(info)
             """.trimIndent(),
@@ -139,17 +143,19 @@ class SteroidInputDialogIntegrationTest {
         result.assertExitCode(0)
         console.writeInfo(
             "dialog probe:\n" + result.stdout.lineSequence()
-                .filter { line -> listOf("WINDOW_ID:", "CHECKBOX_AT:", "SELECTED:", "FOCUS_OWNER:", "CHECKBOX_HAS_FOCUS:").any { line.trim().startsWith(it) } }
+                .filter { line -> listOf("WINDOW_ID:", "CHECKBOX_AT:", "SELECTED:", "FOCUS_OWNER:", "CHECKBOX_HAS_FOCUS:", "DEEPEST:").any { line.trim().startsWith(it) } }
                 .joinToString("\n") { it.trim() }
         )
         return DialogProbe(
             windowId = result.extract("WINDOW_ID"),
             checkboxAt = result.extract("CHECKBOX_AT"),
             selected = result.extract("SELECTED").toBooleanStrict(),
+            deepest = result.extract("DEEPEST"),
         )
     }
 
-    private data class DialogProbe(val windowId: String, val checkboxAt: String, val selected: Boolean)
+    /** [deepest]: the class `getDeepestComponentAt` returns at the checkbox, the target a naive click would pick. */
+    private data class DialogProbe(val windowId: String, val checkboxAt: String, val selected: Boolean, val deepest: String)
 
     private fun ProcessResult.extract(key: String): String =
         stdout.lineSequence().map { it.trim() }
@@ -265,6 +271,137 @@ class SteroidInputDialogIntegrationTest {
             console.writeSuccess("SPACE toggled the focused checkbox back")
         } finally {
             disposeDialog(title)
+        }
+    }
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `steroid_input click reaches a checkbox under a visible glass pane`() {
+        val title = "MCP Steroid Input Glass Pane Repro"
+        openDialog(title, modal = false, visibleGlassPane = true)
+        try {
+            val probe = inspectDialog(title)
+            Assertions.assertFalse(probe.selected, "checkbox must start unselected")
+            // Precondition: without it this test would pass on the old target search too.
+            Assertions.assertEquals(
+                "IdeGlassPaneImpl", probe.deepest,
+                "the visible glass pane must be the deepest component at the checkbox",
+            )
+
+            session.mcpSteroid.mcpInput(
+                windowId = probe.windowId,
+                sequence = "click:Left@${probe.checkboxAt}",
+                timeoutSeconds = 60,
+            ).assertExitCode(0)
+
+            Assertions.assertTrue(
+                inspectDialog(title).selected,
+                "the click went to the glass pane: SwingInputExecutor.click must let AWT pick the target, " +
+                        "as for a real click, instead of taking the deepest visible component",
+            )
+            console.writeSuccess("Checkbox under a visible glass pane toggled by steroid_input click")
+        } finally {
+            disposeDialog(title)
+        }
+    }
+
+    @Test
+    @Timeout(value = 15, unit = TimeUnit.MINUTES)
+    fun `steroid_input click runs an unselected list popup item`() {
+        console.writeStep("Opening a list popup with Alpha, Beta, Gamma")
+        session.mcpSteroid.mcpExecuteCode(
+            modal = ModalMode.UNLEASHED,
+            code = $$"""
+                System.clearProperty("steroid.test.popupChosen")
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.EDT).launch {
+                    val step = object : com.intellij.openapi.ui.popup.util.BaseListPopupStep<String>(
+                        "Steroid popup repro", listOf("Alpha", "Beta", "Gamma")
+                    ) {
+                        override fun onChosen(selectedValue: String?, finalChoice: Boolean): com.intellij.openapi.ui.popup.PopupStep<*>? {
+                            System.setProperty("steroid.test.popupChosen", selectedValue ?: "<null>")
+                            return FINAL_CHOICE
+                        }
+                    }
+                    com.intellij.openapi.ui.popup.JBPopupFactory.getInstance().createListPopup(step)
+                        .showCenteredInCurrentWindow(project)
+                }
+                kotlinx.coroutines.delay(1500)
+                println("popup opened")
+            """.trimIndent(),
+            taskId = "open-input-test-popup",
+            reason = "Open a list popup for the steroid_input popup item repro",
+        ).assertExitCode(0)
+
+        try {
+            val probe = session.mcpSteroid.mcpExecuteCode(
+                modal = ModalMode.UNLEASHED,
+                code = $$"""
+                    import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
+
+                    val info = withContext(
+                        kotlinx.coroutines.Dispatchers.EDT +
+                                com.intellij.openapi.application.ModalityState.any().asContextElement()
+                    ) {
+                        val list = java.awt.Window.getWindows().filter { it.isShowing && it is javax.swing.RootPaneContainer }
+                            .flatMap { com.intellij.util.ui.UIUtil.findComponentsOfType((it as javax.swing.RootPaneContainer).rootPane, javax.swing.JList::class.java) }
+                            .firstOrNull { l -> (0 until l.model.size).any { l.model.getElementAt(it) == "Gamma" } }
+                            ?: error("the test popup list is not showing")
+                        val window = javax.swing.SwingUtilities.getWindowAncestor(list)
+                        // A popup that fits inside the frame is lightweight: steroid_list_windows lists the frame then.
+                        val frame = com.intellij.openapi.wm.WindowManager.getInstance().allProjectFrames
+                            .firstOrNull { javax.swing.SwingUtilities.getWindowAncestor(it.component) === window }
+                        val root: java.awt.Component = frame?.component ?: window
+                        val b = list.getCellBounds(2, 2)
+                        val p = javax.swing.SwingUtilities.convertPoint(list, b.x + b.width / 2, b.y + b.height / 2, root)
+                        "POPUP_WINDOW_ID: " + WindowIdUtil.compute(window, root) +
+                                "\nGAMMA_AT: " + p.x + "," + p.y +
+                                "\nSELECTED_INDEX: " + list.selectedIndex
+                    }
+                    println(info)
+                """.trimIndent(),
+                taskId = "inspect-input-test-popup",
+                reason = "Read the popup window_id and the Gamma item position",
+            )
+            probe.assertExitCode(0)
+            Assertions.assertNotEquals("2", probe.extract("SELECTED_INDEX"), "Gamma must start unselected")
+
+            session.mcpSteroid.mcpInput(
+                windowId = probe.extract("POPUP_WINDOW_ID"),
+                sequence = "click:Left@${probe.extract("GAMMA_AT")}",
+                timeoutSeconds = 60,
+            ).assertExitCode(0)
+
+            val chosen = session.mcpSteroid.mcpExecuteCode(
+                modal = ModalMode.UNLEASHED,
+                code = """println("CHOSEN: " + System.getProperty("steroid.test.popupChosen"))""",
+                taskId = "read-input-test-popup-choice",
+                reason = "Read which popup item ran",
+            )
+            chosen.assertExitCode(0)
+            Assertions.assertEquals(
+                "Gamma", chosen.extract("CHOSEN"),
+                "the popup ignored the click: a list popup selects its row on MOUSE_MOVED and drops a press " +
+                        "on any other row, so SwingInputExecutor.click must move the mouse before pressing",
+            )
+            console.writeSuccess("steroid_input click ran the unselected popup item")
+        } finally {
+            session.mcpSteroid.mcpExecuteCode(
+                modal = ModalMode.UNLEASHED,
+                code = $$"""
+                    withContext(
+                        kotlinx.coroutines.Dispatchers.EDT +
+                                com.intellij.openapi.application.ModalityState.any().asContextElement()
+                    ) {
+                        java.awt.Window.getWindows().filter { it.isShowing && it is javax.swing.RootPaneContainer }
+                            .flatMap { com.intellij.util.ui.UIUtil.findComponentsOfType((it as javax.swing.RootPaneContainer).rootPane, javax.swing.JList::class.java) }
+                            .filter { l -> (0 until l.model.size).any { l.model.getElementAt(it) == "Gamma" } }
+                            .forEach { com.intellij.openapi.ui.popup.util.PopupUtil.getPopupContainerFor(it)?.cancel() }
+                    }
+                    println("popup closed")
+                """.trimIndent(),
+                taskId = "close-input-test-popup",
+                reason = "Close the test popup if it is still showing",
+            ).assertExitCode(0)
         }
     }
 
