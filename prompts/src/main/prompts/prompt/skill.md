@@ -203,6 +203,7 @@ initialize instructions and open-project description to bootstrap; fetch article
 - `mcp-steroid://open-project/overview` - Guide for opening projects via MCP.
 - `mcp-steroid://open-project/<id>` - Project opening examples (e.g., `open-trusted`, `open-with-dialogs`, `open-via-code`).
 - `mcp-steroid://open-project/managing-backends` - devrig download, auto-start, Remote Development, and readiness phases.
+- `mcp-steroid://skill/split-mode` - Split Mode: what runs in the JetBrains Client and what on the backend, and the `side` option.
 
 These resources are designed to be plugged directly into `steroid_execute_code` after you configure file paths/positions.
 

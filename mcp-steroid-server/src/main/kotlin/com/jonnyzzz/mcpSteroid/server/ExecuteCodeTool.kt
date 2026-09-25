@@ -176,7 +176,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         .description(
             "Split Mode only: where the script runs. 'backend' (default) holds the project model; " +
                 "'frontend' is the JetBrains Client process, for client-only UI state. " +
-                "In a regular IDE both run in the same process."
+                "In a regular IDE both run in the same process. See mcp-steroid://skill/split-mode."
         )
         .cliSynopsis("split mode side: frontend or backend")
         .enumString(mapOf("frontend" to "frontend", "backend" to "backend"))

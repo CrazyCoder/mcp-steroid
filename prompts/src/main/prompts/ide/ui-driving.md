@@ -279,9 +279,13 @@ withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
   `ToolWindowManager.getInstance(project).getToolWindow(id)?.show()` first.
 - With `modal=smart_non_modal`, a dialog your script opens fails the call unless the script calls
   `allowModalDialog()` first. Run dialog scripts with `modal=unleashed`.
+- In Split Mode, run the script on the side that owns the window's components. A dialog or Settings page
+  that the backend owns is only a picture in the JetBrains Client. See
+  [Split Mode](mcp-steroid://skill/split-mode).
 
 # See also
 
+- [Split Mode: what runs on the client and what runs on the backend](mcp-steroid://skill/split-mode)
 - [Discover IDE actions at caret](mcp-steroid://ide/action-discovery)
 - [Open Project (With Dialog Handling)](mcp-steroid://open-project/open-with-dialogs)
 - [Execute code tool description](mcp-steroid://skill/execute-code-tool-description)

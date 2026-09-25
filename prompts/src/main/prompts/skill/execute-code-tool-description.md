@@ -102,6 +102,14 @@ printJson(results) // ✓ response: execution_id + the printed JSON
 - **For inspection / report tasks, print compact machine-readable lines on the first run.** Stable shapes like `KEY: value` per line or `printJson` parse cheaply on your end and let you build the user-facing summary without a second exec_code pass to reshape verbose IDE output. Recipes in `mcp-steroid://ide/find-duplicates`, `…/inspect-and-fix`, `…/inspection-summary` already follow this convention.
 - **For `runInspectionsDirectly`, do not `printJson(result)` directly.** It is Map-compatible and contains live `ProblemDescriptor` PSI/VFS references. Snapshot descriptor fields inside `readAction { }`, print a DTO, and always include `result.failedTools`; a non-empty `failedTools` means the check is not clean even when the findings map is empty.
 
+## Split Mode (the `side` option)
+
+When the IDE runs as a JetBrains Client plus a Remote Development backend, scripts run on the backend, which
+holds the project. `side=frontend` runs the script in the client instead, for the windows, tool windows and
+popups the user sees; the client's `project` has no modules or indexed files. In a regular IDE both values
+run in the same process. The `modal` checks apply only to the side the script runs on. See
+`mcp-steroid://skill/split-mode` before any UI work in Split Mode.
+
 ## Modality (the `modal` option)
 
 `modal` is a single enum that sets how the IDE's modal state is handled around your script. Default
