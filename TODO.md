@@ -372,9 +372,12 @@
 
 Minor findings deferred from the split-plugin work (`docs/superpowers/specs/2026-09-25-steroid-split-mode-design.md`).
 
-- [ ] **The HTTP transport never delivers progress notifications**. `McpHttpTransport` answers GET SSE with
-  405 and POST with plain JSON, so `notifications/progress` from `McpToolRegistry` never reach an HTTP
-  client, in any mode. The split bridge relays progress correctly; the gap is the transport's.
+- [ ] **Low priority: a direct HTTP connection gets no progress notifications**. `McpHttpTransport`
+  answers GET SSE with 405 and POST with plain JSON, so `notifications/progress` never reach an HTTP client,
+  in any mode. devrig's stdio transport and the split bridge deliver them. Progress only feeds the client's
+  UI (the agent sees the final result), so nothing depends on it. Revisit only if a client times out on long
+  calls and would reset its timeout on progress. Delivering it means answering POST as an SSE stream, with
+  per-request routing of the session-wide notification channel, and sampling requests have the same gap.
 - [ ] **The settings page is registered in the main module**. DevKit's `SplitModeXmlApiUsage` reports that
   `applicationConfigurable` in `plugin.xml` belongs in a frontend module. Move it to `mcp-steroid.frontend`
   if the settings page should appear only in the client. Decide first where the devrig onboarding runs in
