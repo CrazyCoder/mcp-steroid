@@ -83,7 +83,7 @@ private val BACKSLASH = 92.toChar()
  * [arg] quoted for a Windows command line by the rules `CommandLineToArgvW` and the C runtime parse with:
  * backslashes are literal unless they precede a double quote, where each one is doubled and the quote escaped.
  */
-fun windowsCommandLineArg(arg: String): String = buildString {
+internal fun windowsCommandLineArg(arg: String): String = buildString {
     append('"')
     var backslashes = 0
     for (ch in arg) {
