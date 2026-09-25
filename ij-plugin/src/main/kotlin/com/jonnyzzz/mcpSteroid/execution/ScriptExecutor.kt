@@ -30,6 +30,8 @@ import kotlinx.coroutines.*
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption
 
 inline val Project.scriptExecutor: ScriptExecutor get() = service()
 
@@ -297,19 +299,21 @@ class ScriptExecutor(
         executionId: ExecutionId,
         executionDisposable: Disposable
     ) {
-        val storage = project.executionStorage
-        val report = CapturedExceptionReport(storage.resolveExecutionPath(executionId, CapturedExceptionReport.FILE_NAME))
+        val logFile = project.executionStorage.resolveExecutionPath(executionId, CapturedExceptionReport.FILE_NAME)
+        val report = CapturedExceptionReport(logFile)
         launch {
             service<ExceptionCaptureService>().exceptions.collect { ex ->
-                val summary = report.add(ex)
+                val entry = report.add(ex)
                 try {
-                    storage.writeCodeExecutionData(executionId, CapturedExceptionReport.FILE_NAME, report.fullText)
+                    withContext(Dispatchers.IO) {
+                        Files.writeString(logFile, entry.logText, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     log.warn("Failed to write captured IDE exceptions for $executionId: ${e.message}")
                 }
-                context.println(summary.trimEnd())
+                entry.summary?.let { context.println(it.trimEnd()) }
             }
         }.also {
             Disposer.register(executionDisposable) {

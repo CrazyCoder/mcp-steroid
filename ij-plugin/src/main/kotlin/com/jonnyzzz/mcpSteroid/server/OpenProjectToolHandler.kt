@@ -123,6 +123,8 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
             }
         } catch (e: ProcessCanceledException) {
             throw e
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             val message = "Failed to initiate project open: ${e.message}"
             logger.warn(message, e)
@@ -148,8 +150,8 @@ internal sealed interface OpenStart<out T> {
 
 /**
  * Waits until [opening] finishes, [dialogShowing] reports a modal dialog, or [bound] passes, and says which
- * came first. [opening] keeps running afterwards. A failed open rethrows its exception; a null result means
- * the open was declined or cancelled.
+ * came first. [opening] keeps running afterwards. A failed open rethrows its exception; a null result or a
+ * cancelled [opening] means the open was declined or cancelled.
  */
 internal suspend fun <T : Any> awaitOpenStart(
     opening: Deferred<T?>,
@@ -160,7 +162,16 @@ internal suspend fun <T : Any> awaitOpenStart(
     val deadline = TimeSource.Monotonic.markNow() + bound
     while (true) {
         withTimeoutOrNull(poll) { opening.join() }
-        if (opening.isCompleted) return opening.await()?.let { OpenStart.Opened(it) } ?: OpenStart.Declined
+        if (opening.isCompleted) {
+            // A cancelled open counts as declined, so a CancellationException leaving here is always the caller's
+            // own. isCancelled cannot tell this apart: it is also true for an open that failed.
+            val project = try {
+                opening.await()
+            } catch (e: CancellationException) {
+                return OpenStart.Declined
+            }
+            return project?.let { OpenStart.Opened(it) } ?: OpenStart.Declined
+        }
         if (dialogShowing()) return OpenStart.DialogShowing
         if (deadline.hasPassedNow()) return OpenStart.StillOpening
     }

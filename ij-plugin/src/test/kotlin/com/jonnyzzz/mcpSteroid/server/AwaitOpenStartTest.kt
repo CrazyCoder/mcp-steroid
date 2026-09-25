@@ -44,6 +44,12 @@ class AwaitOpenStartTest {
     }
 
     @Test
+    fun `an open that is cancelled reports that it was declined instead of throwing`() = runBlocking {
+        val opening = CompletableDeferred<String?>().apply { cancel() }
+        assertEquals(OpenStart.Declined, awaitOpenStart(opening, 5.seconds, poll) { false })
+    }
+
+    @Test
     fun `an open that fails rethrows its exception`() {
         val opening = CompletableDeferred<String?>().apply { completeExceptionally(IllegalStateException("broken")) }
         val e = assertThrows(IllegalStateException::class.java) {
