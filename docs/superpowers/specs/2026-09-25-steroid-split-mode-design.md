@@ -146,10 +146,10 @@ and open projects.
   backend marker. When it is remote, the endpoint listens on that machine's
   localhost: the agent runs there, or reaches it through an SSH tunnel. JetDesk
   documents the tunnel and does not set it up.
-- `execute_code`, `list_projects` and `open_project` work there. The backend
-  draws its own frames with a virtual toolkit, so `list_windows` and
-  `take_screenshot` answer from those, not from what the user sees, and
-  `execute_code` rejects `side=frontend`. The agent guidance (sub-project 4,
+- `execute_code`, `list_projects` and `open_project` work there. With a client
+  attached, the backend draws its own frames with a virtual toolkit, so
+  `list_windows` and `take_screenshot` answer from those, not from what the
+  user sees. `execute_code` rejects `side=frontend`. The agent guidance (sub-project 4,
   `mcp-steroid://skill/split-mode`) says so.
 
 ## Build

@@ -57,7 +57,7 @@ class SplitRoutingTest {
         val e = assertThrows(ToolCallErrorException::class.java) {
             routeTool(SplitRole.BACKEND, "steroid_execute_code", side("frontend"))
         }
-        // A backend endpoint cannot tell whether a client is attached, so the message must not claim either.
+        // The message must hold whether or not a client is attached, so it must not claim either.
         assertTrue(e.message, e.message.contains("cannot run code in the JetBrains Client"))
         assertFalse(e.message, e.message.contains("no frontend is attached"))
     }

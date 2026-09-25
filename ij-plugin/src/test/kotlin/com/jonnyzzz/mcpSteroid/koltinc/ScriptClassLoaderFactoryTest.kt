@@ -125,7 +125,7 @@ class ScriptClassLoaderFactoryTest : BasePlatformTestCase() {
     fun testIdeDelegateSkipsLoaderThatRefusesContentModuleClass(): Unit = timeoutRunBlocking(30.seconds) {
         // A plugin's main PluginClassLoader throws PluginException, not ClassNotFoundException, for a
         // class in one of its content modules' packages. In a JetBrains Client the Performance Testing
-        // main loader is asked before its remoteDriver content module, and the exception failed the script.
+        // main loader comes before its remoteDriver content module's loader in the candidates.
         val root = Files.createTempDirectory("ide-cl-refuse")
         val contentJar = createSyntheticClassJar(root, "content.jar", "ScriptClassLoaderRefusedRegression")
         val refusing = object : ClassLoader(null) {
