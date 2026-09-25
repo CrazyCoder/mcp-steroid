@@ -375,10 +375,6 @@ Minor findings deferred from the split-plugin work (`docs/superpowers/specs/2026
 - [ ] **`list_windows.project_path` in the JetBrains Client is the client's synthetic path**. The client's
   project lives under `config/.../projects/<hash>`, so `project_path` does not match the backend path that
   `list_projects` reports. `project_name` is correct (it comes from the backend through the bridge).
-- [ ] **`project_name` depends on the drive-letter case of the path**. `localProjectNameFor` hashes
-  `project.basePath` as text, so the same folder opened as `c:/…` and as `C:/…` gets two keys (seen when
-  `steroid_open_project` reopened `support-toolkit`). Normalize the path before hashing, or accept the
-  key change and say so.
 - [ ] **The HTTP transport never delivers progress notifications**. `McpHttpTransport` answers GET SSE with
   405 and POST with plain JSON, so `notifications/progress` from `McpToolRegistry` never reach an HTTP
   client, in any mode. The split bridge relays progress correctly; the gap is the transport's.

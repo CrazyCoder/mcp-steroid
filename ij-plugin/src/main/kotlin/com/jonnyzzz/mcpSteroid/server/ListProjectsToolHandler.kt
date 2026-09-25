@@ -16,10 +16,17 @@ import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
  * and display name — the base dir is essential so two same-named projects in different folders do not
  * collide. Computed at the call sites that hold the [Project] (the producers and
  * [ProjectScopedToolHandler.resolveProject]) so `/projects` and `/windows` always emit the same id
- * for the same project.
+ * for the same project. The base dir goes through [projectKeyPath], so one folder opened as `c:/…`
+ * and as `C:/…` gets one id.
  */
 fun localProjectNameFor(project: Project): String =
-    "${project.name}-${base36FixedWidth("project", project.basePath, project.name)}"
+    "${project.name}-${base36FixedWidth("project", projectKeyPath(project.basePath), project.name)}"
+
+/** [path] with a Windows drive letter in upper case. A project's base path keeps the drive-letter case of the path it
+ *  was opened with, so the same folder can arrive as `c:/…` or `C:/…`. */
+internal fun projectKeyPath(path: String?): String? =
+    if (path != null && path.length >= 2 && path[1] == ':' && path[0].isLetter()) path[0].uppercaseChar() + path.substring(1)
+    else path
 
 /**
  * The `project_name` this IDE reports for [project]. In a Split Mode frontend it is the backend's key
