@@ -295,8 +295,7 @@ val pluginDirName = "mcp-steroid-plus"
 
 intellijPlatform {
     projectName = pluginDirName
-    // -Pmcp.splitMode=true runs runIde as a frontend + backend pair (Run IDE (Split Mode)).
-    splitMode = providers.gradleProperty("mcp.splitMode").map(String::toBoolean).orElse(false)
+    // Install into both sides for runIdeSplitMode (a backend + JetBrains Client pair).
     pluginInstallationTarget = org.jetbrains.intellij.platform.gradle.tasks.aware.SplitModeAware.PluginInstallationTarget.BOTH
     caching {
         ides {
@@ -512,34 +511,29 @@ dependencies {
 }
 
 // Apply the same plugin-content wiring (ocr-tesseract, kotlinc, EULA) to every sandbox
-// that runs the plugin: production (prepareSandbox), default test (prepareTestSandbox),
-// and the dedicated integrationTest sandbox created by
-// `intellijPlatformTesting.testIde { register("integrationTest") }` above.
-// Without the integrationTest entry, steroid_execute_code fails at runtime because
-// the plugin's `kotlinc/` BTA jar folder is missing from the sandboxed plugin dir.
-val prepareSandbox_integrationTest = tasks.named<Sync>("prepareSandbox_integrationTest")
-
-listOf(tasks.prepareSandbox, tasks.prepareTestSandbox, prepareSandbox_integrationTest).forEach { r ->
-    r.configure {
-        from(ocrToolDist) {
-            into(intellijPlatform.projectName.map { "$it/ocr-tesseract" })
-            filesMatching("bin/*") {
-                if (!name.endsWith(".bat")) {
-                    permissions { unix("rwxr-xr-x") }
-                }
+// that runs the plugin: production (prepareSandbox), tests (prepareTestSandbox,
+// prepareSandbox_integrationTest), and the Split Mode pair (prepareSandbox_runIdeBackend,
+// prepareSandbox_runIdeFrontend). A sandbox without the plugin's `kotlinc/` BTA jar folder
+// fails every steroid_execute_code at runtime.
+tasks.withType<org.jetbrains.intellij.platform.gradle.tasks.PrepareSandboxTask>().configureEach {
+    from(ocrToolDist) {
+        into(intellijPlatform.projectName.map { "$it/ocr-tesseract" })
+        filesMatching("bin/*") {
+            if (!name.endsWith(".bat")) {
+                permissions { unix("rwxr-xr-x") }
             }
         }
-        from(kotlincDist) {
-            into(intellijPlatform.projectName.map { "$it/kotlinc" })
-        }
-        // Include EULA file in plugin root
-        from(rootProject.layout.projectDirectory.file("EULA")) {
-            into(intellijPlatform.projectName)
-        }
-        // Include NOTICE (Apache 2.0 §4(d) third-party attribution) in plugin root
-        from(rootProject.layout.projectDirectory.file("NOTICE")) {
-            into(intellijPlatform.projectName)
-        }
+    }
+    from(kotlincDist) {
+        into(intellijPlatform.projectName.map { "$it/kotlinc" })
+    }
+    // Include EULA file in plugin root
+    from(rootProject.layout.projectDirectory.file("EULA")) {
+        into(intellijPlatform.projectName)
+    }
+    // Include NOTICE (Apache 2.0 §4(d) third-party attribution) in plugin root
+    from(rootProject.layout.projectDirectory.file("NOTICE")) {
+        into(intellijPlatform.projectName)
     }
 }
 

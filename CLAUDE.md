@@ -262,8 +262,9 @@ RPC rules:
 Checks when adding or moving split code:
 
 - Run the inspection "Plugin DevKit | Code | Frontend and Backend API Usage".
-- Run `./gradlew :ij-plugin:runIde -Pmcp.splitMode=true` to start a frontend and backend pair. To feel
-  latency, enable internal mode (`-Didea.is.internal=true`) and raise Direct Ping in the Split Mode widget.
+- Run `./gradlew :ij-plugin:runIdeSplitMode` to start a backend and JetBrains Client pair, each with the
+  plugin and its own marker (`role` `backend` and `frontend`). To feel latency, enable internal mode
+  (`-Didea.is.internal=true`) and raise Direct Ping in the Split Mode widget.
 
 ## Technology Stack
 
