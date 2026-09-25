@@ -485,9 +485,10 @@ keys, nor the #155 MCP-only `backends` / `intellij` identity keys (`BackendInfo`
   `TASKS.md` #12); no logic reads it yet.
 
 **Later additive `PidMarker` fields:**
-- `PidMarker.remoteDevelopmentBackend: Boolean = false` — written by `ServerUrlWriter` from the public
-  `IdeProductMode.isBackend` signal. It lets devrig and diagnostics identify a frontendless Remote
-  Development backend directly from the marker; older markers that omit it decode as `false`.
+- `PidMarker.role: String? = null` — `monolith`, `frontend` or `backend`, written by `ServerUrlWriter`
+  from `IdeProductMode.currentMode` (`currentSplitRole()`). It tells a discovery tool which side of a
+  Split Mode IDE wrote the marker, so it can register the frontend endpoint and skip the backend one;
+  older markers that omit it decode as `null`.
 
 Deferred (revisit with a baseline release): (a) a cross-version test (devrig HEAD ↔ an older plugin build);
 (b) giving devrig its **own** copy of the marker/bridge DTOs so the two version independently and only the

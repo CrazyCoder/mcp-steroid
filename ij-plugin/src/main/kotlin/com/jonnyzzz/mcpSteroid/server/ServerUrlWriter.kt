@@ -18,6 +18,8 @@ import com.jonnyzzz.mcpSteroid.PidMarker
 import com.jonnyzzz.mcpSteroid.PidMarkerJson
 import com.jonnyzzz.mcpSteroid.PluginDescriptorProvider
 import com.jonnyzzz.mcpSteroid.PluginInfo
+import com.jonnyzzz.mcpSteroid.server.split.SplitRole
+import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 import org.jetbrains.ide.BuiltInServerManager
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -36,9 +38,9 @@ import java.time.format.DateTimeFormatter
  */
 @Service(Service.Level.APP)
 class ServerUrlWriter(
-    private val remoteDevelopmentBackend: Boolean,
+    private val role: SplitRole,
 ) : Disposable {
-    constructor() : this(isRemoteDevBackend())
+    constructor() : this(currentSplitRole())
 
     private val log = thisLogger()
     private var markerFile: Path? = null
@@ -82,7 +84,7 @@ class ServerUrlWriter(
             plugin = PluginInfo.ofCurrentPlugin(),
             createdAt = DateTimeFormatter.ISO_INSTANT.format(Instant.now()),
             ideHome = PathManager.getHomePath(),
-            remoteDevelopmentBackend = remoteDevelopmentBackend,
+            role = role.wire,
             intellijWebServer = buildIntelliJWebServerInfo(),
             intellijMcpServer = IntelliJMcpServerProbe.getInstanceOrNull()?.probe(),
         )

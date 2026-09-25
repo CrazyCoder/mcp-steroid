@@ -28,6 +28,18 @@ class SelfBackendResponseMappingTest {
     }
 
     @Test
+    fun `the split role reaches the backends self entry`() {
+        val response = SelfBackendDescription(
+            backendName = "iu-47qi79c1",
+            projects = emptyList(),
+            intellij = intellij,
+            role = "frontend",
+        ).toListProjectsResponse()
+
+        assertEquals(listOf(BackendRef(backendName = "iu-47qi79c1", intellij = intellij, role = "frontend")), response.backends)
+    }
+
+    @Test
     fun `projects are sorted by project_name regardless of open order`() {
         val zulu = ListedProject(projectName = "zulu-9fk2a0xq", name = "zulu", path = "/z", backendName = "iu-47qi79c1")
         val alpha = ListedProject(projectName = "alpha-8x1k2mq0", name = "alpha", path = "/a", backendName = "iu-47qi79c1")

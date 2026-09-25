@@ -4,6 +4,9 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
 import com.jonnyzzz.mcpSteroid.IdeInfo
+import com.jonnyzzz.mcpSteroid.server.split.SplitRole
+import com.jonnyzzz.mcpSteroid.server.split.activeSplitFrontendBridge
+import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 
 /**
  * Stable id for an open [project] — the value returned as `project_name` by list_projects/list_windows.
@@ -14,8 +17,16 @@ import com.jonnyzzz.mcpSteroid.IdeInfo
  * [ProjectScopedToolHandler.resolveProject]) so `/projects` and `/windows` always emit the same id
  * for the same project.
  */
-fun projectNameFor(project: Project): String =
+fun localProjectNameFor(project: Project): String =
     "${project.name}-${base36FixedWidth("project", project.basePath, project.name)}"
+
+/**
+ * The `project_name` this IDE reports for [project]. In a Split Mode frontend it is the backend's key
+ * when the backend knows the project, so both sides name a project the same way; otherwise
+ * [localProjectNameFor].
+ */
+fun projectNameFor(project: Project): String =
+    activeSplitFrontendBridge()?.backendKeyFor(project) ?: localProjectNameFor(project)
 
 /**
  * Direct in-IDE `steroid_list_projects`. No top-level `ide`/`plugin`/`pid` header (the responding
@@ -35,12 +46,14 @@ class SelfBackendDescription(
     val projects: List<ListedProject>,
     /** This IDE's presentation identity ([IdeInfo.ofApplication] projected) for the `backends[]` self entry. */
     val intellij: IntelliJInfo,
+    /** This process's Split Mode role ([SplitRole.wire]), reported on the `backends[]` self entry. */
+    val role: String? = null,
 ) {
     /**
      * The `backends[]` self entry. On the direct in-IDE surface it is UNCONDITIONAL — a server always
      * describes itself, so a fresh IDE with zero open projects/windows stays identifiable (#155).
      */
-    fun selfBackendRef(): BackendRef = BackendRef(backendName = backendName, intellij = intellij)
+    fun selfBackendRef(): BackendRef = BackendRef(backendName = backendName, intellij = intellij, role = role)
 }
 
 /**
@@ -75,5 +88,6 @@ suspend fun describeSelfBackend(): SelfBackendDescription {
         backendName = selfBackendName,
         projects = listedProjects,
         intellij = ide.toIntelliJInfo(),
+        role = currentSplitRole().wire,
     )
 }

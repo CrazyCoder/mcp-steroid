@@ -30,8 +30,8 @@ data class PidMarker(
     val createdAt: String,
     /** Absolute IDE install home (`PathManager.getHomePath()`); identifies the install across restarts. */
     val ideHome: String? = null,
-    /** True when this IDE process is a Remote Development backend. */
-    val remoteDevelopmentBackend: Boolean = false,
+    /** `monolith`, `frontend` or `backend`: which part of a Split Mode IDE wrote this marker. Null from older plugins. */
+    val role: String? = null,
     // Both transports are optional and independent: the `/mcp` MCP-client endpoint and the devrig bridge
     // endpoint are split at the protocol level. A marker may advertise only one of them — e.g. only
     // [devrigEndpoint] with no [mcpSteroidServer]. devrig reads ONLY [devrigEndpoint] and never touches MCP.

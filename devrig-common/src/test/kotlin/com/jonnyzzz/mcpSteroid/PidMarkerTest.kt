@@ -1,7 +1,6 @@
 package com.jonnyzzz.mcpSteroid
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -165,21 +164,18 @@ class PidMarkerTest {
     }
 
     @Test
-    fun `remote development backend marker is encoded and defaults to false when absent`() {
-        val backendMarker = samplePidMarker().copy(remoteDevelopmentBackend = true)
+    fun `split role is encoded and is null when absent`() {
+        val backendMarker = samplePidMarker().copy(role = "backend")
         val text = PidMarkerJson.encode(backendMarker)
 
-        assertTrue(
-            text.contains("\"remoteDevelopmentBackend\": true"),
-            "remoteDevelopmentBackend field missing: $text",
-        )
-        assertTrue(PidMarkerJson.decode(text).remoteDevelopmentBackend)
+        assertTrue(text.contains("\"role\": \"backend\""), "role field missing: $text")
+        assertEquals("backend", PidMarkerJson.decode(text).role)
 
         val olderMarker = PidMarkerJson.decode(
             """{"schema":1,"pid":7,"ide":{"name":"X","version":"1","build":"IU-1"},
                "plugin":{"id":"p","name":"P","version":"v"},"createdAt":"t"}""".trimIndent()
         )
-        assertFalse(olderMarker.remoteDevelopmentBackend)
+        assertNull(olderMarker.role)
     }
 
     @Test

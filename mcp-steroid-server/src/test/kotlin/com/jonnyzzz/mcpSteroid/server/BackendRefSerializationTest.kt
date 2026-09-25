@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.server
 import com.jonnyzzz.mcpSteroid.IdeInfo
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -23,6 +24,14 @@ class BackendRefSerializationTest {
         val root = McpJson.parseToJsonElement(json).jsonObject
         assertEquals(setOf("backend_name", "intellij"), root.keys, json)
         assertEquals(setOf("name", "version", "build"), root["intellij"]!!.jsonObject.keys, json)
+    }
+
+    @Test
+    fun `BackendRef carries role only when the IDE reports one`() {
+        val withRole = McpJson.encodeToString(BackendRef.serializer(), BackendRef("iu-47qi79c1", ide.toIntelliJInfo(), role = "frontend"))
+        val root = McpJson.parseToJsonElement(withRole).jsonObject
+        assertEquals(setOf("backend_name", "intellij", "role"), root.keys, withRole)
+        assertEquals("frontend", root["role"]!!.jsonPrimitive.content, withRole)
     }
 
     @Test

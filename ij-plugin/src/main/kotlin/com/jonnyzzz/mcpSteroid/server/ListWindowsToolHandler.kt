@@ -14,6 +14,7 @@ import com.intellij.openapi.project.DumbService
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.openapi.wm.ex.StatusBarEx
 import com.jonnyzzz.mcpSteroid.execution.dialogWindowsLookup
+import com.jonnyzzz.mcpSteroid.server.split.activeSplitFrontendBridge
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
 import java.awt.Frame
 import kotlinx.coroutines.Dispatchers
@@ -29,7 +30,8 @@ class ListWindowsToolHandlerIJ : ListWindowsToolHandler {
             windows = snapshot.windows.map { it.listed(it.projectName, self.backendName) },
             backgroundTasks = snapshot.backgroundTasks.map { it.listed(it.projectName, self.backendName) },
             // Unconditional self entry — the identity probe works even with zero open windows (#155).
-            backends = backendsTable(listOf(self.selfBackendRef())),
+            // In a Split Mode frontend the backend's entry joins it, so both sides are listed.
+            backends = backendsTable(listOfNotNull(self.selfBackendRef(), activeSplitFrontendBridge()?.backendSelf())),
         )
     }
 }

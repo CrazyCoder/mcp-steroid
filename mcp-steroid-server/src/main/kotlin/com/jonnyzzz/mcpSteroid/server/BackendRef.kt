@@ -31,11 +31,15 @@ fun IdeInfo.toIntelliJInfo(): IntelliJInfo = IntelliJInfo(name = name, version =
 /**
  * MCP-only lookup element: resolves a `backend_name` seen on `projects[]`/`windows[]`/
  * `backgroundTasks[]` entries to the owning IDE's identity. Never crosses the devrig<->IDE wire.
+ *
+ * [role] is `monolith`, `frontend` or `backend`, set by the in-IDE handlers so an agent in Split
+ * Mode can tell which side each entry is. devrig's aggregating handlers leave it null.
  */
 @Serializable
 data class BackendRef(
     @SerialName("backend_name") val backendName: String,
     val intellij: IntelliJInfo,
+    val role: String? = null,
 )
 
 /**
