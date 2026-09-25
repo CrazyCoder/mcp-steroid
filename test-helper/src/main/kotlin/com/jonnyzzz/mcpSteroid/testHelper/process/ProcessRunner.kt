@@ -66,6 +66,45 @@ private fun RunProcessRequest.filterSecrets(text: String): String {
     return result
 }
 
+private val isWindowsHost = System.getProperty("os.name").startsWith("Windows", ignoreCase = true)
+
+/**
+ * On Windows, Java joins the arguments into one command line and wraps an argument with spaces in quotes, but
+ * it does not escape the double quotes inside it, so `docker exec ... bash -c '<script with "quotes">'` reaches
+ * docker split in the wrong places. An argument with a double quote is quoted here instead; Java passes an
+ * already quoted argument through unchanged.
+ */
+private fun toHostCommandLineArg(arg: String): String =
+    if (isWindowsHost && '"' in arg) windowsCommandLineArg(arg) else arg
+
+private val BACKSLASH = 92.toChar()
+
+/**
+ * [arg] quoted for a Windows command line by the rules `CommandLineToArgvW` and the C runtime parse with:
+ * backslashes are literal unless they precede a double quote, where each one is doubled and the quote escaped.
+ */
+fun windowsCommandLineArg(arg: String): String = buildString {
+    append('"')
+    var backslashes = 0
+    for (ch in arg) {
+        when (ch) {
+            BACKSLASH -> backslashes++
+            '"' -> {
+                repeat(backslashes * 2 + 1) { append(BACKSLASH) }
+                append('"')
+                backslashes = 0
+            }
+            else -> {
+                repeat(backslashes) { append(BACKSLASH) }
+                backslashes = 0
+                append(ch)
+            }
+        }
+    }
+    repeat(backslashes * 2) { append(BACKSLASH) }
+    append('"')
+}
+
 private fun startProcessImpl(request: RunProcessRequest): StartedProcessImpl {
     // Filter secrets from command line and description for logging
     val logPrefix = request.logPrefix
@@ -77,7 +116,7 @@ private fun startProcessImpl(request: RunProcessRequest): StartedProcessImpl {
         println("[$logPrefix] $filteredCommand")
     }
 
-    val processBuilder = ProcessBuilder(request.args)
+    val processBuilder = ProcessBuilder(request.args.map(::toHostCommandLineArg))
     processBuilder.directory(request.workingDir)
     processBuilder.environment().putAll(request.environment)
     processBuilder.redirectInput(ProcessBuilder.Redirect.PIPE)
