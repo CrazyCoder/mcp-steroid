@@ -132,15 +132,23 @@ class IdeWindowsCollector {
                 }
 
                 val knownWindowIds = frameInfos.map { it.windowId }.toMutableSet()
+                val frameProjects = frames.mapNotNull { frame ->
+                    val project = frame.project?.takeUnless { it.isDisposed } ?: return@mapNotNull null
+                    SwingUtilities.getWindowAncestor(frame.component)?.let { it to project }
+                }.toMap()
+                val fallbackProject = frameProjects.values.firstOrNull()
                 val extraInfos = java.awt.Window.getWindows()
                     .filter { it.isDisplayable }
                     .mapNotNull { window ->
                         val windowId = WindowIdUtil.compute(window, window)
                         if (!knownWindowIds.add(windowId)) return@mapNotNull null
                         val bounds = window.bounds
+                        // Screenshot and input take a project_name to route the call, so a dialog carries its
+                        // owner frame's project, and a window without one carries an open project of this IDE.
+                        val route = windowProjectRoute(window, { it.owner }, frameProjects::get, fallbackProject)
                         WindowInfo(
-                            projectName = null,
-                            projectPath = null,
+                            projectName = route.project?.let { projectNameFor(it) },
+                            projectPath = route.project?.takeIf { route.owned }?.let { projectPathFor(it) },
                             // Dialogs are the common case in this fallback branch — a Frame-only cast
                             // left every dialog with title=null, making them untargetable (issue #309).
                             title = when (window) {
@@ -166,3 +174,27 @@ class IdeWindowsCollector {
         )
     }
 }
+
+/** The project a window routes through: [owned] when it comes from the window's owner chain. */
+internal data class WindowProjectRoute<P>(val project: P?, val owned: Boolean)
+
+/**
+ * Follows [window]'s owners, as given by [ownerOf], to the first one that [projectOf] maps to a project, and
+ * falls back to [fallback] when none does. The walk is bounded, so an owner cycle cannot loop.
+ */
+internal fun <W : Any, P : Any> windowProjectRoute(
+    window: W,
+    ownerOf: (W) -> W?,
+    projectOf: (W) -> P?,
+    fallback: P?,
+): WindowProjectRoute<P> {
+    var current: W? = window
+    repeat(MAX_OWNER_DEPTH) {
+        val w = current ?: return WindowProjectRoute(fallback, owned = false)
+        projectOf(w)?.let { return WindowProjectRoute(it, owned = true) }
+        current = ownerOf(w)
+    }
+    return WindowProjectRoute(fallback, owned = false)
+}
+
+private const val MAX_OWNER_DEPTH = 32
