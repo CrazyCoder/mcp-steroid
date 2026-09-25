@@ -3,6 +3,8 @@ package com.jonnyzzz.mcpSteroid.server.split
 
 import com.intellij.platform.runtime.product.ProductMode
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
@@ -61,6 +63,17 @@ class SplitRoutingTest {
     fun `an unknown side value is an error`() {
         assertThrows(ToolCallErrorException::class.java) {
             routeTool(SplitRole.FRONTEND, "steroid_execute_code", side("both"))
+        }
+    }
+
+    @Test
+    fun `a non-string side value is an unsupported side`() {
+        val values = listOf(buildJsonObject { put("x", 1) }, buildJsonArray { add("backend") })
+        for (value in values) {
+            val e = assertThrows(ToolCallErrorException::class.java) {
+                routeTool(SplitRole.FRONTEND, "steroid_execute_code", buildJsonObject { put(SIDE_ARGUMENT, value) })
+            }
+            assertTrue(e.message, e.message.contains("Unsupported side"))
         }
     }
 

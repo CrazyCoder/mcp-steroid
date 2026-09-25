@@ -5,8 +5,8 @@ import com.intellij.platform.ide.productMode.IdeProductMode
 import com.intellij.platform.runtime.product.ProductMode
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
 /** Which part of a Split Mode IDE this process is. A monolith is both parts in one process. */
 enum class SplitRole(val wire: String) { MONOLITH("monolith"), FRONTEND("frontend"), BACKEND("backend") }
@@ -41,7 +41,11 @@ internal val ROUTED_TOOLS: Map<String, Home> = mapOf(
 
 fun routeTool(role: SplitRole, toolName: String, arguments: JsonObject): ToolSide {
     val home = ROUTED_TOOLS[toolName] ?: error("no routing for tool $toolName")
-    val requested = arguments[SIDE_ARGUMENT]?.jsonPrimitive?.contentOrNull
+    val requested = when (val value = arguments[SIDE_ARGUMENT]) {
+        null -> null
+        is JsonPrimitive -> value.contentOrNull
+        else -> value.toString()
+    }
     val wanted = when (requested) {
         null -> home
         "backend" -> Home.BACKEND

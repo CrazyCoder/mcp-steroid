@@ -372,9 +372,6 @@
 
 Minor findings deferred from the split-plugin work (`docs/superpowers/specs/2026-09-25-steroid-split-mode-design.md`).
 
-- [ ] **`side` rejects non-string values with a stack trace**. `routeTool` reads `side` through
-  `jsonPrimitive`, so an object or array value throws `IllegalArgumentException` and the client gets a
-  "Tool execution error" with a stack trace instead of the clean "Unsupported side" message.
 - [ ] **`list_windows.project_path` in the JetBrains Client is the client's synthetic path**. The client's
   project lives under `config/.../projects/<hash>`, so `project_path` does not match the backend path that
   `list_projects` reports. `project_name` is correct (it comes from the backend through the bridge).
