@@ -76,7 +76,8 @@ internal class RpcSplitFrontendBridge : SplitFrontendBridge {
     private suspend fun <T : Any> reachBackend(call: suspend SteroidBridgeApi.() -> T): T =
         withTimeoutOrNull(BACKEND_REACH_TIMEOUT) { durable { SteroidBridgeApi.getInstance().call() } }
             ?: throw IllegalStateException(
-                "the backend did not answer within $BACKEND_REACH_TIMEOUT. Is MCP Steroid Plus installed on the backend too?"
+                "the backend did not answer within $BACKEND_REACH_TIMEOUT. Either it is disconnected, " +
+                    "or MCP Steroid Plus is not installed on the backend side."
             )
 
     private companion object {

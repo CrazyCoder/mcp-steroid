@@ -52,7 +52,8 @@ fun routeTool(role: SplitRole, toolName: String, arguments: JsonObject): ToolSid
         SplitRole.MONOLITH -> ToolSide.LOCAL
         SplitRole.BACKEND -> {
             if (wanted == Home.FRONTEND && requested != null) throw ToolCallErrorException(
-                "side=frontend was requested, but no frontend is attached to this IDE. It runs as a Remote Development backend."
+                "side=frontend was requested, but this endpoint is a Remote Development backend and no frontend is attached " +
+                    "to it. When a JetBrains Client is connected, call the client's MCP endpoint instead."
             )
             ToolSide.LOCAL
         }
