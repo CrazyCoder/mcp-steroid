@@ -29,10 +29,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.awt.AWTEvent
 import java.awt.Component
 import java.awt.Point
 import java.awt.Dimension
+import java.awt.Toolkit
 import java.awt.Window
+import java.awt.event.AWTEventListener
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
@@ -118,6 +121,29 @@ data class ScreenshotArtifacts(
  * boxes use image pixels, while `steroid_input` targets, `steroid_list_windows` bounds and the component tree
  * use logical ones. Null when the two match.
  */
+/** One mouse event of a click, before it gets a source and a point. */
+internal data class ClickEvent(val id: Int, val button: Int, val modifiers: Int, val clickCount: Int, val popupTrigger: Boolean)
+
+/**
+ * The events of one click, as AWT reports a real one: a move to the point, then press, release and click. The
+ * press alone carries the button's down mask. [modifiers] are the keyboard modifiers held during the click.
+ */
+internal fun clickEventSequence(button: Int, modifiers: Int): List<ClickEvent> {
+    val downMask = when (button) {
+        MouseEvent.BUTTON1 -> InputEvent.BUTTON1_DOWN_MASK
+        MouseEvent.BUTTON2 -> InputEvent.BUTTON2_DOWN_MASK
+        MouseEvent.BUTTON3 -> InputEvent.BUTTON3_DOWN_MASK
+        else -> throw IllegalArgumentException("Unsupported mouse button $button")
+    }
+    val popupTrigger = button == MouseEvent.BUTTON3
+    return listOf(
+        ClickEvent(MouseEvent.MOUSE_MOVED, MouseEvent.NOBUTTON, modifiers, 0, false),
+        ClickEvent(MouseEvent.MOUSE_PRESSED, button, modifiers or downMask, 1, popupTrigger),
+        ClickEvent(MouseEvent.MOUSE_RELEASED, button, modifiers, 1, popupTrigger),
+        ClickEvent(MouseEvent.MOUSE_CLICKED, button, modifiers, 1, popupTrigger),
+    )
+}
+
 internal fun screenshotScaleMessage(componentSize: Size, imageSize: Size): String? {
     if (componentSize.width <= 0 || imageSize.width == componentSize.width) return null
     val scale = "%.2f".format(java.util.Locale.ROOT, imageSize.width.toDouble() / componentSize.width)
@@ -579,46 +605,52 @@ class VisionService(
             }
         }
 
+        /**
+         * Delivers the click to the window, in window coordinates, the way the OS delivers a real one. AWT's
+         * LightweightDispatcher then picks the component: it skips a glass pane with no mouse listeners (the
+         * Settings dialog keeps a visible one over everything) and sends the enter and exit events. The move
+         * before the press matters too: a list popup selects its row on the move and ignores a press on any
+         * other row.
+         */
         private fun click(component: Component, step: InputStep.Click) {
-            val targetComponent = when (val target = step.target) {
-                is InputTarget.ScreenshotPixel -> {
-                    val point = mapScreenshotPoint(component, target.x, target.y)
-                    SwingUtilities.getDeepestComponentAt(component, point.x, point.y) ?: component
-                }
-                is InputTarget.ScreenPixel -> {
-                    val point = Point(target.x, target.y)
-                    SwingUtilities.convertPointFromScreen(point, component)
-                    SwingUtilities.getDeepestComponentAt(component, point.x, point.y) ?: component
-                }
-                is InputTarget.Unsupported -> throw IllegalStateException("Unsupported target: ${target.raw}")
-            }
-
+            val window = component as? Window ?: SwingUtilities.getWindowAncestor(component)
+                ?: throw IllegalStateException("The target component is not in a window")
             val point = when (val target = step.target) {
-                is InputTarget.ScreenshotPixel -> mapScreenshotPoint(component, target.x, target.y)
+                is InputTarget.ScreenshotPixel ->
+                    SwingUtilities.convertPoint(component, mapScreenshotPoint(component, target.x, target.y), window)
                 is InputTarget.ScreenPixel -> Point(target.x, target.y).also {
-                    SwingUtilities.convertPointFromScreen(it, component)
+                    SwingUtilities.convertPointFromScreen(it, window)
                 }
                 is InputTarget.Unsupported -> throw IllegalStateException("Unsupported target: ${target.raw}")
             }
-
-            ensureFocus(targetComponent)
-            targetComponent.requestFocusInWindow()
-
-            val modifiers = currentModifiers(step.modifiers)
             val button = when (step.button) {
                 MouseButton.LEFT -> MouseEvent.BUTTON1
                 MouseButton.RIGHT -> MouseEvent.BUTTON3
                 MouseButton.MIDDLE -> MouseEvent.BUTTON2
             }
 
-            // The MouseEvent's x/y must be in the TARGET's local space: Swing button listeners gate on
-            // component.contains(e.x, e.y), so window-space coordinates never arm the model — focus
-            // moves, state does not change (issue #309, problem 2).
-            val localPoint = SwingUtilities.convertPoint(component, point, targetComponent)
-
-            dispatchMouse(targetComponent, MouseEvent.MOUSE_PRESSED, localPoint, button, modifiers)
-            dispatchMouse(targetComponent, MouseEvent.MOUSE_RELEASED, localPoint, button, modifiers)
-            dispatchMouse(targetComponent, MouseEvent.MOUSE_CLICKED, localPoint, button, modifiers)
+            for (event in clickEventSequence(button, currentModifiers(step.modifiers))) {
+                if (event.id != MouseEvent.MOUSE_PRESSED) {
+                    dispatchMouse(window, event, point)
+                    continue
+                }
+                // A following press:/type: step must reach the clicked component (issue #309, problem 2), and
+                // only AWT knows which one that is: record where it delivers the press.
+                var pressed: Component? = null
+                val recorder = AWTEventListener { e ->
+                    if (e is MouseEvent && e.id == MouseEvent.MOUSE_PRESSED && e.component !== window) pressed = e.component
+                }
+                Toolkit.getDefaultToolkit().addAWTEventListener(recorder, AWTEvent.MOUSE_EVENT_MASK)
+                try {
+                    dispatchMouse(window, event, point)
+                } finally {
+                    Toolkit.getDefaultToolkit().removeAWTEventListener(recorder)
+                }
+                pressed?.let {
+                    ensureFocus(it)
+                    it.requestFocusInWindow()
+                }
+            }
         }
 
         private fun mapScreenshotPoint(component: Component, x: Int, y: Int): Point {
@@ -710,17 +742,17 @@ class VisionService(
             IdeEventQueue.getInstance().dispatchEvent(event)
         }
 
-        private fun dispatchMouse(component: Component, id: Int, point: Point, button: Int, modifiers: Int) {
+        private fun dispatchMouse(window: Window, click: ClickEvent, point: Point) {
             val event = MouseEvent(
-                component,
-                id,
+                window,
+                click.id,
                 System.currentTimeMillis(),
-                modifiers,
+                click.modifiers,
                 point.x,
                 point.y,
-                1,
-                button == MouseEvent.BUTTON3,
-                button
+                click.clickCount,
+                click.popupTrigger,
+                click.button
             )
             // Keymap mouse shortcuts (Ctrl+Click for GotoDeclaration and others) are matched only by
             // IdeMouseEventDispatcher inside IdeEventQueue.dispatchEvent, as for keys in [dispatchKey].
