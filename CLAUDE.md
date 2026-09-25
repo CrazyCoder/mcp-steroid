@@ -226,6 +226,45 @@ aliases. Missing/invalid parameters must route to focused help with allowed valu
 must happen before backend, file/stdin, or `--out` side effects. Agent-facing changes require the unit,
 stable Docker, and Claude/Codex experiment buckets named in that contract.
 
+## Split mode
+
+MCP Steroid Plus is a split plugin. The main module (`ij-plugin`) holds all the existing code and loads on
+every side. Three content modules sit on top of it:
+
+| Module | Loads on | Holds |
+| -- | -- | -- |
+| `mcp-steroid.shared` (`ij-plugin/shared`) | every side | the `SteroidBridgeApi` RPC contract and its payload types, nothing else |
+| `mcp-steroid.backend` (`ij-plugin/backend`) | backend and monolith | the `SteroidBridgeApi` provider |
+| `mcp-steroid.frontend` (`ij-plugin/frontend`) | frontend and monolith | `RpcSplitFrontendBridge` |
+
+In Split Mode the JetBrains Client hosts the agent's MCP endpoint. `RoutedTool` forwards backend-side tools
+through the `splitFrontendBridge` extension, which only the frontend module implements. `ROUTED_TOOLS` in
+`SplitRouting.kt` is the routing table. The main module cannot see content-module classes; content modules
+see the main module's.
+
+Files that change together:
+
+- `<content>` in `plugin.xml` and the module descriptors (`ContentModulesConsistencyTest` enforces it).
+- A new MCP tool and its `ROUTED_TOOLS` entry. An unrouted tool fails at call time.
+- `SteroidBridgeApi` and `SteroidBridgeApiImpl`.
+- A new module jar and the `verifyBundledLibraries` list. The IDE loads `lib/modules/<module name>.jar`, so
+  the jar is named after the module, not the Gradle path.
+
+RPC rules:
+
+- `@Rpc` interfaces with `suspend` methods only. Payloads are `@Serializable`. `shared` stays free of
+  frontend-only and backend-only APIs.
+- Never call RPC on the EDT.
+- `durable {}` retries with no at-most-once guarantee and spins while the service is unresolved. Use it only
+  for idempotent calls, always under a timeout. A call that runs a tool is never retried.
+- Batch; do not make chatty calls.
+
+Checks when adding or moving split code:
+
+- Run the inspection "Plugin DevKit | Code | Frontend and Backend API Usage".
+- Run `./gradlew :ij-plugin:runIde -Pmcp.splitMode=true` to start a frontend and backend pair. To feel
+  latency, enable internal mode (`-Didea.is.internal=true`) and raise Direct Ping in the Split Mode widget.
+
 ## Technology Stack
 
 Gradle 9.6.1 / Kotlin 2.3.20 / Java 25 toolchain / IntelliJ Platform 2026.1+ / Ktor 3.3.2 (CIO+SSE) / kotlinx.serialization
