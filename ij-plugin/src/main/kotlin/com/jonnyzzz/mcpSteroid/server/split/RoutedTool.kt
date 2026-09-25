@@ -18,13 +18,11 @@ class RoutedTool(
         val currentRole = role()
         val side = routeTool(currentRole, delegate.name, context.params.arguments)
         if (currentRole != SplitRole.FRONTEND) return delegate.call(context)
-        val bridge = bridge() ?: return ToolCallResult.errorResult(
-            "This JetBrains Client has no MCP Steroid frontend module loaded, so it cannot reach the backend."
-        )
+        val bridge = bridge()
         if (side == ToolSide.LOCAL) {
             // A UI tool still works without the backend: project keys fall back to the local ones.
             try {
-                bridge.refreshProjectKeys()
+                bridge?.refreshProjectKeys()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -32,6 +30,9 @@ class RoutedTool(
             }
             return delegate.call(context)
         }
+        if (bridge == null) return ToolCallResult.errorResult(
+            "This JetBrains Client has no MCP Steroid frontend module loaded, so it cannot reach the backend."
+        )
         return try {
             bridge.forward(context.params, context.mcpProgressReporter)
         } catch (e: CancellationException) {

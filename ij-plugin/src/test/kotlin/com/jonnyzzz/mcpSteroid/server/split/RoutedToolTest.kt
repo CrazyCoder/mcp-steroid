@@ -103,6 +103,13 @@ class RoutedToolTest {
     }
 
     @Test
+    fun `split frontend without a bridge still runs a UI tool locally`() = runBlocking {
+        val local = LocalTool("steroid_take_screenshot")
+        assertEquals("local", text(RoutedTool(local, { SplitRole.FRONTEND }, { null }).call(context("steroid_take_screenshot"))))
+        assertEquals(1, local.calls)
+    }
+
+    @Test
     fun `split frontend without a bridge is an error, not a local run`() = runBlocking {
         val local = LocalTool("steroid_execute_code")
         val result = RoutedTool(local, { SplitRole.FRONTEND }, { null }).call(context("steroid_execute_code"))

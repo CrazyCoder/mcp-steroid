@@ -12,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.BackendRef
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.split.BackendReachPolicy
 import com.jonnyzzz.mcpSteroid.server.split.SplitFrontendBridge
 import com.jonnyzzz.mcpSteroid.split.BridgeEvent
 import com.jonnyzzz.mcpSteroid.split.BridgeToolRequest
@@ -20,7 +21,6 @@ import fleet.rpc.client.durable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -28,11 +28,14 @@ import kotlin.time.Duration.Companion.seconds
  *
  * `durable {}` retries a call with no at-most-once guarantee and keeps retrying while the backend
  * service is unresolved, for example when the backend lacks this plugin. So only the idempotent
- * calls use it, and always under [BACKEND_REACH_TIMEOUT]. [forward] never retries: a retried
+ * calls use it, and always under a timeout from [reach]. [forward] never retries: a retried
  * `execute_code` would run the script twice.
  */
 internal class RpcSplitFrontendBridge : SplitFrontendBridge {
-    private val keys = ConcurrentHashMap<ProjectId, String>()
+    // Replaced whole, never cleared in place: parallel tool calls read it while another call refreshes it.
+    @Volatile
+    private var keys: Map<ProjectId, String> = emptyMap()
+    private val reach = BackendReachPolicy(full = 15.seconds, short = 1.seconds, quietPeriod = 30.seconds)
 
     override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter): ToolCallResult {
         // Proves the backend is reachable before a call that cannot be retried, and refreshes the keys.
@@ -53,9 +56,7 @@ internal class RpcSplitFrontendBridge : SplitFrontendBridge {
     }
 
     override suspend fun refreshProjectKeys() {
-        val entries = reachBackend { projectKeys() }
-        keys.clear()
-        entries.forEach { keys[it.projectId] = it.projectName }
+        keys = reachBackend { projectKeys() }.associate { it.projectId to it.projectName }
     }
 
     override fun backendKeyFor(project: Project): String? = project.projectIdOrNull()?.let { keys[it] }
@@ -70,17 +71,20 @@ internal class RpcSplitFrontendBridge : SplitFrontendBridge {
     }
 
     /**
-     * An idempotent call under [BACKEND_REACH_TIMEOUT]. A timeout becomes an [IllegalStateException], not
+     * An idempotent call under the [reach] timeout. A timeout becomes an [IllegalStateException], not
      * a `TimeoutCancellationException`, so callers do not mistake it for their own cancellation.
      */
-    private suspend fun <T : Any> reachBackend(call: suspend SteroidBridgeApi.() -> T): T =
-        withTimeoutOrNull(BACKEND_REACH_TIMEOUT) { durable { SteroidBridgeApi.getInstance().call() } }
-            ?: throw IllegalStateException(
-                "the backend did not answer within $BACKEND_REACH_TIMEOUT. Either it is disconnected, " +
+    private suspend fun <T : Any> reachBackend(call: suspend SteroidBridgeApi.() -> T): T {
+        val timeout = reach.timeout()
+        val result = withTimeoutOrNull(timeout) { durable { SteroidBridgeApi.getInstance().call() } }
+        if (result == null) {
+            reach.onFailure()
+            throw IllegalStateException(
+                "the backend did not answer within $timeout. Either it is disconnected, " +
                     "or MCP Steroid Plus is not installed on the backend side."
             )
-
-    private companion object {
-        val BACKEND_REACH_TIMEOUT = 15.seconds
+        }
+        reach.onSuccess()
+        return result
     }
 }
