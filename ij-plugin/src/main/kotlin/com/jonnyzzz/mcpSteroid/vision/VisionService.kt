@@ -688,9 +688,9 @@ class VisionService(
             )
             // Keymap shortcuts are matched only inside IdeEventQueue.dispatchEvent (IdeKeyEventDispatcher);
             // component.dispatchEvent skips it and reaches only Swing bindings, so a shortcut such as
-            // press:META+1 would run no action (GitHub issue #1). Remote Development injects client
-            // keystrokes the same way. The event is not posted, so the queue still delivers it to
-            // [component] without retargeting.
+            // press:META+1 would run no action (CrazyCoder/mcp-steroid#1). Remote Development injects
+            // client keystrokes the same way. The event is not posted, so the queue still delivers it
+            // to [component] without retargeting.
             IdeEventQueue.getInstance().dispatchEvent(event)
         }
 
