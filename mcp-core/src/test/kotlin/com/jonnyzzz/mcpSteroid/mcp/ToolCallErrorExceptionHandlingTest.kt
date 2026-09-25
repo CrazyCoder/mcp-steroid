@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.mcp
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -17,7 +18,8 @@ import org.junit.jupiter.api.assertThrows
  *    (single text content "ERROR: <message>", no stacktrace leaked).
  *  - any other [Exception] → `ToolCallResult` with `isError=true` AND a
  *    second `Stacktrace: …` content item.
- *  - [CancellationException] → rethrown, never swallowed.
+ *  - [CancellationException] → rethrown when the caller is cancelled; an error result when the
+ *    caller is still active, because then the cancellation came from inside the tool.
  */
 class ToolCallErrorExceptionHandlingTest {
 
@@ -48,13 +50,29 @@ class ToolCallErrorExceptionHandlingTest {
     }
 
     @Test
-    fun `CancellationException is rethrown not converted`() {
-        val registry = registryWithFailingTool { throw CancellationException("cancelled") }
-
-        val thrown = assertThrows<CancellationException> {
-            runBlocking { registry.callTool(failParams(), McpSession()) }
+    fun `cancellation of the caller is rethrown not converted`() {
+        assertThrows<CancellationException> {
+            runBlocking {
+                val registry = registryWithFailingTool {
+                    coroutineContext.cancel()
+                    throw CancellationException("cancelled")
+                }
+                registry.callTool(failParams(), McpSession())
+            }
         }
-        assertEquals("cancelled", thrown.message)
+    }
+
+    // The IDE throws ProcessCanceledException for its own reasons, for example a disposed project.
+    // When the caller is still active, that is a failed call, not a cancelled one.
+    @Test
+    fun `a CancellationException while the caller is active becomes an error result`() = runBlocking {
+        val registry = registryWithFailingTool { throw CancellationException("Container 'ProjectImpl services' was disposed") }
+
+        val result = registry.callTool(failParams(), McpSession())
+
+        assertTrue(result.isError)
+        val text = (result.content.first() as ContentItem.Text).text
+        assertTrue("Container 'ProjectImpl services' was disposed" in text, text)
     }
 
     private fun registryWithFailingTool(body: () -> Nothing): McpToolRegistry = McpToolRegistry().apply {

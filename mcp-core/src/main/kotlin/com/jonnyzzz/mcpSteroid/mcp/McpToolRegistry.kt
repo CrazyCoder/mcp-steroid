@@ -3,6 +3,8 @@ package com.jonnyzzz.mcpSteroid.mcp
 
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.thisLogger
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -92,11 +94,19 @@ class McpToolRegistry : McpToolRegistrar {
         } catch (e: ToolCallErrorException) {
             e.toolCallResult
         } catch (e: kotlinx.coroutines.CancellationException) {
-            // Never swallow cancellation — propagate so the surrounding coroutine
-            // scope can shut down cleanly. Treating this as a tool error would surface
-            // as `isError=true` and let the client think the call merely failed, while
-            // the dispatcher would keep running on a cancelled context.
-            throw e
+            // Never swallow cancellation of the caller — propagate so the surrounding
+            // coroutine scope can shut down cleanly. Treating it as a tool error would
+            // surface as `isError=true` while the dispatcher keeps running on a cancelled
+            // context. A cancellation thrown while the caller is still active came from
+            // inside the tool (the IDE throws ProcessCanceledException for a disposed
+            // project, for example): that call failed, and rethrowing it would reach the
+            // transport as a bare HTTP 500.
+            currentCoroutineContext().ensureActive()
+            ToolCallResult.builder()
+                .addTextContent("Tool execution was cancelled inside the IDE: ${e.message}")
+                .addTextContent("Stacktrace: " + e.stackTraceToString())
+                .markAsError()
+                .build()
         } catch (e: Exception) {
             ToolCallResult.builder()
                 .addTextContent("Tool execution error: ${e.message}")
