@@ -8,6 +8,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -52,11 +53,13 @@ class SplitRoutingTest {
     }
 
     @Test
-    fun `side frontend on a backend with no client is an error`() {
+    fun `side frontend on a backend endpoint is an error`() {
         val e = assertThrows(ToolCallErrorException::class.java) {
             routeTool(SplitRole.BACKEND, "steroid_execute_code", side("frontend"))
         }
-        assertTrue(e.message, e.message.contains("no frontend is attached"))
+        // A backend endpoint cannot tell whether a client is attached, so the message must not claim either.
+        assertTrue(e.message, e.message.contains("cannot run code in the JetBrains Client"))
+        assertFalse(e.message, e.message.contains("no frontend is attached"))
     }
 
     @Test

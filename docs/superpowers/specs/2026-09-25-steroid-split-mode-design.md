@@ -74,8 +74,8 @@ is a split frontend.
 
 `steroid_execute_code` gains an optional `side` parameter, `frontend` or
 `backend`, defaulting to `backend`. On a monolith both values run locally. On a
-backend with no client, `backend` runs locally and `frontend` is an error that
-says no frontend is attached.
+backend endpoint, `backend` runs locally and `frontend` is an error that says
+the backend cannot run code in the client, whether or not one is attached.
 
 ## RPC contract (`shared`)
 
