@@ -22,7 +22,7 @@ interface SteroidBridgeApi : RemoteApi<Unit> {
     /** Runs one MCP tool call on the backend: zero or more [BridgeEvent.Progress], then one [BridgeEvent.Result]. */
     suspend fun callTool(request: BridgeToolRequest): Flow<BridgeEvent>
 
-    /** The backend's `project_name` key for each open project, with the platform's shared [ProjectId]. */
+    /** The backend's `project_name` key and base path for each open project, with the platform's shared [ProjectId]. */
     suspend fun projectKeys(): List<ProjectKeyEntry>
 
     /** The backend's `backends[]` entry as JSON (`BackendRef`, which lives in the main plugin module). */
@@ -44,4 +44,4 @@ sealed interface BridgeEvent {
 }
 
 @Serializable
-data class ProjectKeyEntry(val projectName: String, val projectId: ProjectId)
+data class ProjectKeyEntry(val projectName: String, val projectId: ProjectId, val projectPath: String?)

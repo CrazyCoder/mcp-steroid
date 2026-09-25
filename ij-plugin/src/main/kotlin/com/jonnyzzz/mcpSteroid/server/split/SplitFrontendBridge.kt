@@ -15,11 +15,17 @@ import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 interface SplitFrontendBridge {
     suspend fun forward(params: ToolCallParams, progress: McpProgressReporter): ToolCallResult
 
-    /** Fetches the backend's `project_name` keys; [backendKeyFor] reads the result. */
+    /** Fetches the backend's `project_name` keys and paths; [backendKeyFor] and [backendPathFor] read the result. */
     suspend fun refreshProjectKeys()
 
     /** The backend's `project_name` for this frontend [project], or null when the backend does not know it. */
     fun backendKeyFor(project: Project): String?
+
+    /**
+     * The backend's base path for this frontend [project], or null when the backend does not know it. The client's
+     * own `basePath` is a synthetic folder under its config directory.
+     */
+    fun backendPathFor(project: Project): String?
 
     /** The backend's `backends[]` entry, for frontend responses that list both sides. */
     suspend fun backendSelf(): BackendRef?

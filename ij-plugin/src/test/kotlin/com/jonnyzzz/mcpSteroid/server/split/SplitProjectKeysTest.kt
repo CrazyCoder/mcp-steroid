@@ -11,12 +11,14 @@ import com.jonnyzzz.mcpSteroid.server.BackendRef
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.localProjectNameFor
 import com.jonnyzzz.mcpSteroid.server.projectNameFor
+import com.jonnyzzz.mcpSteroid.server.projectPathFor
 
 class SplitProjectKeysTest : BasePlatformTestCase() {
-    private fun bridge(key: String?) = object : SplitFrontendBridge {
+    private fun bridge(key: String?, path: String? = null) = object : SplitFrontendBridge {
         override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter) = ToolCallResult.successTextResult("")
         override suspend fun refreshProjectKeys() = Unit
         override fun backendKeyFor(project: Project): String? = key
+        override fun backendPathFor(project: Project): String? = path
         override suspend fun backendSelf(): BackendRef? = null
     }
 
@@ -32,10 +34,21 @@ class SplitProjectKeysTest : BasePlatformTestCase() {
         assertEquals(localProjectNameFor(project), projectNameFor(project, null))
     }
 
+    fun testBackendPathWinsWhenTheBridgeKnowsTheProject() {
+        assertEquals("/backend/app", projectPathFor(project, bridge("backend-key", "/backend/app")))
+    }
+
+    fun testUnknownProjectFallsBackToTheLocalPath() {
+        assertNotNull(project.basePath)
+        assertEquals(project.basePath, projectPathFor(project, bridge(null)))
+        assertEquals(project.basePath, projectPathFor(project, null))
+    }
+
     // The frontend content module also loads in a monolith, so its bridge extension is registered there.
     fun testMonolithIgnoresARegisteredBridge() {
-        ExtensionTestUtil.maskExtensions(SPLIT_FRONTEND_BRIDGE_EP, listOf(bridge("backend-key")), testRootDisposable)
+        ExtensionTestUtil.maskExtensions(SPLIT_FRONTEND_BRIDGE_EP, listOf(bridge("backend-key", "/backend/app")), testRootDisposable)
         assertNull(activeSplitFrontendBridge())
         assertEquals(localProjectNameFor(project), projectNameFor(project))
+        assertEquals(project.basePath, projectPathFor(project))
     }
 }

@@ -57,7 +57,7 @@ internal class SteroidBridgeApiImpl : SteroidBridgeApi {
     // The backend has no frontend bridge, so its keys are always the local ones.
     override suspend fun projectKeys(): List<ProjectKeyEntry> =
         ProjectManager.getInstance().openProjects.mapNotNull { project ->
-            project.projectIdOrNull()?.let { ProjectKeyEntry(localProjectNameFor(project), it) }
+            project.projectIdOrNull()?.let { ProjectKeyEntry(localProjectNameFor(project), it, project.basePath) }
         }
 
     override suspend fun backendSelfJson(): String =

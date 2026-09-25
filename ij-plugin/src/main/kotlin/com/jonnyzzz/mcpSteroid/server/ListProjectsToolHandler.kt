@@ -39,6 +39,15 @@ internal fun projectNameFor(project: Project, bridge: SplitFrontendBridge?): Str
     bridge?.backendKeyFor(project) ?: localProjectNameFor(project)
 
 /**
+ * The `project_path` this IDE reports for [project]. In a Split Mode frontend it is the backend's path when the
+ * backend knows the project, so it matches `list_projects`; otherwise the project's own base path.
+ */
+fun projectPathFor(project: Project): String? = projectPathFor(project, activeSplitFrontendBridge())
+
+internal fun projectPathFor(project: Project, bridge: SplitFrontendBridge?): String? =
+    bridge?.backendPathFor(project) ?: project.basePath
+
+/**
  * Direct in-IDE `steroid_list_projects`. No top-level `ide`/`plugin`/`pid` header (the responding
  * server's identity lives in the MCP server info). Each [ListedProject] carries a stable base36
  * hash as `project_name` (derived from the real name) and `backend_name` pointing at this IDE's

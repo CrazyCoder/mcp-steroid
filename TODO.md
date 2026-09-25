@@ -372,9 +372,6 @@
 
 Minor findings deferred from the split-plugin work (`docs/superpowers/specs/2026-09-25-steroid-split-mode-design.md`).
 
-- [ ] **`list_windows.project_path` in the JetBrains Client is the client's synthetic path**. The client's
-  project lives under `config/.../projects/<hash>`, so `project_path` does not match the backend path that
-  `list_projects` reports. `project_name` is correct (it comes from the backend through the bridge).
 - [ ] **The HTTP transport never delivers progress notifications**. `McpHttpTransport` answers GET SSE with
   405 and POST with plain JSON, so `notifications/progress` from `McpToolRegistry` never reach an HTTP
   client, in any mode. The split bridge relays progress correctly; the gap is the transport's.

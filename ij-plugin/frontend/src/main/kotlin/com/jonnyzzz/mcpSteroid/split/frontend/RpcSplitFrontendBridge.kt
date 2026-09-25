@@ -16,6 +16,7 @@ import com.jonnyzzz.mcpSteroid.server.split.BackendReachPolicy
 import com.jonnyzzz.mcpSteroid.server.split.SplitFrontendBridge
 import com.jonnyzzz.mcpSteroid.split.BridgeEvent
 import com.jonnyzzz.mcpSteroid.split.BridgeToolRequest
+import com.jonnyzzz.mcpSteroid.split.ProjectKeyEntry
 import com.jonnyzzz.mcpSteroid.split.SteroidBridgeApi
 import fleet.rpc.client.durable
 import kotlinx.coroutines.CancellationException
@@ -34,7 +35,7 @@ import kotlin.time.Duration.Companion.seconds
 internal class RpcSplitFrontendBridge : SplitFrontendBridge {
     // Replaced whole, never cleared in place: parallel tool calls read it while another call refreshes it.
     @Volatile
-    private var keys: Map<ProjectId, String> = emptyMap()
+    private var keys: Map<ProjectId, ProjectKeyEntry> = emptyMap()
     private val reach = BackendReachPolicy(full = 15.seconds, short = 1.seconds, quietPeriod = 30.seconds)
 
     override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter): ToolCallResult {
@@ -56,10 +57,14 @@ internal class RpcSplitFrontendBridge : SplitFrontendBridge {
     }
 
     override suspend fun refreshProjectKeys() {
-        keys = reachBackend { projectKeys() }.associate { it.projectId to it.projectName }
+        keys = reachBackend { projectKeys() }.associateBy { it.projectId }
     }
 
-    override fun backendKeyFor(project: Project): String? = project.projectIdOrNull()?.let { keys[it] }
+    override fun backendKeyFor(project: Project): String? = entryFor(project)?.projectName
+
+    override fun backendPathFor(project: Project): String? = entryFor(project)?.projectPath
+
+    private fun entryFor(project: Project): ProjectKeyEntry? = project.projectIdOrNull()?.let { keys[it] }
 
     override suspend fun backendSelf(): BackendRef? = try {
         McpJson.decodeFromString(BackendRef.serializer(), reachBackend { backendSelfJson() })

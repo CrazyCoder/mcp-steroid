@@ -119,7 +119,7 @@ class IdeWindowsCollector {
 
                     WindowInfo(
                         projectName = project?.let { projectNameFor(it) },
-                        projectPath = project?.basePath,
+                        projectPath = project?.let { projectPathFor(it) },
                         title = (window as? Frame)?.title,
                         isActive = window?.isActive ?: false,
                         isVisible = window?.isVisible ?: false,

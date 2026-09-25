@@ -44,6 +44,7 @@ class RoutedToolTest {
             if (failRefresh) throw IllegalStateException("connection lost")
         }
         override fun backendKeyFor(project: Project): String? = null
+        override fun backendPathFor(project: Project): String? = null
         override suspend fun backendSelf(): BackendRef? = null
     }
 
