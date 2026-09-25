@@ -47,6 +47,7 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
 
         The input is delivered to the window identified by window_id (from steroid_list_windows) and the focus is forced to that window.
         Click coordinates with the screenshot target (e.g. @120,200) are interpreted relative to the window as reported by steroid_list_windows / steroid_take_screenshot.
+        A click at screen coordinates (@screen:400,300) goes to the IDE window on top at that point, such as a popup over the named window, and the response names that window.
         A click behaves like a real one: the pointer moves to the point first, and the window picks the component under it.
         It reaches popup menu items, controls in Settings, and Lux pages in a Split Mode client.
     """.trimIndent()

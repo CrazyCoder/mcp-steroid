@@ -49,10 +49,12 @@ class VisionInputToolHandlerIJ : VisionInputToolHandler {
             log("WARNING: Heavy endpoint. Prefer the code-execution tool or command for regular automation.")
             log("Using window_id: $windowId")
 
-            val actions = withTimeout(timeoutMs.milliseconds) {
+            val report = withTimeout(timeoutMs.milliseconds) {
                 VisionService.getInstance(project).executeInput(windowId, inputParams.sequence)
             }
+            val actions = report.actions
             log("Input sequence delivered.")
+            report.notes.forEach { log(it) }
             // Delivery does not prove an effect: say which actions ran, so a shortcut that ran
             // nothing is visible to the caller (CrazyCoder/mcp-steroid#1).
             if (actions.isEmpty()) {

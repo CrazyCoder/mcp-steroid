@@ -32,6 +32,7 @@ import kotlinx.serialization.json.Json
 import java.awt.AWTEvent
 import java.awt.Component
 import java.awt.Point
+import java.awt.Rectangle
 import java.awt.Dimension
 import java.awt.Toolkit
 import java.awt.Window
@@ -150,6 +151,23 @@ internal fun clickEventSequence(button: Int, modifiers: Int): List<ClickEvent> {
         ClickEvent(MouseEvent.MOUSE_RELEASED, button, modifiers, 1, popupTrigger),
         ClickEvent(MouseEvent.MOUSE_CLICKED, button, modifiers, 1, popupTrigger),
     )
+}
+
+/** A showing window for [topmostWindowAt]: its bounds on screen and the windows that own it, nearest first. */
+internal class WindowCandidate<W>(val window: W, val bounds: Rectangle, val owners: List<W>)
+
+/**
+ * The window a real click at screen [point] lands in, or null when no candidate contains the point. AWT does not
+ * expose the stacking order, so ownership stands in for it: an owned window, such as a popup or a dialog, is above
+ * its owners. Among the windows on top at the point, one in [named]'s ownership tree wins, so an unrelated window
+ * that overlaps [named] does not take the click. Between windows still tied, the last candidate wins:
+ * [Window.getWindows] lists newer windows later.
+ */
+internal fun <W> topmostWindowAt(point: Point, named: W, candidates: List<WindowCandidate<W>>): W? {
+    val hits = candidates.filter { it.bounds.contains(point) }
+    val onTop = hits.filter { hit -> hits.none { hit.window in it.owners } }
+    val inNamedTree = onTop.filter { it.window == named || named in it.owners }
+    return (inNamedTree.lastOrNull() ?: onTop.lastOrNull())?.window
 }
 
 /**
@@ -420,11 +438,14 @@ class VisionService(
         }
     }
 
-    /** Runs [steps] and returns the IDs of the IDE actions that ran while they were delivered. */
+    /** The IDE actions that ran while the steps were delivered, and notes on where clicks went. */
+    class InputReport(val actions: List<String>, val notes: List<String>)
+
+    /** Runs [steps] and reports the IDE actions that ran while they were delivered. */
     suspend fun executeInput(
         windowId: String,
         steps: List<InputStep>,
-    ): List<String> {
+    ): InputReport {
         val performed = Collections.synchronizedList(mutableListOf<String>())
         val connection = ApplicationManager.getApplication().messageBus.connect()
         connection.subscribe(AnActionListener.TOPIC, object : AnActionListener {
@@ -432,12 +453,13 @@ class VisionService(
                 performed += ActionManager.getInstance().getId(action) ?: action.javaClass.name
             }
         })
+        val executor = SwingInputExecutor(windowId)
         try {
-            SwingInputExecutor(windowId).execute(steps)
+            executor.execute(steps)
         } finally {
             connection.disconnect()
         }
-        return performed.toList()
+        return InputReport(performed.toList(), executor.notes.toList())
     }
 
     private data class CaptureInfo(
@@ -539,6 +561,9 @@ class VisionService(
     ) {
         private val stuckKeys = LinkedHashSet<Int>()
 
+        /** Written on the EDT by the steps, read after [execute] returns. */
+        val notes = mutableListOf<String>()
+
         suspend fun execute(steps: List<InputStep>) {
             // ModalityState.any(): bare Dispatchers.EDT dispatches with NON_MODAL modality, which the
             // platform withholds while any modal dialog is open — the first hop would park forever and
@@ -626,13 +651,23 @@ class VisionService(
          * row ([clickEventSequence]).
          */
         private fun click(component: Component, step: InputStep.Click) {
-            val window = component as? Window ?: SwingUtilities.getWindowAncestor(component)
+            val named = component as? Window ?: SwingUtilities.getWindowAncestor(component)
                 ?: throw IllegalStateException("The target component is not in a window")
+            val window: Window
             val point = when (val target = step.target) {
-                is InputTarget.ScreenshotPixel ->
+                is InputTarget.ScreenshotPixel -> {
+                    window = named
                     SwingUtilities.convertPoint(component, mapScreenshotPoint(component, target.x, target.y), window)
-                is InputTarget.ScreenPixel -> Point(target.x, target.y).also {
-                    SwingUtilities.convertPointFromScreen(it, window)
+                }
+                // A screen point names no window: like a real click, it goes to the window on top there.
+                is InputTarget.ScreenPixel -> {
+                    val onScreen = Point(target.x, target.y)
+                    window = windowAtScreenPoint(onScreen, named) ?: named
+                    if (window !== named) {
+                        notes += "The click at screen ${target.x},${target.y} went to window_id " +
+                            "${WindowIdUtil.compute(window, window)}, the window on top at that point."
+                    }
+                    onScreen.also { SwingUtilities.convertPointFromScreen(it, window) }
                 }
                 is InputTarget.Unsupported -> throw IllegalStateException("Unsupported target: ${target.raw}")
             }
@@ -667,6 +702,13 @@ class VisionService(
                     it.requestFocusInWindow()
                 }
             }
+        }
+
+        private fun windowAtScreenPoint(point: Point, named: Window): Window? {
+            val candidates = Window.getWindows().filter { it.isShowing }.map { w ->
+                WindowCandidate(w, Rectangle(w.locationOnScreen, w.size), generateSequence(w.owner) { it.owner }.toList())
+            }
+            return topmostWindowAt(point, named, candidates)
         }
 
         private fun mapScreenshotPoint(component: Component, x: Int, y: Int): Point {
