@@ -380,8 +380,6 @@ Minor findings deferred from the split-plugin work (`docs/superpowers/specs/2026
   client, in any mode. The split bridge relays progress correctly; the gap is the transport's.
 - [ ] **The settings page is registered in the main module**. DevKit's `SplitModeXmlApiUsage` reports that
   `applicationConfigurable` in `plugin.xml` belongs in a frontend module. Move it to `mcp-steroid.frontend`
-  if the settings page should appear only in the client.
-- [ ] **Screenshots and click coordinates use different scales on HiDPI**. On a 1.5x display the
-  screenshot image is 1.5 times the window's logical size, while `click:` takes logical coordinates, so an
-  agent must divide by the scale itself. Report the scale in the tool output, or accept image-pixel
-  coordinates.
+  if the settings page should appear only in the client. Decide first where the devrig onboarding runs in
+  Split Mode: its notifications' "Open settings" action (`DevrigSetup.openSettingsAction`) opens the page in
+  the process that sent the notification, and a backend would no longer have the page.

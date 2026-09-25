@@ -109,7 +109,22 @@ data class ScreenshotArtifacts(
         add("Screenshot saved to $imagePath")
         add("Component tree saved to $treePath")
         add("Screenshot metadata saved to $metaPath")
+        screenshotScaleMessage(meta.componentSize, meta.imageSize)?.let(::add)
     }
+}
+
+/**
+ * On a HiDPI display the image has more pixels than the window has logical pixels. The image and its OCR
+ * boxes use image pixels, while `steroid_input` targets, `steroid_list_windows` bounds and the component tree
+ * use logical ones. Null when the two match.
+ */
+internal fun screenshotScaleMessage(componentSize: Size, imageSize: Size): String? {
+    if (componentSize.width <= 0 || imageSize.width == componentSize.width) return null
+    val scale = "%.2f".format(java.util.Locale.ROOT, imageSize.width.toDouble() / componentSize.width)
+        .trimEnd('0').trimEnd('.')
+    return "Image scale: $scale. The image is ${imageSize.width}x${imageSize.height} pixels for a " +
+        "${componentSize.width}x${componentSize.height} window. " +
+        "Divide image coordinates by $scale before passing them to steroid_input."
 }
 
 @Service(Service.Level.PROJECT)
@@ -610,9 +625,10 @@ class VisionService(
             require(component.width > 0 && component.height > 0) {
                 "Target component has empty size"
             }
-            // Coordinates are reported relative to the window (steroid_list_windows /
-            // steroid_take_screenshot render at the component's logical size), so they map
-            // directly onto the live component; clamp to its current bounds.
+            // Coordinates are logical and relative to the window, like the steroid_list_windows
+            // bounds and the component tree, so they map directly onto the live component; clamp to
+            // its current bounds. On HiDPI the screenshot image is larger, and the tool output
+            // reports the scale to divide by (screenshotScaleMessage).
             return Point(x.coerceIn(0, component.width - 1), y.coerceIn(0, component.height - 1))
         }
 

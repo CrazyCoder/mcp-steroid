@@ -30,6 +30,8 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         (sequence "click:Left@x,y"), which maps them onto the live component. Do NOT pass these
         coordinates to external tools like xdotool — those use the X display's PHYSICAL pixels and
         will be off by the display scale factor; for xdotool, source coordinates from scrot instead.
+        On a HiDPI display the image and its OCR boxes are larger than the window. The output then
+        has an "Image scale" line: divide positions read from the image by that scale first.
 
         After execution, call steroid_execute_feedback to log your feedback.
     """.trimIndent()
