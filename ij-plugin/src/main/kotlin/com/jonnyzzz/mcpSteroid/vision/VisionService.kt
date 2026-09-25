@@ -117,11 +117,6 @@ data class ScreenshotArtifacts(
 }
 
 /**
- * On a HiDPI display the image has more pixels than the window has logical pixels. The image and its OCR
- * boxes use image pixels, while `steroid_input` targets, `steroid_list_windows` bounds and the component tree
- * use logical ones. Null when the two match.
- */
-/**
  * One mouse event of a click, before it gets a source and a point. An [approach] event lands one pixel away from
  * the click point.
  */
@@ -157,6 +152,11 @@ internal fun clickEventSequence(button: Int, modifiers: Int): List<ClickEvent> {
     )
 }
 
+/**
+ * On a HiDPI display the image has more pixels than the window has logical pixels. The image and its OCR
+ * boxes use image pixels, while `steroid_input` targets, `steroid_list_windows` bounds and the component tree
+ * use logical ones. Null when the two match.
+ */
 internal fun screenshotScaleMessage(componentSize: Size, imageSize: Size): String? {
     if (componentSize.width <= 0 || imageSize.width == componentSize.width) return null
     val scale = "%.2f".format(java.util.Locale.ROOT, imageSize.width.toDouble() / componentSize.width)
