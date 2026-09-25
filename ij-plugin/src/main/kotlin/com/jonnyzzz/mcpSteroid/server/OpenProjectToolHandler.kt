@@ -59,8 +59,9 @@ class OpenProjectToolHandlerIJ : OpenProjectToolHandler {
 
             // Always a new frame: no "This Window / New Window" question, and no attach to another project.
             // Reusing a frame makes the platform consult the last focused frame's project, which can be a
-            // closed, disposed one when the IDE window is not focused; 2026.3 then throws
-            // ProcessCanceledException from WorkspaceAttachProcessor and nothing opens.
+            // closed, disposed one when the IDE window is not focused. An attach processor that reads that
+            // project's services, such as the Multi-Project Workspace plugin's WorkspaceAttachProcessor, then
+            // throws ProcessCanceledException and nothing opens (IDEA-394203).
             // build().withForceOpenInNewFrame() rather than the inline OpenProjectTask { } builder: the builder
             // inlines accessors that 2026.3 removed, so a plugin compiled against 261 fails with NoSuchMethodError.
             @Suppress("DEPRECATION")
