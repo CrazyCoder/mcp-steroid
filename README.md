@@ -199,7 +199,7 @@ better recipes are. The full canonical statement lives in
 [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) and is mirrored at runtime
 as `mcp-steroid://skill/design-philosophy`.
 
-### 8 MCP Tools
+### MCP Tools
 
 | Tool | Description |
 |------|-------------|
@@ -212,17 +212,17 @@ as `mcp-steroid://skill/design-philosophy`.
 | **List Windows** (`steroid_list_windows`) | Enumerate IDE windows and components |
 | **Open Project** (`steroid_open_project`) | Open projects programmatically |
 
-### 58 MCP Resources
+### MCP Resources
 
-Comprehensive guides and examples covering:
+Guides and runnable examples, fetched with `steroid_fetch_resource`:
 
-- **LSP Operations** (11) — Go to definition, find references, hover, completion
-- **IDE Power Operations** (22) — Refactorings, code generation, project analysis
-- **Debugger Integration** (7) — Breakpoints, thread control, debugging workflows
-- **Test Runner** (10) — Run tests, inspect results, navigate test trees
-- **VCS Operations** (3) — Git annotations, file history
-- **Project Workflows** (4) — Open projects with trust levels
-- **Skill Guides** (3) — IntelliJ API, debugger, and test runner guides
+- **LSP Operations** (`lsp/`) — Go to definition, find references, hover, completion
+- **IDE Power Operations** (`ide/`) — Refactorings, code generation, inspections, UI driving
+- **Debugger Integration** (`debugger/`) — Breakpoints, thread control, debugging workflows
+- **Test Runner** (`test/`) — Run tests, inspect results, navigate test trees
+- **VCS Operations** (`vcs/`) — Git annotations, file history
+- **Project Workflows** (`open-project/`) — Open projects with trust levels, manage backends
+- **Skill Guides** (`skill/`, `prompt/`) — IntelliJ API, execute-code, debugger, test runner and Split Mode guides
 
 ---
 
