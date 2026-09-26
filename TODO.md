@@ -344,12 +344,6 @@
   devrig invocation form, and the alternative is a logback `reset()` + `JoranConfigurator` re-read after
   parsing. Pick that up only if a real client trips on it.
 
-- [ ] **Watch modality through `ModalityStateListener.TOPIC`** (deferred from the steroid_ui spec, decision
-  14). steroid_ui compares the showing window list before and after a step, `ui.open { }` polls it every
-  50 ms, and the `smart_non_modal` dialog monitor polls every second. The public app-level topic reports every
-  modal dialog or modal progress as it opens or closes, which would replace all three polls and name a
-  dialog-less modal progress too. Worth doing when one of the polls shows up as slow or flaky.
-
 ## Split mode follow-ups (from the 2026-09-25 split-plugin review)
 
 Minor findings deferred from the split-plugin work (`docs/superpowers/specs/2026-09-25-steroid-split-mode-design.md`).
