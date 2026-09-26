@@ -2,6 +2,12 @@ IDE: Inspection + Quick Fix
 
 Run a named inspection on a file and apply its quick fix. The tool is resolved from the current profile by short-name, so the same recipe works in every JetBrains IDE.
 
+Prefer the `steroid_refactor` tool, which needs no script:
+`{"op":"fix","file":"src/Util.kt","inspection":"SimplifiableCallChain"}` lists the problems and their
+fixes, and `"apply": true` applies the fix on the target's line (`symbol` or `line`), or every fix in the
+file with `"all": true`. Use the script below to choose a fix other than the first, or to post-process
+the problems.
+
 The inspection-driving machinery (`InspectionEngine`, `LocalInspectionToolWrapper`, the
 inspection profile) is platform-level and identical in IDEA, PyCharm, WebStorm, Rider,
 CLion, GoLand. Only the inspection *classes* are language-plugin-bound — resolve the tool

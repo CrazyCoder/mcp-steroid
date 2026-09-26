@@ -2,6 +2,11 @@ IDE: Safe Delete
 
 This example safely deletes a method or class, similar to "Refactor | Safe Delete".
 
+Prefer the `steroid_refactor` tool, which needs no script:
+`{"op":"safe_delete","file":"src/Util.kt","symbol":"parse"}` lists the usages, and `"apply": true`
+deletes it, or returns the usages that block it and changes nothing. Use the script below for what the
+tool does not cover, such as deleting several elements at once.
+
 ```kotlin
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil

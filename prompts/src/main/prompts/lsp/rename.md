@@ -2,6 +2,11 @@ LSP: textDocument/rename - Rename Symbol
 
 Semantic, cross-file rename using IntelliJ's RenameProcessor — atomic, PSI-backed, updates all references.
 
+Prefer the `steroid_refactor` tool, which needs no script:
+`{"op":"rename","file":"src/Util.kt","symbol":"parse","new_name":"parseAll"}` lists the usages, and
+`"apply": true` renames. A name that is already taken comes back as a conflict and changes nothing. Use
+the script below to search comments and strings too, or to rename several elements in one script.
+
 ```kotlin
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.util.PsiTreeUtil

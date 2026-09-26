@@ -97,9 +97,8 @@ default, where the editor and the actions live.
 | `project_name`, `task_id`, `reason` | As in the other tools |
 | `op` | `rename`, `safe_delete`, `move`, `fix`, `intention`, `optimize_imports`, `reformat`, `usages` |
 | `file`, `line`, `column`, `symbol`, `nth` | The target, resolved as in `goto`, then to the named PSI element at the caret or the reference's target |
-| `fqn` | Alternative target: a class, or `Class.member` / `Class#member` |
 | `new_name` | `rename` |
-| `to` | `move`: a target directory, or for a Java class a package name |
+| `to` | `move`: the target directory |
 | `inspection`, `all` | `fix`: the inspection short name; `all` applies the fix to every problem in the file |
 | `name` | `intention`: the intention's text, matched exactly, then as a prefix |
 | `apply` | `false` by default: a dry run that changes nothing |
@@ -110,11 +109,11 @@ default, where the editor and the actions live.
 | -- | -- | -- |
 | `rename` | `RenameProcessor`, previews off | Element, usages |
 | `safe_delete` | `SafeDeleteProcessor` | Element, usages that block the delete |
-| `move` | `MoveFilesOrDirectoriesProcessor`; a Java class to a package through `MoveClassesOrPackagesProcessor` | Element, usages |
+| `move` | `MoveFilesOrDirectoriesProcessor` on the target file; the language updates package statements (Kotlin does) | References to the file |
 | `fix` | Inspection by short name from the current profile; fix applied on the EDT in one command, in a write action only when `startInWriteAction()` | Problems with their fixes |
 | `intention` | `IntentionManager` actions available at the caret, applied the way the editor applies them | Intentions available at the target |
-| `optimize_imports` | `OptimizeImportsProcessor` on the file | Nothing to preview; the dry run says so |
-| `reformat` | `ReformatCodeProcessor` on the file | Same |
+| `optimize_imports` | The language's `ImportOptimizer`s: `processFile` in a read action, the result applied in one write command. `OptimizeImportsProcessor` returned before it did anything in the live test | Nothing to preview; the dry run says so |
+| `reformat` | `CodeStyleManager.reformat` in one write command, which is synchronous | Same |
 | `usages` | `ReferencesSearch` in the project scope | Usages, always read-only |
 
 Usages print as `path:line: <line text>`, the first 30, then a count. Paths are
@@ -163,3 +162,18 @@ or their API differs between releases. `goto` plus `run` covers them.
 
 The design can change where live tests show a better variant; the plan and this
 spec are updated when it does.
+
+## Changes from live testing
+
+- No `fqn` target and no Java class move: the plugin depends on the platform
+  only, and `JavaPsiFacade` is not there in PyCharm, CLion or GoLand. A file and
+  a symbol reach every declaration.
+- A dialog is read after the windows settle, through the UI model the snapshot
+  uses: its labels and the rows of its lists and trees, without "N results"
+  grouping rows and without label fragments that repeat a whole message. A
+  conflicts dialog fills its tree after it shows, so reading it at once got
+  only "1 conflicts".
+- The changed-files report lists local files only: a ModCommand fix or intention
+  edits in-memory copies (`/dummy.kt`) before it applies to the real file.
+- Split Mode routes `steroid_refactor` to the backend, where the project model
+  lives.
