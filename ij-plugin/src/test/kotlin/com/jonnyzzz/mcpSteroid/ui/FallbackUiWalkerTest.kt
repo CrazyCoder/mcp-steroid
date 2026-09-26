@@ -38,6 +38,13 @@ class FallbackUiWalkerTest {
     }
 
     @Test
+    fun `a leaf reads the component without its children`() {
+        val leaf = FallbackUiWalker(onlyShowing = false).leaf(sample())
+        assertEquals("JPanel", leaf.className)
+        assertTrue(leaf.children.isEmpty())
+    }
+
+    @Test
     fun `invisible children are skipped when asked`() {
         val panel = sample()
         panel.getComponent(0).isVisible = false

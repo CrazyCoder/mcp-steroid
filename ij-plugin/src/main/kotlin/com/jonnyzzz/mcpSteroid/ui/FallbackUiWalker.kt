@@ -15,6 +15,9 @@ class FallbackUiWalker(
 ) {
     fun build(root: Component): UiNode = node(root, depth = 0)
 
+    /** The node of [c] alone, without walking its children. */
+    fun leaf(c: Component): UiNode = node(c, depth = MAX_DEPTH)
+
     private fun node(c: Component, depth: Int): UiNode {
         val kids = if (c is Container && depth < MAX_DEPTH) {
             c.components.filter(::include).map { node(it, depth + 1) }

@@ -379,7 +379,7 @@ class UiSession(
                 is UiRefResolution.Live -> withContext(edtAny) {
                     val window = r.component as? Window ?: SwingUtilities.getWindowAncestor(r.component)
                     if (window != null && window !in scopeWindows()) UiMatch.None(emptyList())
-                    else UiMatch.One(FallbackUiWalker().build(r.component).copy(children = emptyList()))
+                    else UiMatch.One(FallbackUiWalker().leaf(r.component))
                 }
                 is UiRefResolution.Stale -> throw UiStepFailure("ref $ref is stale: its control is no longer showing. Call steroid_ui without steps for fresh refs")
                 is UiRefResolution.Unknown -> throw UiStepFailure("unknown ref $ref. Refs come from a steroid_ui snapshot")

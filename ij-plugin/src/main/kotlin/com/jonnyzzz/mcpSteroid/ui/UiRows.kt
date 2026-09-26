@@ -36,13 +36,6 @@ object UiRows {
         else -> null
     }
 
-    fun rowBounds(c: Component, index: Int): Rectangle? = when (c) {
-        is JList<*> -> c.getCellBounds(index, index)
-        is JTree -> c.getRowBounds(index)
-        is JTable -> c.getCellRect(index, 0, true)
-        else -> null
-    }
-
     @Suppress("UNCHECKED_CAST")
     private fun listRows(list: JList<*>): List<String> {
         val renderer = (list as JList<Any?>).cellRenderer

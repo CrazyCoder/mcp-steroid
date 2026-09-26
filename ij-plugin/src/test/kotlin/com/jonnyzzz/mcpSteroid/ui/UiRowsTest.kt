@@ -47,8 +47,8 @@ class UiRowsTest {
     }
 
     @Test
-    fun `row bounds exist for list rows`() {
+    fun `a revealed list row has bounds`() {
         val list = JList(arrayOf("a", "b")).apply { setSize(100, 100) }
-        assertNotNull(UiRows.rowBounds(list, 1))
+        assertNotNull(UiRows.reveal(list, 1))
     }
 }
