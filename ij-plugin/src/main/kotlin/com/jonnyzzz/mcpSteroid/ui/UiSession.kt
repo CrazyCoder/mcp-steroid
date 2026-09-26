@@ -74,7 +74,7 @@ class UiSession(
         for ((i, step) in steps.withIndex()) {
             val label = "step ${i + 1} ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
             val stepStarted = runStarted.elapsedNow().inWholeMilliseconds
-            val before = tracePicture(i + 1, "before")
+            val pictureBefore = tracePicture(i + 1, "before")
             val outcome = try {
                 Result.success(runStep(step))
             } catch (e: UiStepFailure) {
@@ -88,8 +88,8 @@ class UiSession(
             }
             val line = outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
             trace?.let { t ->
-                val after = tracePicture(i + 1, "after")
-                t.record(i + 1, label, line, outcome.isFailure, render(withBounds = true), before, after,
+                val pictureAfter = tracePicture(i + 1, "after")
+                t.record(i + 1, label, line, outcome.isFailure, render(withBounds = true), pictureBefore, pictureAfter,
                     stepStarted, runStarted.elapsedNow().inWholeMilliseconds - stepStarted)
             }
             if (outcome.isFailure) {
@@ -158,9 +158,10 @@ class UiSession(
             }
             UiAction.FILL -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
-                val field = (node.component as? JComboBox<*>)?.takeIf { it.isEditable }?.editor?.editorComponent as? JTextComponent
-                    ?: node.component as? JTextComponent
-                    ?: throw UiStepFailure("${describe(node)} is not a text field")
+                val field = withContext(edtAny) {
+                    (node.component as? JComboBox<*>)?.takeIf { it.isEditable }?.editor?.editorComponent as? JTextComponent
+                        ?: node.component as? JTextComponent
+                } ?: throw UiStepFailure("${describe(node)} is not a text field")
                 withContext(edtAny) { field.selectAll() }
                 if (step.text!!.isEmpty()) input.press(UiInput.parseKeys("DELETE"), field) else input.type(step.text!!, field)
                 val value = withContext(edtAny) { field.text }
@@ -198,8 +199,9 @@ class UiSession(
             val combo = host
             // An editable combo box's centre is its text field, so open it by its arrow button when it has one.
             val arrow = withContext(edtAny) { combo.components.firstOrNull { it is AbstractButton && it.isShowing } }
+            val listsBefore = withContext(edtAny) { showingLists().toSet() }
             input.click(arrow ?: combo, MouseEvent.BUTTON1, 1, 0, null)
-            host = waitForComboList(combo) ?: throw UiStepFailure("clicked ${describe(node)}, but no list of its items appeared")
+            host = waitForComboList(combo, listsBefore) ?: throw UiStepFailure("clicked ${describe(node)}, but no list of its items appeared")
         }
         val list = host
         val (index, rows) = withContext(edtAny) {
@@ -215,22 +217,27 @@ class UiSession(
         return "selected row \"${rows[index]}\"" + if (click.pressed == null) "; no component took the press" else ""
     }
 
-    private suspend fun waitForComboList(combo: JComboBox<*>): JList<*>? {
+    private suspend fun waitForComboList(combo: JComboBox<*>, listsBefore: Set<JList<*>>): JList<*>? {
         val started = TimeSource.Monotonic.markNow()
         while (started.elapsedNow().inWholeMilliseconds < COMBO_POPUP_MS) {
-            withContext(edtAny) { comboList(combo) }?.let { return it }
+            withContext(edtAny) { comboList(combo, listsBefore) }?.let { return it }
             delay(POLL_MS / 2)
         }
         return null
     }
 
-    /** The item list of an open combo box popup: a showing list over the combo's own model. */
-    private fun comboList(combo: JComboBox<*>): JList<*>? {
-        val lists = Window.getWindows().filter { it.isShowing }.flatMap { w ->
-            (w as? RootPaneContainer)?.rootPane?.let { UIUtil.findComponentsOfType(it, JList::class.java) }.orEmpty()
-        }.filter { it.isShowing }
-        return lists.firstOrNull { it.model === combo.model } ?: lists.lastOrNull()
+    /**
+     * The item list of an open combo box popup: a showing list over the combo's own model, else the one list that
+     * appeared since the click. A list that showed before the click belongs to something else.
+     */
+    private fun comboList(combo: JComboBox<*>, listsBefore: Set<JList<*>>): JList<*>? {
+        val lists = showingLists()
+        return lists.firstOrNull { it.model === combo.model } ?: (lists - listsBefore).singleOrNull()
     }
+
+    private fun showingLists(): List<JList<*>> = Window.getWindows().filter { it.isShowing }.flatMap { w ->
+        (w as? RootPaneContainer)?.rootPane?.let { UIUtil.findComponentsOfType(it, JList::class.java) }.orEmpty()
+    }.filter { it.isShowing }
 
     private suspend fun closeStep(step: UiStep): String {
         val window = if (step.target != null) {
