@@ -304,7 +304,7 @@ class McpScriptContextImpl(
         Disposer.register(disposable) { job.cancel() }
     }
 
-    override val ui: com.jonnyzzz.mcpSteroid.ui.UiScriptApi by lazy { com.jonnyzzz.mcpSteroid.ui.UiScriptApi(project) }
+    override val ui: McpUi by lazy { com.jonnyzzz.mcpSteroid.ui.UiScriptApi(project) }
 
     override fun allowModalDialog() {
         checkDisposed()

@@ -390,7 +390,7 @@ interface McpScriptContext {
      * ui.click(ui.name("Cancel"))
      * ```
      */
-    val ui: com.jonnyzzz.mcpSteroid.ui.UiScriptApi
+    val ui: McpUi
 
     /**
      * Commit PSI changes + save all documents + refresh the VFS, so the script reads disk-consistent state.
@@ -553,4 +553,67 @@ interface McpScriptContext {
      * ```
      */
     suspend fun findProjectPsiFile(relativePath: String): PsiFile?
+}
+
+/**
+ * What a [McpUi] action addresses, with the fields a steroid_ui step takes: a ref from a steroid_ui snapshot,
+ * or any of an exact accessible name, part of the painted text, a class or superclass simple name, and an
+ * XPath over the remote-driver model. [nth] picks one of several matches, from 0.
+ */
+data class UiQuery(
+    val ref: String? = null,
+    val name: String? = null,
+    val text: String? = null,
+    val cls: String? = null,
+    val xpath: String? = null,
+    val nth: Int? = null,
+) {
+    /** Both queries' fields at once, such as `ui.name("Zoom:") and ui.cls("ComboBox")`. */
+    infix fun and(other: UiQuery) = UiQuery(
+        ref = ref ?: other.ref,
+        name = name ?: other.name,
+        text = text ?: other.text,
+        cls = cls ?: other.cls,
+        xpath = xpath ?: other.xpath,
+        nth = nth ?: other.nth,
+    )
+
+    /** The [index]th of several matches, from 0. */
+    fun nth(index: Int) = copy(nth = index)
+}
+
+/**
+ * The steroid_ui engine for scripts, as [McpScriptContext.ui]. Each action returns the line steroid_ui would
+ * report and throws when it cannot do what it asks.
+ */
+interface McpUi {
+    fun ref(ref: String): UiQuery = UiQuery(ref = ref)
+    fun name(name: String): UiQuery = UiQuery(name = name)
+    fun text(text: String): UiQuery = UiQuery(text = text)
+    fun cls(cls: String): UiQuery = UiQuery(cls = cls)
+    fun xpath(xpath: String): UiQuery = UiQuery(xpath = xpath)
+
+    /** The snapshot text of the project's showing windows, topmost first, with refs and screen bounds. */
+    suspend fun snapshot(): String
+
+    /** The component [target] addresses, waiting up to [timeoutMs] for one showing match. */
+    suspend fun find(target: UiQuery, timeoutMs: Long = 5_000): java.awt.Component
+
+    suspend fun click(target: UiQuery, count: Int = 1, timeoutMs: Long = 5_000): String
+    suspend fun hover(target: UiQuery): String
+    suspend fun type(text: String, target: UiQuery? = null): String
+    suspend fun fill(target: UiQuery, text: String): String
+    suspend fun press(keys: String, target: UiQuery? = null): String
+    suspend fun check(target: UiQuery): String
+    suspend fun uncheck(target: UiQuery): String
+    suspend fun select(target: UiQuery, row: String): String
+    suspend fun close(target: UiQuery? = null): String
+    suspend fun waitFor(target: UiQuery, timeoutMs: Long = 5_000): String
+    suspend fun waitForWindow(title: String, timeoutMs: Long = 5_000): String
+
+    /**
+     * Runs [block], which opens a window such as a dialog, in its own EDT task and returns the window it opened.
+     * The script keeps running while a modal dialog is up, instead of waiting inside the dialog's event loop.
+     */
+    suspend fun open(timeoutMs: Long = 10_000, block: () -> Unit): java.awt.Window
 }
