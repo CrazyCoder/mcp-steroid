@@ -228,7 +228,9 @@ If an IDE distribution is not available, the corresponding test skips gracefully
 4. Use `###_IF_IDE[...]_###` for IDE-specific sections
 5. Run `./gradlew :prompt-generator:test` to verify parsing
 6. Run `./gradlew :prompts:compileKotlin` to verify generated code compiles
-7. Run `./gradlew :prompts:test` for full test suite (requires IDE downloads)
+7. Run `./gradlew :prompts:test` for full test suite (requires IDE downloads). A run whose `--tests` filters
+   all name non-KtBlock test classes skips the downloads. An IDE that is already unpacked is reused; pass
+   `-Pmcp.prompts.ide.refresh=true` to fetch the newest builds (CI always does)
 
 ## Key Source Files
 

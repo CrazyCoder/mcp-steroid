@@ -152,6 +152,33 @@ val filteredIdeDownloadSpecs = if (ideFilter.isEmpty()) {
     }
 }
 
+/**
+ * The `--tests` filters on the command line. When each one names a test class that is not a KtBlock
+ * compilation test (`*MarkdownArticleContract*`, `*ResourceIndexTest*`), no selected test needs an IDE, so
+ * `test` skips the downloads, which check for new builds and can fetch gigabytes on every run.
+ */
+val testFilters: List<String> = gradle.startParameter.taskRequests.flatMap { it.args }.let { args ->
+    args.indices.mapNotNull { i ->
+        when {
+            args[i] == "--tests" -> args.getOrNull(i + 1)
+            args[i].startsWith("--tests=") -> args[i].removePrefix("--tests=")
+            else -> null
+        }
+    }
+}
+val testsNeedIdes = testFilters.isEmpty() || testFilters.any { filter ->
+    val namesClass = filter.contains("Test") || filter.contains("Contract")
+    !namesClass || filter.contains("KtBlock", ignoreCase = true) || filter.contains("Compilation")
+}
+
+/**
+ * An IDE that is already unpacked is reused: the download task would otherwise fetch the newest build of
+ * its channel, gigabytes each time an EAP ships. CI always takes the newest; locally pass
+ * `-Pmcp.prompts.ide.refresh=true` to update.
+ */
+val refreshIdes = providers.gradleProperty("mcp.prompts.ide.refresh").orNull.toBoolean() ||
+    System.getenv("TEAMCITY_VERSION") != null
+
 val ideDownloadTasks = filteredIdeDownloadSpecs.map { spec ->
     val dirSuffix = "${spec.product}-${spec.channel}"
     val downloadDir = layout.buildDirectory.dir("ide-download-$dirSuffix")
@@ -170,6 +197,9 @@ val ideDownloadTasks = filteredIdeDownloadSpecs.map { spec ->
             "--unpack-dir", unpackDir.get().asFile.absolutePath,
         )
         outputs.dir(unpackDir)
+        onlyIf("${spec.product} ${spec.channel} is not unpacked yet, or -Pmcp.prompts.ide.refresh=true") {
+            refreshIdes || !com.jonnyzzz.mcpSteroid.ideDownloader.hasCompleteUnpack(unpackDir.get().asFile)
+        }
     }
 
     Triple(spec, unpackDir, task)
@@ -214,8 +244,10 @@ tasks.test {
         }
     )
 
-    for ((_, _, task) in ideDownloadTasks) {
-        dependsOn(task)
+    if (testsNeedIdes) {
+        for ((_, _, task) in ideDownloadTasks) {
+            dependsOn(task)
+        }
     }
     dependsOn(ktblockExtraClasspath)
     dependsOn(kotlincDist)

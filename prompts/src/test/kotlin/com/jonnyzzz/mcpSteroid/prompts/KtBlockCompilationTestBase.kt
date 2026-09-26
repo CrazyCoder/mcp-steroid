@@ -90,7 +90,10 @@ abstract class KtBlockCompilationTestBase {
                     "IDE not available (system property '$homeProperty' not set) — skipping on CI"
                 )
             }
-            error("Missing system property '$homeProperty' — IDE distribution not available")
+            error(
+                "Missing system property '$homeProperty' — IDE distribution not available. The IDE downloads " +
+                    "run only when no --tests filter is given or one names a KtBlock test; add 'KtBlock' to the filter."
+            )
         }
 
         assertTestJreMatchesIdeBundled(home, homeProperty)

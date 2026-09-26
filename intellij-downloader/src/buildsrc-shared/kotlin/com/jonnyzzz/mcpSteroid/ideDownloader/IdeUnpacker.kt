@@ -134,6 +134,9 @@ private fun warnIfLowFreeDiskSpace(unpackDir: File, archiveFile: File) {
 
 private const val UNPACK_COMPLETE_MARKER_NAME = ".mcp-steroid-unpack-complete"
 
+/** Whether [unpackDir] holds a finished unpack of some archive, whichever build it was. */
+fun hasCompleteUnpack(unpackDir: File): Boolean = File(unpackDir, UNPACK_COMPLETE_MARKER_NAME).isFile
+
 /**
  * The marker records the archive identity (filename + size + last-modified)
  * the unpack came from. Successful re-entry requires the live archive on

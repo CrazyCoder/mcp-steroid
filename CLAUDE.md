@@ -193,7 +193,8 @@ When changing files across multiple sub-folders, read the guides for each.
   + `--rerun-tasks`).
 - **Prose-only prompt edits need only the contract test.** When a change under
   `prompts/src/main/prompts/**` touches no ` ```kotlin ` fence, run
-  `./gradlew :prompts:test --tests '*MarkdownArticleContract*'` (seconds). The `*KtBlock*`
+  `./gradlew :prompts:test --tests '*MarkdownArticleContract*'` (seconds: when every `--tests` filter
+  names a non-KtBlock test class, the IDE downloads are skipped). The `*KtBlock*`
   compilation matrix recompiles every fence against every unpacked IDE (60–120 min) and is only
   needed when kotlin fences change — never run it casually (a workflow agent once hung 37 min on it
   for a prose edit).
