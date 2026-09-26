@@ -1559,3 +1559,36 @@ Scheme item; `modal=dialog` script; `ui.open`; `trace=true`). Then a
 whole-change self-review, fixes with tests, full module suites:
 `:mcp-steroid-server:test`, `:npx-kt:test`, `:ij-plugin:test`, and the
 integration class.
+
+---
+
+## Results (2026-09-26)
+
+Phase 2 live run (2026.1 sandbox) found and fixed: owned windows doubled
+in their owner's tree, labels sharing a field's name made strict matches
+ambiguous, editable combo boxes did not open on a centre click, combo
+values printed `toString()`, and Settings opened after the settle window.
+Phase 3's first integration run found that the platform's `writeAction`
+(a background write action) cannot write under an open modal dialog;
+`modal=dialog` uses `edtWriteAction`. The KtBlock run found that
+`McpScriptContext.kt` must stay compilable on its own, so the `ui`
+surface is declared there (`McpUi`, `UiQuery`).
+
+Rulings made during execution:
+
+- Tasks 11–14 share files (`UiSession`, the script context, the golden
+  schema), so they landed in one commit (`a05000ff`) instead of four.
+- The modality watcher (spec decision 14) is deferred and recorded in
+  `TODO.md`; steroid_ui and `ui.open` compare window lists instead.
+- `ui.open` runs its block under `ModalityState.current()`, read on the
+  EDT, rather than the script's context modality (internal API).
+
+Verification: unit suites for `ui`, `mcp-steroid-server` and `npx-kt`;
+`:ij-plugin:test` 471 tests, one failure in `KotlinxBundledVersionTest`
+(the 2026.3 EAP snapshot bundles kotlinx-serialization 1.11 against the
+1.9 pin; unrelated to this work); `SteroidUiIntegrationTest` 7/7 in
+Docker; ui-driving, split-mode and action-discovery KtBlocks on IDEA
+stable; live on 2026.1: snapshot 34 ms, a five-step Settings flow 1.7 s,
+`ui.open`, `modal=dialog` with a write, a traced run and a marked
+screenshot at 1.5 scale. Not verified: Split Mode (`side=backend`) and
+2026.3 live.
