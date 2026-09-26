@@ -102,7 +102,7 @@ class ToolSpecCliMetadataTest {
     @Test
     fun `modal param carries its enum values for CLI help`() {
         val modal = executeCode.schema.asCliParams().single { it.name == "modal" }
-        assertEquals(listOf("smart_non_modal", "non_modal", "unleashed"), modal.enumValues)
+        assertEquals(listOf("smart_non_modal", "non_modal", "unleashed", "dialog"), modal.enumValues)
     }
 
     @Test

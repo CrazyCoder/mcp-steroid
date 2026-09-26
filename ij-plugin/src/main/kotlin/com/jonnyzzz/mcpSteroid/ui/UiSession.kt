@@ -58,6 +58,7 @@ class UiSession(
     private val project: Project,
     private val windowId: String?,
     private val maxNodes: Int,
+    private val trace: UiTrace? = null,
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput()
@@ -69,23 +70,33 @@ class UiSession(
         val before = if (mode == UiSnapshotMode.DIFF) render(withBounds = false) else null
         val reports = mutableListOf<UiStepReport>()
         var failure: String? = null
+        val runStarted = TimeSource.Monotonic.markNow()
         for ((i, step) in steps.withIndex()) {
             val label = "step ${i + 1} ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
-            try {
-                reports += UiStepReport(i + 1, "$label: ${runStep(step)}")
+            val stepStarted = runStarted.elapsedNow().inWholeMilliseconds
+            val before = tracePicture(i + 1, "before")
+            val outcome = try {
+                Result.success(runStep(step))
             } catch (e: UiStepFailure) {
-                failure = "$label failed: ${e.message}"
-                break
+                Result.failure(e)
             } catch (e: UiBarrierTimeout) {
-                failure = "$label failed: ${e.message}"
-                break
+                Result.failure(e)
             } catch (e: IllegalArgumentException) {
-                failure = "$label failed: ${e.message}"
-                break
+                Result.failure(e)
             } catch (e: IllegalStateException) {
-                failure = "$label failed: ${e.message}"
+                Result.failure(e)
+            }
+            val line = outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
+            trace?.let { t ->
+                val after = tracePicture(i + 1, "after")
+                t.record(i + 1, label, line, outcome.isFailure, render(withBounds = true), before, after,
+                    stepStarted, runStarted.elapsedNow().inWholeMilliseconds - stepStarted)
+            }
+            if (outcome.isFailure) {
+                failure = "$label failed: $line"
                 break
             }
+            reports += UiStepReport(i + 1, "$label: $line")
         }
         val snapshot = when {
             failure != null -> render(withBounds = false, scopeOnly = true)
@@ -94,6 +105,12 @@ class UiSession(
             else -> UiSnapshotDiff.diff(before.orEmpty(), render(withBounds = false)).ifEmpty { "(the snapshot did not change)" }
         }
         return UiSessionResult(reports, failure, snapshot)
+    }
+
+    /** A picture of the topmost window for the trace, or null without a trace. */
+    private suspend fun tracePicture(index: Int, suffix: String): String? {
+        val t = trace ?: return null
+        return withContext(edtAny) { scopeWindows().firstOrNull()?.let { t.picture(it, index, suffix) } }
     }
 
     /** The snapshot text of the windows in scope. */
@@ -106,6 +123,12 @@ class UiSession(
             text.text
         }
     }
+
+    /** Runs one step and returns its report line; throws [UiStepFailure] when it cannot do what it asks. */
+    suspend fun perform(step: UiStep): String = runStep(step)
+
+    /** The component [target] addresses, waiting up to [timeoutMs] for one showing match. */
+    suspend fun find(target: UiTarget, timeoutMs: Long): Component = resolve(target, timeoutMs, requireEnabled = false).component
 
     private suspend fun runStep(step: UiStep): String = when (step.action) {
         UiAction.WAIT -> waitStep(step)

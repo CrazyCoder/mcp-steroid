@@ -40,6 +40,19 @@ data class UiTarget(
     val xpath: String? = null,
     val nth: Int? = null,
 ) {
+    /** Both targets' fields at once, such as `ui.name("Zoom:") and ui.cls("ComboBox")`. */
+    infix fun and(other: UiTarget) = UiTarget(
+        ref = ref ?: other.ref,
+        name = name ?: other.name,
+        text = text ?: other.text,
+        cls = cls ?: other.cls,
+        xpath = xpath ?: other.xpath,
+        nth = nth ?: other.nth,
+    )
+
+    /** The [index]th of several matches, from 0. */
+    fun nth(index: Int) = copy(nth = index)
+
     override fun toString(): String = listOfNotNull(
         ref?.let { "ref=$it" },
         name?.let { "name=\"$it\"" },

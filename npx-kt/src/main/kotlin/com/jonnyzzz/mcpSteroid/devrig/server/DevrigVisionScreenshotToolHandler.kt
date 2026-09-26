@@ -21,6 +21,7 @@ class DevrigVisionScreenshotToolHandler(
             put("reason", screenshotParams.reason)
             // window_id is unique within the IDE resolved by project_name; forward it as-is.
             screenshotParams.windowId?.let { put("window_id", it) }
+            if (screenshotParams.marks) put("marks", true)
         }
     }
 }

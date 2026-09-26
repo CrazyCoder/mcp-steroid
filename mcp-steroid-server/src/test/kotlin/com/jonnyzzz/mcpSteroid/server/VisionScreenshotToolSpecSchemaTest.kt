@@ -15,5 +15,6 @@ class VisionScreenshotToolSpecSchemaTest {
         assertStringProperty(schema, "task_id")
         assertStringProperty(schema, "reason")
         assertStringProperty(schema, "window_id")
+        assertBooleanProperty(schema, "marks")
     }
 }

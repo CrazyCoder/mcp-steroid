@@ -19,6 +19,7 @@ import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.util.ui.ImageUtil
 import com.jonnyzzz.mcpSteroid.ui.UiInput
+import com.jonnyzzz.mcpSteroid.ui.UiMarks
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import kotlinx.coroutines.CoroutineName
@@ -43,6 +44,7 @@ import java.awt.event.KeyEvent
 import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.nio.file.Path
@@ -200,17 +202,18 @@ class VisionService(
 
     companion object {
         private const val META_FILE = "screenshot-meta.json"
+        private const val MARKED_FILE = "screenshot-marked.png"
 
         fun getInstance(project: Project): VisionService = project.service()
     }
 
-    suspend fun capture(executionId: ExecutionId, windowId: String? = null): ScreenshotArtifacts {
+    suspend fun capture(executionId: ExecutionId, windowId: String? = null, marks: Boolean = false): ScreenshotArtifacts {
         return withContext(Dispatchers.IO + CoroutineName("VisionService")) {
-            captureImpl(executionId, windowId)
+            captureImpl(executionId, windowId, marks)
         }
     }
 
-    private suspend fun captureImpl(executionId: ExecutionId, windowId: String? = null): ScreenshotArtifacts {
+    private suspend fun captureImpl(executionId: ExecutionId, windowId: String?, marks: Boolean): ScreenshotArtifacts {
         val storage = project.executionStorage
         val executionDir = storage.resolveExecutionDir(executionId)
 
@@ -298,6 +301,26 @@ class VisionService(
             treePathInCaptureDir = treePathInCaptureDir,
             metaPathInCaptureDir = metaPath,
         )
+
+        if (marks) {
+            val scale = imageSize.width.toDouble() / capture.componentSize.width.coerceAtLeast(1)
+            val found = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { UiMarks.marks(component, scale) }
+            val marked = UiMarks.draw(javax.imageio.ImageIO.read(ByteArrayInputStream(imageBytes)), found)
+            val markedBytes = ByteArrayOutputStream().use { out ->
+                javax.imageio.ImageIO.write(marked, "png", out)
+                out.toByteArray()
+            }
+            val markedPath = withContext(Dispatchers.IO) {
+                executionDir.resolve(MARKED_FILE).also { Files.write(it, markedBytes) }
+            }
+            return ScreenshotArtifacts(
+                imageBytes = markedBytes,
+                imagePath = markedPath,
+                treePath = treePath,
+                metaPath = rootMetaPath,
+                meta = meta,
+            )
+        }
 
         return ScreenshotArtifacts(
             imageBytes = imageBytes,

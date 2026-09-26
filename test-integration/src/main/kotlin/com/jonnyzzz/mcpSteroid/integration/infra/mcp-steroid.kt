@@ -714,6 +714,7 @@ try {
         steps: String? = null,
         snapshot: String? = null,
         windowId: String? = null,
+        trace: Boolean = false,
         taskId: String = "integration-test-ui",
         reason: String = "Integration test UI steps",
         projectName: String = resolveProjectName(),
@@ -733,6 +734,7 @@ try {
                     steps?.let { put("steps", it) }
                     snapshot?.let { put("snapshot", it) }
                     windowId?.let { put("window_id", it) }
+                    if (trace) put("trace", true)
                 }
             }
             put("method", "tools/call")

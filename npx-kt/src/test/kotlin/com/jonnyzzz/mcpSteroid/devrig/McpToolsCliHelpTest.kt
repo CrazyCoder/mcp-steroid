@@ -142,7 +142,7 @@ class McpToolsCliHelpTest {
         val expected =
             "  devrig execute_code --project_name=<project_name> (--code=<code> | --code-file=<path>)\n" +
                 "                      --task_id=<task_id> --reason=<reason> [--timeout=<timeout>]\n" +
-                "                      [--modal=<smart_non_modal | non_modal | unleashed>]\n" +
+                "                      [--modal=<smart_non_modal | non_modal | unleashed | dialog>]\n" +
                 "                      [--side=<frontend | backend>] [--out=<path>]\n"
 
         assertTrue(expected in section(), "execute_code's usage line must render every declared shape:\n${section()}")

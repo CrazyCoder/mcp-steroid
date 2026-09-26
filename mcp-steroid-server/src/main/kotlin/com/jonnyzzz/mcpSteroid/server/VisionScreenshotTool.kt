@@ -1,6 +1,12 @@
 package com.jonnyzzz.mcpSteroid.server
 
+import com.jonnyzzz.mcpSteroid.mcp.InputSchemaElement
 import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
+import com.jonnyzzz.mcpSteroid.mcp.boolean
+import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
+import com.jonnyzzz.mcpSteroid.mcp.description
+import com.jonnyzzz.mcpSteroid.mcp.param
+import com.jonnyzzz.mcpSteroid.mcp.withDefaultValue
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.get
@@ -23,7 +29,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
 
         The screenshot and component tree are saved under the execution folder:
         - screenshot.png
-        - screenshot-tree.md
+        - screenshot-tree.md (the steroid_ui snapshot of the window, with refs and screen bounds)
         - screenshot-meta.json
 
         Coordinates are in the IDE window's LOGICAL pixels. Feed them back only to steroid_input
@@ -49,11 +55,22 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
     val windowId = CommonToolParams.windowId()
         .registerToSchema()
 
+    val marks = InputSchemaElement.param("marks")
+        .description(
+            "Draw each interactive control's ref (as steroid_ui lists it) on the returned image, so a control seen " +
+                "in the picture can be addressed with steroid_ui by its ref. Default false."
+        )
+        .cliSynopsis("draw steroid_ui refs on the image")
+        .boolean()
+        .withDefaultValue(false)
+        .registerToSchema()
+
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val projectName = context[projectName]
         val taskId = context[taskId]
         val reason = context[reason]
         val windowId = context[windowId]
+        val marks = context[marks]
 
         return handler().screenshotWindow(
             projectName,
@@ -61,6 +78,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
                 taskId = taskId,
                 reason = reason,
                 windowId = windowId,
+                marks = marks,
                 executionBackend = context.executionBackendProvenance(),
             ),
             context.mcpProgressReporter,
@@ -73,6 +91,7 @@ data class ScreenshotParams(
     val taskId: String,
     val reason: String,
     val windowId: String? = null,
+    val marks: Boolean = false,
     @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 

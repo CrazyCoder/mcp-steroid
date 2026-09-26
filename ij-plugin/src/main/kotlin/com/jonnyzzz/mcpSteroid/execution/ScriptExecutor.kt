@@ -25,6 +25,8 @@ import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.*
 import kotlin.time.Duration.Companion.seconds
@@ -152,6 +154,8 @@ class ScriptExecutor(
         // waits, multi-block progress): ExecutionManager.logProgress delivers it via MCP progress
         // notifications + idea.log + event storage, never the result content. A failing step
         // propagates its own error untouched; the per-step [PRE] lines in idea.log localize a stall.
+        // The context the script body runs in. Only modal=dialog adds a modality to it.
+        var scriptModality: CoroutineContext = EmptyCoroutineContext
         when (exec.modal) {
             ModalMode.SMART_NON_MODAL -> {
                 log.info("[$executionId] [PRE] close modal dialogs (modal=${exec.modal.wire})")
@@ -176,12 +180,20 @@ class ScriptExecutor(
             ModalMode.UNLEASHED -> {
                 log.info("[$executionId] [PRE] unleashed — no modality checks")
             }
+
+            ModalMode.DIALOG -> {
+                val dialog = openDialogModality()
+                log.info("[$executionId] [PRE] dialog — running under the modality of '${dialog.title}'")
+                resultBuilder.logMessage("Running under the modal dialog '${dialog.title}'.")
+                scriptModality = dialog.modality.asContextElement()
+                context.runsUnderDialog = true
+            }
         }
 
         monitorExceptions(context, executionId, executionDisposable)
 
         log.info("[$executionId] [RUN] script (modal=${exec.modal.wire}, timeout=${exec.timeout}s)")
-        executeCodeBlocks(exec, context, evalResult, executionId, resultBuilder)
+        executeCodeBlocks(exec, context, evalResult, executionId, resultBuilder, scriptModality)
 
         // Post-flight: re-sync to disk only for `smart_non_modal`, whose profile owns the document-
         // consistency contract. `non_modal` is intentionally start-gate-only and `unleashed` does nothing —
@@ -288,10 +300,27 @@ class ScriptExecutor(
                 "a modal dialog/progress is present and could not be cleared"
         }
         throw ToolCallErrorException(
-            "modal=${modal.name.lowercase()} requires a non-modal IDE, but $detail. " +
-                "Use modal=unleashed to run anyway (no PSI guarantees). " +
+            "modal=${modal.wire} requires a non-modal IDE, but $detail. " +
+                "Use modal=dialog to work inside an open modal dialog, or modal=unleashed to run anyway " +
+                "(no PSI guarantees). " +
                 "See the screenshot + thread dump under execution '${executionId.executionId}'."
         )
+    }
+
+    private class OpenDialog(val modality: ModalityState, val title: String)
+
+    /** The modality of the topmost open modal dialog, or a tool error when none is open. */
+    private suspend fun openDialogModality(): OpenDialog {
+        val modality = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { ModalityState.current() }
+        if (modality == ModalityState.nonModal()) {
+            throw ToolCallErrorException(
+                "modal=dialog runs a script under an open modal dialog, but none is open. Use modal=smart_non_modal."
+            )
+        }
+        val title = dialogWindowsLookup().showingModalDialogWindows()
+            .mapNotNull { (it as? java.awt.Dialog)?.title?.takeIf(String::isNotBlank) }
+            .lastOrNull() ?: "untitled"
+        return OpenDialog(modality, title)
     }
 
     private fun CoroutineScope.monitorExceptions(
@@ -327,7 +356,8 @@ class ScriptExecutor(
         context: McpScriptContextImpl,
         evalResult: EvalResult,
         executionId: ExecutionId,
-        resultBuilder: ExecutionResultBuilder
+        resultBuilder: ExecutionResultBuilder,
+        scriptModality: CoroutineContext,
     ) {
         // Dialogs already showing when the body starts, such as the user's own under `unleashed`,
         // are never closed by the timeout; only dialogs opened during the run are.
@@ -349,7 +379,7 @@ class ScriptExecutor(
                         log.info("Executing block #${index + 1}/${capturedBlocks.size} for $executionId")
                         context.progress("Executing block ${index + 1} of ${capturedBlocks.size}...")
                     }
-                    block(context)
+                    withContext(scriptModality) { block(context) }
                 }
                 log.info("Execution $executionId completed normally")
             }

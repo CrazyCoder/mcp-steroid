@@ -61,6 +61,15 @@ enum class ModalMode(val wire: String) {
     @SerialName("unleashed")
     UNLEASHED(wire = "unleashed"),
 
+    /**
+     * Run under the modality of the topmost open modal dialog, so the script's EDT work and write actions run
+     * while that dialog stays open, the way the dialog's own code runs. Fails when no modal dialog is open. No
+     * sweep, no document sync, no VFS refresh, no monitor: those would change the project under a dialog the
+     * script did not open.
+     */
+    @SerialName("dialog")
+    DIALOG(wire = "dialog"),
+
     ;
 
     companion object {
@@ -164,7 +173,11 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
                 "already-open modal, use 'unleashed' + closeModalDialogs(). " +
                 "'unleashed': no sweep, no checks, no validation — runs against whatever state exists, modal " +
                 "dialogs included; for intentional modal-dialog workflows (open/inspect/close a dialog " +
-                "yourself) or trivial / hardcoded IDE actions ONLY, never for PSI/editing."
+                "yourself) or trivial / hardcoded IDE actions ONLY, never for PSI/editing. " +
+                "'dialog': run under the open modal dialog's modality, so withContext(Dispatchers.EDT) and the " +
+                "script's writeAction { } (which then writes on the EDT) run while the dialog stays open instead of " +
+                "waiting for it to close; fails " +
+                "when no modal dialog is open; no sweep, no commit, no VFS refresh."
         )
         .cliSynopsis("modal-dialog policy for running the script")
         .enumString(ModalMode.entries.associateBy { it.wire })

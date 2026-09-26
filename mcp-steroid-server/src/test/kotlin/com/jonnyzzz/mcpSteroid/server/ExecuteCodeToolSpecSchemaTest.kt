@@ -17,7 +17,7 @@ class ExecuteCodeToolSpecSchemaTest {
         assertStringProperty(schema, "task_id")
         assertStringProperty(schema, "reason")
         assertIntegerProperty(schema, "timeout")
-        assertEnumProperty(schema, "modal", "smart_non_modal", "non_modal", "unleashed")
+        assertEnumProperty(schema, "modal", "smart_non_modal", "non_modal", "unleashed", "dialog")
         val side = assertEnumProperty(schema, "side", "frontend", "backend")
         assertFalse("default" in side, "side has no schema default: routing picks the side when it is absent")
     }

@@ -1,18 +1,32 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.vision
 
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.components.service
+import com.jonnyzzz.mcpSteroid.ui.UiModel
+import com.jonnyzzz.mcpSteroid.ui.UiRefs
+import com.jonnyzzz.mcpSteroid.ui.UiSnapshotFormatter
+import com.jonnyzzz.mcpSteroid.ui.UiWindowHeader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.awt.Component
-import java.awt.Container
+import java.awt.Dialog
+import java.awt.Frame
+import java.awt.Window
+import javax.swing.SwingUtilities
 
 /**
- * Provides Swing component tree metadata for screenshots.
+ * The screenshot's component tree: the steroid_ui snapshot of the captured window, with refs and screen bounds.
+ * The refs are the ones steroid_ui and `ui.*` accept.
  */
 class SwingComponentTreeProvider : ScreenshotMetadataProvider {
 
     override val type: String = TYPE
 
     override suspend fun provide(context: ScreenCaptureContext): ProviderResult {
-        val tree = buildComponentTree(context.component)
+        val tree = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { snapshotText(context.component) }
         return ProviderResult.Success(
             ScreenshotMetadata(
                 type = TYPE,
@@ -26,47 +40,27 @@ class SwingComponentTreeProvider : ScreenshotMetadataProvider {
     companion object {
         const val TYPE = "swing-tree"
         const val FILE_NAME = "screenshot-tree.md"
-    }
+        private const val MAX_NODES = 2_000
 
-    private fun buildComponentTree(component: Component, indent: String = "", depth: Int = 0): String {
-        val builder = StringBuilder()
-        val bounds = component.bounds
-        builder.append(indent).append("- ")
-        builder.append(component.javaClass.simpleName)
-        component.name?.let { builder.append("(name=").append(it).append(")") }
-        builder.append(" [").append(bounds.width).append("x").append(bounds.height).append("]")
-        if (!component.isVisible) builder.append(" hidden")
-
-        val text = extractText(component)
-        if (text != null) {
-            builder.append(" \"").append(text).append("\"")
+        /** The snapshot text of [component]'s window. Call on the EDT. */
+        fun snapshotText(component: Component): String {
+            val window = component as? Window ?: SwingUtilities.getWindowAncestor(component)
+            val root = window ?: component
+            val model = UiModel.build(root)
+            val registry = service<UiRefs>().registry
+            val header = UiWindowHeader(
+                windowId = WindowIdUtil.compute(window, component),
+                title = (window as? Frame)?.title ?: (window as? Dialog)?.title,
+                kind = when (window) {
+                    is Frame -> "frame"
+                    is Dialog -> "dialog"
+                    else -> "popup"
+                },
+                modal = (window as? Dialog)?.isModal == true,
+                source = model.source,
+                note = model.note,
+            )
+            return UiSnapshotFormatter.format(header, model.root, { registry.refFor(it.component) }, MAX_NODES, withBounds = true).text
         }
-        builder.append("\n")
-
-        if (component is Container && depth < 64) {
-            for (child in component.components) {
-                builder.append(buildComponentTree(child, indent + "  ", depth + 1))
-            }
-        } else if (depth >= 64) {
-            builder.append(indent).append("  ").append("... depth limit reached\n")
-        }
-
-        return builder.toString()
-    }
-
-    private fun extractText(component: Component): String? {
-        val raw = when (component) {
-            is javax.swing.JLabel -> component.text
-            is javax.swing.AbstractButton -> component.text
-            is javax.swing.text.JTextComponent -> component.text
-            else -> null
-        } ?: return null
-
-        // Sanitize: collapse whitespace (newlines, tabs, multiple spaces) into single space
-        val sanitized = raw
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        return sanitized.takeIf { it.isNotBlank() }?.take(120)
     }
 }

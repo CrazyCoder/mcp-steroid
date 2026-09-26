@@ -379,6 +379,20 @@ interface McpScriptContext {
     fun allowModalDialog()
 
     /**
+     * The steroid_ui engine: find controls by name, painted text, class, XPath or a ref from a steroid_ui
+     * snapshot, act on them like a user, and wait inside the IDE. Each action returns the line steroid_ui would
+     * report and throws when it cannot do what it asks. `ui.open { }` opens a dialog without waiting for it to
+     * close.
+     *
+     * ```kotlin
+     * ui.open { ShowSettingsUtil.getInstance().showSettingsDialog(project, "Editor") }
+     * ui.select(ui.name("Settings categories"), "Keymap")
+     * ui.click(ui.name("Cancel"))
+     * ```
+     */
+    val ui: com.jonnyzzz.mcpSteroid.ui.UiScriptApi
+
+    /**
      * Commit PSI changes + save all documents + refresh the VFS, so the script reads disk-consistent state.
      * Asserts the IDE is non-modal and FAILS the execution if a modal is present (these operations hang or
      * are unreliable under a modal — including one surfaced as a side effect). `smart_non_modal` runs this

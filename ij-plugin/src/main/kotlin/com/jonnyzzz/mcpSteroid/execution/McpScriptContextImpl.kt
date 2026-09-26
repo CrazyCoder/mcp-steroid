@@ -67,6 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.time.Duration
 import com.intellij.openapi.application.readAction as intellijReadAction
+import com.intellij.openapi.application.edtWriteAction
 import com.intellij.openapi.application.writeAction as intellijWriteAction
 import com.intellij.openapi.application.smartReadAction as intellijSmartReadAction
 import kotlin.time.Duration.Companion.milliseconds
@@ -302,6 +303,8 @@ class McpScriptContextImpl(
         modalMonitorJob = job
         Disposer.register(disposable) { job.cancel() }
     }
+
+    override val ui: com.jonnyzzz.mcpSteroid.ui.UiScriptApi by lazy { com.jonnyzzz.mcpSteroid.ui.UiScriptApi(project) }
 
     override fun allowModalDialog() {
         checkDisposed()
@@ -659,7 +662,16 @@ class McpScriptContextImpl(
 
     override suspend fun <T> readAction(action: () -> T): T = intellijReadAction(action)
 
-    override suspend fun <T> writeAction(action: () -> T): T = intellijWriteAction(action)
+    /**
+     * Set by modal=dialog. The platform's writeAction is a background write action, and it cannot take the write
+     * lock while a modal dialog's event loop runs on the EDT, so under a dialog the write runs on the EDT, under
+     * the script's context modality, the way the dialog's own code writes.
+     */
+    @Volatile
+    var runsUnderDialog: Boolean = false
+
+    override suspend fun <T> writeAction(action: () -> T): T =
+        if (runsUnderDialog) edtWriteAction(action) else intellijWriteAction(action)
 
     override suspend fun <T> smartReadAction(action: () -> T): T = intellijSmartReadAction(project, action)
 

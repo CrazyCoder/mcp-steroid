@@ -178,4 +178,89 @@ class SteroidUiIntegrationTest {
         Assertions.assertEquals(1, stale.exitCode, stale.stdout)
         stale.assertContains("ref $ref is stale")
     }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES)
+    fun `modal=dialog runs EDT work and a write action while a modal dialog stays open`() {
+        session.mcpSteroid.mcpUi(steps = null) // warms the session up before the dialog opens
+        openDialog()
+        session.mcpSteroid.mcpUi(steps = """[{"action":"click","name":"Ask"}]""", snapshot = "none").assertExitCode(0)
+
+        val gate = session.mcpSteroid.mcpExecuteCode(
+            modal = ModalMode.NON_MODAL,
+            code = "println(\"ran\")",
+            taskId = "modal-dialog-gate",
+            reason = "non_modal must refuse to run while a modal dialog is open",
+            timeout = 30,
+        )
+        Assertions.assertEquals(1, gate.exitCode, gate.stdout)
+        Assertions.assertTrue(gate.stdout.contains("modal=dialog"), gate.stdout)
+
+        val run = session.mcpSteroid.mcpExecuteCode(
+            modal = ModalMode.DIALOG,
+            code = $$"""
+                val doc = com.intellij.openapi.editor.EditorFactory.getInstance().createDocument("before")
+                withContext(kotlinx.coroutines.Dispatchers.EDT) { println("edt ran") }
+                writeAction { doc.setText("after") }
+                val stillOpen = withContext(kotlinx.coroutines.Dispatchers.EDT + com.intellij.openapi.application.ModalityState.any().asContextElement()) {
+                    java.awt.Window.getWindows().any { it.isShowing && it is java.awt.Dialog && it.isModal }
+                }
+                println("text=${doc.text} modalStillOpen=$stillOpen")
+            """.trimIndent(),
+            taskId = "modal-dialog-run",
+            reason = "modal=dialog must run EDT work and a write action under the open dialog",
+            timeout = 30,
+        )
+        run.assertExitCode(0)
+        run.assertContains("edt ran")
+        run.assertContains("text=after modalStillOpen=true")
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES)
+    fun `ui helpers drive the dialog from a script, and ui open returns a modal dialog`() {
+        openDialog()
+        val run = session.mcpSteroid.mcpExecuteCode(
+            modal = ModalMode.UNLEASHED,
+            code = $$"""
+                println(ui.fill(ui.name("Name"), "script"))
+                println(ui.check(ui.name("Enable feature")))
+                val question = ui.open {
+                    com.intellij.openapi.ui.Messages.showInfoMessage(project, "Opened by ui.open", "Steroid UI Open")
+                }
+                println("opened modal=" + ((question as? java.awt.Dialog)?.isModal == true))
+                println(ui.click(ui.name("OK") and ui.cls("JButton")))
+                println(ui.click(ui.name("OK")))
+            """.trimIndent(),
+            taskId = "ui-helpers",
+            reason = "Drive the test dialog through the ui helpers",
+            timeout = 60,
+        )
+        run.assertExitCode(0)
+        run.assertContains("opened modal=true")
+        Assertions.assertEquals("script|true|null|Red", result())
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.MINUTES)
+    fun `a traced run writes pictures, snapshots and an index per step`() {
+        openDialog()
+        val run = session.mcpSteroid.mcpUi(
+            steps = """[{"action":"check","name":"Enable feature"},{"action":"fill","name":"Name","text":"traced"}]""",
+            trace = true,
+        )
+        run.assertExitCode(0)
+        val index = Regex("""trace: (\S+trace\.md)""").find(run.stdout)!!.groupValues[1]
+        val listing = session.mcpSteroid.mcpExecuteCode(
+            modal = ModalMode.UNLEASHED,
+            code = $$"""
+                val dir = java.nio.file.Path.of("$$index").parent
+                println(java.nio.file.Files.list(dir).use { s -> s.map { it.fileName.toString() }.sorted().toList() }.joinToString(","))
+            """.trimIndent(),
+            taskId = "list-trace",
+            reason = "List the trace files",
+        )
+        listing.assertExitCode(0)
+        listing.assertContains("01-after.png,01-before.png,01-snapshot.txt,02-after.png,02-before.png,02-snapshot.txt,trace.jsonl,trace.md")
+    }
 }

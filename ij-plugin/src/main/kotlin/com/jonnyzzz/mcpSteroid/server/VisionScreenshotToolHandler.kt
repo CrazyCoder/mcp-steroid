@@ -36,7 +36,7 @@ class VisionScreenshotToolHandlerIJ : VisionScreenshotToolHandler {
         val builder = ToolCallResult.builder()
 
         try {
-            val artifacts = VisionService.getInstance(project).capture(executionId, screenshotParams.windowId)
+            val artifacts = VisionService.getInstance(project).capture(executionId, screenshotParams.windowId, screenshotParams.marks)
             val imageBase64 = Base64.getEncoder().encodeToString(artifacts.imageBytes)
             builder.addContent(ContentItem.Image(data = imageBase64, mimeType = "image/png"))
 

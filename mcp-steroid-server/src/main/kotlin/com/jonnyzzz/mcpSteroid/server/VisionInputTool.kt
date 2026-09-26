@@ -26,7 +26,8 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
     override val description = """
         Send input events (keyboard + mouse) to the IDE using a sequence string.
 
-        HEAVY ENDPOINT: Intended for debugging only. Prefer steroid_execute_code for regular automation.
+        HEAVY ENDPOINT: Intended for debugging only. To act on controls, prefer steroid_ui, which finds them by
+        name or ref and reports what each action caused. Prefer steroid_execute_code for regular automation.
 
         Sequence format (comma-separated or newline-separated steps; commas optional with newlines):
         - stick:ALT           (hold a key until the end)

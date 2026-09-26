@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.ui.UiSession
+import com.jonnyzzz.mcpSteroid.ui.UiTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withTimeout
@@ -34,7 +35,8 @@ class UiToolHandlerIJ : UiToolHandler {
             return builder.addTextContent("ERROR: ${e.message}").markAsError().build()
         }
         val mode = params.snapshot ?: if (steps.isEmpty()) UiSnapshotMode.FULL else UiSnapshotMode.DIFF
-        val session = UiSession(project, params.windowId, params.maxNodes)
+        val trace = if (params.trace) UiTrace(project.executionStorage.resolveExecutionDir(executionId).resolve("trace")) else null
+        val session = UiSession(project, params.windowId, params.maxNodes, trace)
         // The steps' own waits bound the call, plus an allowance for delivery and settling per step.
         val budgetMs = steps.sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
         return try {
@@ -45,6 +47,7 @@ class UiToolHandlerIJ : UiToolHandler {
                 append(" (").append(started.elapsedNow().inWholeMilliseconds).append(" ms)")
                 result.reports.forEach { append('\n').append(it.line) }
                 result.failure?.let { append('\n').append("FAILED ").append(it) }
+                trace?.let { append('\n').append("trace: ").append(it.folder.resolve("trace.md")) }
                 if (result.snapshot.isNotEmpty()) {
                     val title = if (result.failure == null && mode == UiSnapshotMode.DIFF) "changes" else "snapshot"
                     append("\n\n").append(title).append(":\n").append(result.snapshot)
