@@ -121,7 +121,7 @@ data class ScreenshotArtifacts(
  * One mouse event of a click, before it gets a source and a point. An [approach] event lands one pixel away from
  * the click point.
  */
-internal data class ClickEvent(
+data class ClickEvent(
     val id: Int,
     val button: Int,
     val modifiers: Int,
@@ -136,7 +136,7 @@ internal data class ClickEvent(
  * not select a row; only a move from a different position selects the row under it. The press alone carries the
  * button's down mask. [modifiers] are the keyboard modifiers held during the click.
  */
-internal fun clickEventSequence(button: Int, modifiers: Int): List<ClickEvent> {
+fun clickEventSequence(button: Int, modifiers: Int): List<ClickEvent> {
     val downMask = when (button) {
         MouseEvent.BUTTON1 -> InputEvent.BUTTON1_DOWN_MASK
         MouseEvent.BUTTON2 -> InputEvent.BUTTON2_DOWN_MASK
