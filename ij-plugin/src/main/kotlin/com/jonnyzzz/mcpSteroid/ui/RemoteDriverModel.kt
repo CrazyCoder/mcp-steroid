@@ -37,15 +37,27 @@ object RemoteDriverModel {
         if (!PluginManagerCore.isLoaded(plugin.pluginId)) {
             throw ClassNotFoundException("the Performance Testing plugin is disabled")
         }
-        val loaders = sequenceOf(plugin.pluginClassLoader) + plugin.contentModules.asSequence().map { it.pluginClassLoader }
-        for (loader in loaders.filterNotNull()) {
+        // Content modules first: in 2026.1 the class ships in the main jar but belongs to the remote-driver
+        // content module, and the main loader refuses it with a PluginException rather than a
+        // ClassNotFoundException.
+        val loaders = plugin.contentModules.asSequence().mapNotNull { it.pluginClassLoader } +
+            sequenceOf(plugin.pluginClassLoader).filterNotNull()
+        return loadCreator(loaders)
+    }
+
+    /** The creator class from the first of [loaders] that serves it. A loader that throws anything is skipped. */
+    fun loadCreator(loaders: Sequence<ClassLoader>): Class<*> {
+        val refusals = mutableListOf<String>()
+        for (loader in loaders) {
             try {
-                return Class.forName(CREATOR, false, loader)
+                return loader.loadClass(CREATOR)
             } catch (e: ClassNotFoundException) {
-                continue
+                refusals += "not found in ${loader.javaClass.simpleName}"
+            } catch (e: RuntimeException) {
+                refusals += e.message ?: e.javaClass.name
             }
         }
-        throw ClassNotFoundException("$CREATOR is not in the Performance Testing plugin")
+        throw ClassNotFoundException("$CREATOR is not available: ${refusals.joinToString("; ").ifEmpty { "no class loader" }}")
     }
 
     /** Builds the model of [root] and its showing descendants. Call on the EDT. */
