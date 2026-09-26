@@ -61,7 +61,8 @@ your machine at once — each open on a different project — and can download a
 ### What your agent gets
 
 - **Visual IDE understanding** — screenshots + OCR + component tree
-- **UI automation** — control the IDE like a human developer
+- **UI automation** — control the IDE like a human developer, from a text snapshot of its windows (`steroid_ui`)
+- **Refactorings without a script** — rename, safe delete, move and quick fixes with a dry run first (`steroid_refactor`)
 - **Native IntelliJ APIs** — PSI, inspections, refactorings, and more
 - **Kotlin scripting** — full platform access at runtime via `steroid_execute_code`
 - **Standard MCP protocol** — connects to MCP-compatible AI agents
@@ -204,6 +205,8 @@ as `mcp-steroid://skill/design-philosophy`.
 | Tool | Description |
 |------|-------------|
 | **Execute Code** (`steroid_execute_code`) | Run Kotlin code inside the IDE's JVM with full API access |
+| **UI** (`steroid_ui`) | Read the IDE's windows as text with refs, drive dialogs, popups and Settings by what they show, run an IDE action at a code location, and find the class and plugin behind a control. No compile |
+| **Refactor** (`steroid_refactor`) | Rename, safe delete, move, quick fix, intention, optimize imports, reformat and usages, dry run first, without a dialog or a script |
 | **Execute Feedback** (`steroid_execute_feedback`) | Provide execution ratings back to agents |
 | **Fetch Resource** (`steroid_fetch_resource`) | Fetch any `mcp-steroid://` skill guide / recipe by URI |
 | **Vision Screenshot** (`steroid_take_screenshot`) | Capture IDE screenshots with component metadata |
