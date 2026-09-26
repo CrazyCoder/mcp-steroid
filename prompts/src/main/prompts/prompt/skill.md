@@ -104,13 +104,20 @@ duplicated on window/task entries).
 ### `steroid_take_screenshot`
 Capture a screenshot of the IDE frame and return image content.
 
-**HEAVY ENDPOINT**: Use only for debugging and tricky configuration. Prefer `steroid_execute_code` for regular automation.
+**HEAVY ENDPOINT**: Use only for debugging and tricky configuration. To read controls, a `steroid_ui` snapshot is cheaper: text with refs.
 
 **Parameters:**
 - `project_name` (required): the `project_name` from `steroid_list_projects` (a unique routing key, NOT the raw folder name)
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the screenshot is needed
 - `window_id` (optional): Window id from `steroid_list_windows` to target a specific window
+- `marks` (optional): outline every interactive control and label it with its `steroid_ui` ref, such as `e12`
+
+To act on something you see, take the screenshot with `marks=true`, read the control's ref off the image,
+and act with `steroid_ui`: `{"action":"click","ref":"e12"}`, or `fill`, `select`, `check`, `inspect`. This
+beats clicking at pixel coordinates: no scale arithmetic on a HiDPI display, the ref still finds the control
+after a resize or scroll, and the step reports what it caused. Use coordinates with `steroid_input` only for
+what has no ref: a web view (JCEF), a canvas, a drag.
 
 **Artifacts (saved under the execution folder):**
 - `screenshot.png`
@@ -122,7 +129,7 @@ The response includes `window_id` (also stored in `screenshot-meta.json`); pass 
 ### `steroid_input`
 Send input events (keyboard + mouse) using a sequence string.
 
-**HEAVY ENDPOINT**: Use only for debugging and tricky configuration. Prefer `steroid_execute_code` for regular automation.
+**HEAVY ENDPOINT**: Use only for debugging and tricky configuration. To click, fill or select a control, use `steroid_ui` with its name or ref, which a `marks=true` screenshot shows. Keep pixel clicks for what has no ref.
 
 **Parameters:**
 - `project_name` (required): the `project_name` from `steroid_list_projects` (a unique routing key, NOT the raw folder name)

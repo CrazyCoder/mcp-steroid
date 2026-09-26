@@ -51,8 +51,17 @@ Pass them as one JSON array in `steps`.
 Several controls often share a name, because a label carries its field's name. Matching prefers the
 interactive control in the topmost window that has one, and when two remain, add `nth`, a `class` or the
 ref. While a modal dialog shows, only that dialog and its popups are searched. Add `"trace": true` to record a picture before and after
-each step for a reproduction, and pass `marks=true` to `steroid_take_screenshot` to see the refs on the
-image.
+each step for a reproduction.
+
+## See the UI with refs
+
+When the text is not enough, because layout, icons or colours matter or a control has no name, take
+`steroid_take_screenshot` with `marks=true`. Every interactive control on the image is outlined and
+labelled with its ref, the same ref a snapshot shows. Read the ref off the picture and act by it:
+`{"action":"click","ref":"e12"}`, `fill`, `select`, `check` or `inspect`. Do not click at pixel
+coordinates with `steroid_input` for a control that has a ref: a ref needs no HiDPI scale arithmetic,
+still finds the control after a resize or scroll, and the step reports what it caused. Keep coordinates
+for what has no ref: a web view (JCEF), a canvas, a drag.
 
 ## Find the code and plugin behind a control
 

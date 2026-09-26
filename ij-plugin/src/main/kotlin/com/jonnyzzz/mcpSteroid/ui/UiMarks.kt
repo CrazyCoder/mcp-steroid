@@ -9,6 +9,7 @@ import java.awt.Font
 import java.awt.Rectangle
 import java.awt.RenderingHints
 import java.awt.image.BufferedImage
+import javax.swing.JComponent
 import kotlin.math.roundToInt
 
 /** Ref labels drawn over a screenshot, so a control seen in the picture can be addressed by its ref. */
@@ -25,11 +26,21 @@ object UiMarks {
         val registry = service<UiRefs>().registry
         return UiModel.build(captured).root.walk()
             .filter { it.interactive && it.component.isShowing && it.component !== captured }
-            .map { node ->
+            .mapNotNull { node ->
+                val shown = visiblePart(node.component) ?: return@mapNotNull null
                 val at = node.component.locationOnScreen
-                Mark(registry.refFor(node.component), scale(Rectangle(at.x - origin.x, at.y - origin.y, node.component.width, node.component.height), scale))
+                Mark(registry.refFor(node.component), scale(Rectangle(at.x - origin.x + shown.x, at.y - origin.y + shown.y, shown.width, shown.height), scale))
             }
             .toList()
+    }
+
+    /**
+     * The part of [c] its scroll panes show, in its own coordinates, or null when none is: a control scrolled out of
+     * view would otherwise be outlined over whatever the image shows there, such as a dialog's buttons.
+     */
+    private fun visiblePart(c: Component): Rectangle? {
+        val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)
+        return shown.takeUnless { it.isEmpty }
     }
 
     fun scale(r: Rectangle, scale: Double) = Rectangle(

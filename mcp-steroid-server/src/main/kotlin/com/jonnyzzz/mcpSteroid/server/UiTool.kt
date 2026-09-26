@@ -38,8 +38,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         or table come its rows in view, one per line: #index, the row text indented by tree depth, and
         [expanded], [collapsed] or [selected]. A ref stays valid while its control is showing.
 
-        Pass window_id (from steroid_list_windows) to snapshot one window, and snapshot=full to add each
-        control's screen bounds, which steroid_input accepts as click:Left@screen:<x>,<y>.
+        Pass window_id (from steroid_list_windows) to snapshot one window. To see the controls,
+        steroid_take_screenshot with marks=true labels each one on the image with the ref used here, so a
+        control spotted in the picture is targeted by ref, never by its pixels. snapshot=full adds each
+        control's screen bounds, for steroid_input on what has no ref.
 
         Steps (a JSON array in `steps`) act on controls in order and report what each one caused: where the
         press landed, whether a button's action ran, IDE actions, windows opened or closed, the new focus. The

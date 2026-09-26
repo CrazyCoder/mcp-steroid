@@ -23,7 +23,14 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         Capture a screenshot of the IDE and return an image payload.
 
         HEAVY ENDPOINT: This is intended for debugging and tricky configuration only.
-        Prefer steroid_execute_code for regular automation.
+        To read controls, their names and states, a steroid_ui snapshot is cheaper: it is text, with refs.
+
+        To act on something seen in the picture, pass marks=true. Every interactive control is outlined and
+        labelled with its steroid_ui ref, such as e12. Then act on it with steroid_ui by that ref:
+        {"action":"click","ref":"e12"}, or fill, select, check, inspect. Prefer this to clicking at pixel
+        coordinates: a ref needs no scale arithmetic, still finds the control after a resize or scroll, and the
+        step reports what it caused. Use coordinates with steroid_input only for what has no ref, such as a web
+        view (JCEF), a canvas, or a drag.
 
         Use steroid_list_windows when multiple IDE windows are open and pass window_id to target a specific window.
 
@@ -32,7 +39,7 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         - screenshot-tree.md (the steroid_ui snapshot of the window, with refs and screen bounds)
         - screenshot-meta.json
 
-        Coordinates are in the IDE window's LOGICAL pixels. Feed them back only to steroid_input
+        Coordinates, for steroid_input only, are in the IDE window's LOGICAL pixels. Feed them back only to steroid_input
         (sequence "click:Left@x,y"), which maps them onto the live component. Do NOT pass these
         coordinates to external tools like xdotool — those use the X display's PHYSICAL pixels and
         will be off by the display scale factor; for xdotool, source coordinates from scrot instead.

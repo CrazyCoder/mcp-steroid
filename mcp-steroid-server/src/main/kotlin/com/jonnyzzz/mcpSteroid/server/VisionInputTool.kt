@@ -27,7 +27,9 @@ class VisionInputToolSpec(val handler: () -> VisionInputToolHandler) : McpToolBa
         Send input events (keyboard + mouse) to the IDE using a sequence string.
 
         HEAVY ENDPOINT: Intended for debugging only. To act on controls, prefer steroid_ui, which finds them by
-        name or ref and reports what each action caused. Prefer steroid_execute_code for regular automation.
+        name or ref and reports what each action caused. A control seen in a screenshot has a ref: take the
+        screenshot with marks=true and use steroid_ui with that ref instead of clicking its pixels. Keep
+        coordinates for what has no ref: a web view (JCEF), a canvas, a drag.
 
         Sequence format (comma-separated or newline-separated steps; commas optional with newlines):
         - stick:ALT           (hold a key until the end)
