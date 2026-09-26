@@ -45,6 +45,9 @@ interface ExecutionResultBuilder {
     fun noteUserOutput()
 }
 
+/** The status-bar title of a running steroid_execute_code call. */
+const val EXECUTION_TASK_TITLE = "devrig -- MCP Steroid task"
+
 /**
  * Manages script executions for a project.
  * Executions run sequentially in a dedicated coroutine scope.
@@ -70,7 +73,7 @@ class ExecutionManager(
         // disconnect (this suspend fun is a child of the Ktor request coroutine; structured
         // concurrency propagates) — the task disappears from the status bar automatically.
         // No manual wiring is needed or wanted.
-        return withBackgroundProgress(project, "devrig -- MCP Steroid task", cancellable = true) { coroutineScope {
+        return withBackgroundProgress(project, EXECUTION_TASK_TITLE, cancellable = true) { coroutineScope {
             val executionId = project.executionStorage.writeNewExecution(exec)
             withContext(CoroutineName("mcp-steroid-$executionId")) {
                 log.info("Starting execution $executionId-${exec.taskId}-${exec.reason}...")

@@ -136,6 +136,13 @@ or you reproduce a bug that depends on an unsaved file — run with `non_modal`,
 `FileDocumentManager` rather than from disk, because disk has the saved version. The `steroid_refactor` tool
 saves only the files it changed.
 
+**Background tasks.** Smart mode covers indexing only. After a start, a project open or a sync the IDE runs more
+in the background (a Gradle, Maven or Cargo sync, the Rust plugin's name-resolution data, inspections), and
+references, problems and the build model stay incomplete until those end. The result then starts with a
+`NOTE: the IDE is busy in the background: …` line. Wait and call again when your answer depends on them;
+`steroid_list_windows` lists the running `backgroundTasks`, and `Observation.awaitConfiguration(project)` waits
+for project configuration in a script.
+
 Context methods (callable from any mode — the profiles above are just sugar over these):
 
 - `closeModalDialogs(): Int` — close all showing modal dialogs (deepest-first), capturing a screenshot +

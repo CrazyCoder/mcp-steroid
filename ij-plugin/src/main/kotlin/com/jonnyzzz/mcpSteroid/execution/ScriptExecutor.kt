@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.application.impl.LaterInvocator
 import com.intellij.openapi.progress.util.ProgressWindow
+import com.jonnyzzz.mcpSteroid.server.IdeBackgroundActivity
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -191,6 +192,15 @@ class ScriptExecutor(
         }
 
         monitorExceptions(context, executionId, executionDisposable)
+
+        // Smart mode covers indexing only. After a start or a sync the IDE runs more in the background, and a script
+        // that resolves or inspects code gets partial answers until it ends: say so in its own content item.
+        IdeBackgroundActivity.running(project).takeIf { it.isNotEmpty() }?.let { tasks ->
+            resultBuilder.logMessage(
+                "NOTE: the IDE is busy in the background: ${tasks.joinToString("; ")}. Resolution, inspections and " +
+                    "the build model can be incomplete until it finishes; steroid_list_windows lists backgroundTasks."
+            )
+        }
 
         log.info("[$executionId] [RUN] script (modal=${exec.modal.wire}, timeout=${exec.timeout}s)")
         executeCodeBlocks(exec, context, evalResult, executionId, resultBuilder, scriptModality)

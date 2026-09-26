@@ -65,6 +65,9 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         - intention: "name" is the intention's text, such as "Convert to expression body"
         - optimize_imports, reformat: act on "file"
 
+        While the IDE runs background tasks, as after a start or a project sync, references and problems can be
+        incomplete: it waits up to 30 s for them, and the response names any that still run.
+
         It stays out of the way of a person working in the IDE: no dialog, no editor tab, no caret or focus
         change, and it saves only the files it changed, so their unsaved edits elsewhere stay unsaved. Use
         it to change code.

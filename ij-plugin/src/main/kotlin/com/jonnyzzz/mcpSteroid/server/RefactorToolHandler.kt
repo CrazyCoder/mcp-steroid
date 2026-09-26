@@ -32,16 +32,22 @@ class RefactorToolHandlerIJ : RefactorToolHandler {
         val builder = ToolCallResult.builder()
         val started = TimeSource.Monotonic.markNow()
         val header = "execution_id: ${executionId.executionId}"
+        // Resolution and inspections are incomplete while the IDE warms up after a start or a sync: wait a little,
+        // and say what still runs, so a short usage list is not taken for the whole truth.
+        val busy = IdeBackgroundActivity.awaitIdle(project, BUSY_WAIT_MS)
+        val note = busy.note()?.let { "\n$it" } ?: ""
         return try {
             val text = withTimeout(TIMEOUT_MS.milliseconds) { RefactorEngine(project).run(params) }
-            val result = "$header (${started.elapsedNow().inWholeMilliseconds} ms)\n$text"
+            val result = "$header (${started.elapsedNow().inWholeMilliseconds} ms)$note\n$text"
             storage.writeCodeExecutionData(executionId, "refactor.txt", result)
             builder.addTextContent(result).build()
         } catch (e: RefactorFailure) {
             storage.writeCodeErrorEvent(executionId, e.message ?: "failed")
-            builder.addTextContent("$header\nFAILED: ${e.message}").markAsError().build()
+            builder.addTextContent("$header$note\nFAILED: ${e.message}").markAsError().build()
         } catch (e: TimeoutCancellationException) {
-            val message = "steroid_refactor did not finish within ${TIMEOUT_MS / 1000} s"
+            val running = IdeBackgroundActivity.running(project)
+            val message = "steroid_refactor did not finish within ${TIMEOUT_MS / 1000} s" +
+                if (running.isEmpty()) "" else "; the IDE is busy with ${running.joinToString("; ")}"
             storage.writeCodeErrorEvent(executionId, message)
             builder.addTextContent("$header\nERROR: $message").markAsError().build()
         } catch (e: CancellationException) {
@@ -55,5 +61,6 @@ class RefactorToolHandlerIJ : RefactorToolHandler {
 
     private companion object {
         const val TIMEOUT_MS = 90_000L
+        const val BUSY_WAIT_MS = 30_000L
     }
 }
