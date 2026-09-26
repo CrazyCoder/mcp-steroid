@@ -1592,3 +1592,42 @@ stable; live on 2026.1: snapshot 34 ms, a five-step Settings flow 1.7 s,
 `ui.open`, `modal=dialog` with a write, a traced run and a marked
 screenshot at 1.5 scale. Not verified: Split Mode (`side=backend`) and
 2026.3 live.
+
+## Review rounds and live checks (2026-09-26)
+
+Review round 1 (`5cc7fc17`): a ref into a window blocked by a modal
+dialog was clicked; `ui.open` hid its block's exception behind the
+timeout. Round 2 (`7410e777`): a live ref walked its whole subtree; an
+orphaned `UiRows.rowBounds`.
+
+Split Mode (`runIdeSplitMode`, IU-261.22158.277), through the JetBrains
+Client's endpoint:
+
+- Frontend (default side): snapshot 205 ms; a four-step Settings flow in
+  2.0 s with every effect reported.
+- `side=backend`: the backend lists its Lux-hosted Settings panels and
+  editor notifications; check and fill on a backend panel in 852 ms.
+- A modal dialog the backend opens shows in the client as an empty Lux
+  host with no buttons. `side=backend` lists its buttons and clicks one
+  (195 ms); the dialog closes on both sides.
+
+IntelliJ IDEA 2026.3 EAP (IU-263.5885), a separate instance with its own
+config, system and plugin paths:
+
+- Snapshot 174 ms. A first-run "Meet the Islands Theme" modal blocked
+  the Settings shortcut, and the failed wait named it with its controls.
+- Settings is a non-modal dialog on 2026.3, so its "Cancel" also matched
+  a "Cancel" link in the frame behind it. Matching now counts only the
+  topmost window with a match.
+- `modal=dialog` with `writeAction` hung: 2026.3's `edtWriteAction`
+  takes the write-intent permit before it switches to the EDT, and the
+  EDT holds write-intent for the dialog's whole event loop. Under a
+  dialog the write runs on the EDT with `runWriteAction`, which works on
+  2026.1 (integration 7/7) and 2026.3.
+- `ui` helpers with `ui.open`, the seven-step Settings flow with a trace
+  (Zoom 100% to 110% in the trace snapshots), a marked screenshot at 1.5
+  scale, and `close` all work.
+
+Not in scope, seen on the way: the JetBrains Client logs a startup
+`NoClassDefFoundError` for `ProjectLevelVcsManager` from
+`VcsConfirmationSilencer`.
