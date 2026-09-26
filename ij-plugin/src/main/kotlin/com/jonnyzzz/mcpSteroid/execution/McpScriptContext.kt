@@ -421,7 +421,10 @@ interface McpScriptContext {
 
     /**
      * Execute a block under write lock on EDT.
-     * Use for all PSI/VFS/document modifications.
+     * Use for all PSI/VFS/document modifications. EDT-only calls such as
+     * `PsiDocumentManager.commitAllDocuments()` work inside it. Run a refactoring
+     * processor's `run()` in `writeIntentReadAction { }` instead: the processor
+     * takes its own write actions.
      *
      * ```kotlin
      * writeAction {

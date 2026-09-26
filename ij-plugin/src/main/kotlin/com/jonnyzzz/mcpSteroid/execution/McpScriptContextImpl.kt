@@ -67,8 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.time.Duration
 import com.intellij.openapi.application.readAction as intellijReadAction
-import com.intellij.openapi.util.Computable
-import com.intellij.openapi.application.writeAction as intellijWriteAction
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.application.smartReadAction as intellijSmartReadAction
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -663,20 +662,16 @@ class McpScriptContextImpl(
     override suspend fun <T> readAction(action: () -> T): T = intellijReadAction(action)
 
     /**
-     * Set by modal=dialog. A modal dialog's event loop runs inside an EDT task that holds the write-intent lock,
-     * so no write action that asks for the lock from another thread can get it while the dialog is open: neither
-     * the platform's background writeAction nor, from 2026.3, edtWriteAction, which takes its permit before it
-     * switches to the EDT. Under a dialog the write runs on the EDT, in the dialog's loop, under the script's
-     * context modality, the way the dialog's own code writes.
+     * Writes on the EDT, under the script's context modality, inside a command, so a PSI change is allowed and the
+     * user can undo each write as one step. Not the platform's writeAction: that one runs in the
+     * background, where EDT-only calls such as commitAllDocuments or CommandProcessor fail, and where a Kotlin PSI
+     * change trips the Kotlin plugin's writeActionFinished listener, which leaks the write permit and freezes the
+     * IDE until it restarts (2026.2). Not edtWriteAction either: from 2026.3 it takes its write-intent permit before
+     * it switches to the EDT, so under modal=dialog, whose event loop holds that permit, it waits forever.
      */
-    @Volatile
-    var runsUnderDialog: Boolean = false
-
     override suspend fun <T> writeAction(action: () -> T): T =
-        if (runsUnderDialog) {
-            withContext(Dispatchers.EDT) { ApplicationManager.getApplication().runWriteAction(Computable(action)) }
-        } else {
-            intellijWriteAction(action)
+        withContext(Dispatchers.EDT) {
+            WriteCommandAction.writeCommandAction(project).withName("MCP Steroid script").compute<T, RuntimeException> { action() }
         }
 
     override suspend fun <T> smartReadAction(action: () -> T): T = intellijSmartReadAction(project, action)

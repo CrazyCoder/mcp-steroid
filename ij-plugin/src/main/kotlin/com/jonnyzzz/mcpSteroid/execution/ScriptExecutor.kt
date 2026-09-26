@@ -185,7 +185,6 @@ class ScriptExecutor(
                 val dialog = openDialogModality()
                 log.info("[$executionId] [PRE] dialog — running under the modality of '${dialog.title}'")
                 scriptModality = dialog.modality.asContextElement()
-                context.runsUnderDialog = true
             }
         }
 
