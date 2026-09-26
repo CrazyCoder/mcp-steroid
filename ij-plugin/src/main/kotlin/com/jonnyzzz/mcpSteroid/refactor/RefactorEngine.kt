@@ -71,7 +71,7 @@ class RefactorEngine(private val project: Project) {
 
     private class Target(val file: VirtualFile, val psiFile: PsiFile, val document: Document, val offset: Int, val located: Boolean)
 
-    private class Named(val target: Target, val element: PsiElement, val description: String)
+    private class Named(val element: PsiElement, val description: String)
 
     private suspend fun target(params: RefactorParams): Target {
         val path = params.file ?: throw RefactorFailure("give the target's file")
@@ -99,7 +99,7 @@ class RefactorEngine(private val project: Project) {
                     .firstOrNull { it is PsiNameIdentifierOwner && it.nameIdentifier?.textRange?.contains(target.offset) == true }
                 ?: PsiTreeUtil.getParentOfType(file.findElementAt(target.offset), PsiNamedElement::class.java, false)?.takeIf { it !is PsiFile }
                 ?: throw RefactorFailure("no named declaration or reference at ${where(target.document, target.file, target.offset)}")
-            Named(target, element, describe(element))
+            Named(element, describe(element))
         }
     }
 
@@ -160,7 +160,7 @@ class RefactorEngine(private val project: Project) {
             ?: throw RefactorFailure("directory not found: $to")
         val psiDirectory = readAction { PsiManager.getInstance(project).findDirectory(directory) } ?: throw RefactorFailure("$to is not in the project")
         val describe = "${CodeLocation.shortPath(project, target.file)} to ${CodeLocation.shortPath(project, directory)}"
-        if (!params.apply) return "dry run: move $describe\n" + usages(Named(target, target.psiFile, CodeLocation.shortPath(project, target.file)))
+        if (!params.apply) return "dry run: move $describe\n" + usages(Named(target.psiFile, CodeLocation.shortPath(project, target.file)))
         val processor = MoveFilesOrDirectoriesProcessor(project, arrayOf(target.psiFile), psiDirectory, true, false, false, null, null)
         return applier.apply("Move") { processor.run() }.let { "moved $describe\n$it" }
     }
@@ -192,9 +192,13 @@ class RefactorEngine(private val project: Project) {
         if (params.all) {
             var applied = 0
             val report = applier.collectChanges {
+                // Stops when no fixable problem is left, or when a fix leaves as many problems as before.
+                var remaining = Int.MAX_VALUE
                 repeat(MAX_FIXES) {
-                    val next = problems(target, shortName).firstOrNull { !it.fixes.isNullOrEmpty() } ?: return@collectChanges
-                    applyFix(next, next.fixes!!.first())
+                    val fixable = problems(target, shortName).filter { !it.fixes.isNullOrEmpty() }
+                    if (fixable.isEmpty() || fixable.size >= remaining) return@collectChanges
+                    remaining = fixable.size
+                    applyFix(fixable.first(), fixable.first().fixes!!.first())
                     applied++
                 }
             }

@@ -74,7 +74,7 @@ internal class UiEditorSteps(private val project: Project) {
             if (UiSettle.showingWindows() != before || inplaceActive()) break
             delay(POLL_MS)
         }
-        if (ran.isCompleted && !ran.getCompleted()) throw UiStepFailure("$id is disabled here${text?.let { " (\"$it\")" } ?: ""}")
+        if (ran.isCompleted && !ran.await()) throw UiStepFailure("$id is disabled here${text?.let { " (\"$it\")" } ?: ""}")
         return "ran $id${text?.let { " (\"$it\")" } ?: ""}"
     }
 
