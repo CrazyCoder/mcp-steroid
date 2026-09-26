@@ -9,6 +9,7 @@ import com.jonnyzzz.mcpSteroid.server.ListWindowsToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import com.jonnyzzz.mcpSteroid.server.OpenProjectToolHandler
 import com.jonnyzzz.mcpSteroid.server.PromptsContextHandler
+import com.jonnyzzz.mcpSteroid.server.RefactorToolHandler
 import com.jonnyzzz.mcpSteroid.server.UiToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionInputToolHandler
 import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
@@ -76,6 +77,13 @@ class StubMcpSteroidTools(
         )
     }
 
+    private val refactor by lazy {
+        DevrigRefactorToolHandler(
+            bridge = bridge,
+            routing = services.projectRouting,
+        )
+    }
+
     private val openProject by lazy {
         DevrigOpenProjectToolHandler(
             bridge = bridge,
@@ -94,6 +102,7 @@ class StubMcpSteroidTools(
             VisionScreenshotToolHandler::class.java -> visionScreenshot
             VisionInputToolHandler::class.java -> visionInput
             UiToolHandler::class.java -> ui
+            RefactorToolHandler::class.java -> refactor
             OpenProjectToolHandler::class.java -> openProject
 
             else -> throw UnsupportedOperationException(

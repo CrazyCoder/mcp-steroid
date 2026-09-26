@@ -26,6 +26,7 @@ class DevrigToolSpecsTest {
         "steroid_take_screenshot",
         "steroid_input",
         "steroid_ui",
+        "steroid_refactor",
         "steroid_fetch_resource",
         "steroid_open_project",
     )

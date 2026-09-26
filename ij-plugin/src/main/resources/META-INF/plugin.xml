@@ -80,6 +80,9 @@
             serviceInterface="com.jonnyzzz.mcpSteroid.server.UiToolHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.UiToolHandlerIJ"/>
         <applicationService
+            serviceInterface="com.jonnyzzz.mcpSteroid.server.RefactorToolHandler"
+            serviceImplementation="com.jonnyzzz.mcpSteroid.server.RefactorToolHandlerIJ"/>
+        <applicationService
             serviceInterface="com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler"
             serviceImplementation="com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandlerIJ"/>
         <applicationService

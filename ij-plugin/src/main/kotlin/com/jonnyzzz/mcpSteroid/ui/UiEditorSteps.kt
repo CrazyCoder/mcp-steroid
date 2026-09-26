@@ -12,18 +12,15 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.IdeFocusManager
 import com.jonnyzzz.mcpSteroid.server.UiStep
+import java.awt.Component
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import java.awt.Component
-import java.nio.file.Path
-import kotlin.time.TimeSource
 
 /** The goto and run steps: a caret or a selection in the editor, and an IDE action run where the focus is. */
 internal class UiEditorSteps(private val project: Project) {
@@ -35,7 +32,7 @@ internal class UiEditorSteps(private val project: Project) {
 
     suspend fun goto(step: UiStep): String {
         val path = step.file!!
-        val file = withContext(Dispatchers.IO) { findFile(path) } ?: throw UiStepFailure("file not found: $path")
+        val file = withContext(Dispatchers.IO) { CodeLocation.findFile(project, path) } ?: throw UiStepFailure("file not found: $path")
         return withContext(edtAny) {
             val document = FileDocumentManager.getInstance().getDocument(file) ?: throw UiStepFailure("$path has no text")
             val range = CodeLocation.resolve(document.text, step.line, step.column, step.symbol, step.text, step.nth)
@@ -87,16 +84,7 @@ internal class UiEditorSteps(private val project: Project) {
         return "unknown action id $id" + if (similar.isEmpty()) "" else "; similar ids: ${similar.joinToString()}"
     }
 
-    private fun findFile(path: String): VirtualFile? {
-        val base = project.basePath
-        val absolute = Path.of(path).let { if (it.isAbsolute || base == null) it else Path.of(base).resolve(it) }
-        return LocalFileSystem.getInstance().refreshAndFindFileByNioFile(absolute.normalize())
-    }
-
-    private fun shortPath(file: VirtualFile): String {
-        val base = project.basePath?.let { LocalFileSystem.getInstance().findFileByPath(it) }
-        return base?.let { VfsUtilCore.getRelativePath(file, it) } ?: file.path
-    }
+    private fun shortPath(file: VirtualFile): String = CodeLocation.shortPath(project, file)
 
     private companion object {
         const val PLACE = "steroid_ui"

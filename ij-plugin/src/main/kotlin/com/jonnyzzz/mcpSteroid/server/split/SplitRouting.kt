@@ -33,6 +33,7 @@ internal val ROUTED_TOOLS: Map<String, Home> = mapOf(
     "steroid_open_project" to Home.BACKEND,
     "steroid_execute_code" to Home.BACKEND,
     "steroid_execute_feedback" to Home.BACKEND,
+    "steroid_refactor" to Home.BACKEND,
     "steroid_list_windows" to Home.FRONTEND,
     "steroid_take_screenshot" to Home.FRONTEND,
     "steroid_input" to Home.FRONTEND,
