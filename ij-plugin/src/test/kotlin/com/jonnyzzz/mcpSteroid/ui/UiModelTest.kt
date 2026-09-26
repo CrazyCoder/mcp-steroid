@@ -29,7 +29,7 @@ class UiModelTest {
     @Test
     fun `a working remote-driver build is used`() {
         val fake = FallbackUiWalker(onlyShowing = false).build(panel)
-        val result = UiModel.build(panel, onlyShowing = false, remote = { fake }, remoteUnavailable = { null })
+        val result = UiModel.build(panel, onlyShowing = false, remote = { UiModelBuild(fake) }, remoteUnavailable = { null })
         assertEquals(UiModel.SOURCE_REMOTE_DRIVER, result.source)
         assertNull(result.note)
     }

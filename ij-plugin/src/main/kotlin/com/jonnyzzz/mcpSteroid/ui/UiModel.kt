@@ -5,7 +5,10 @@ import com.intellij.openapi.diagnostic.logger
 import java.awt.Component
 import java.lang.reflect.InvocationTargetException
 
-data class UiModelResult(val root: UiNode, val source: String, val note: String?)
+/** A built tree, and the XPath query over the model it came from when that model has one. */
+class UiModelBuild(val root: UiNode, val xpath: ((String) -> Set<Component>)? = null)
+
+data class UiModelResult(val root: UiNode, val source: String, val note: String?, val xpath: ((String) -> Set<Component>)? = null)
 
 /** Builds the snapshot tree of a root component. Call on the EDT. */
 object UiModel {
@@ -17,7 +20,7 @@ object UiModel {
     fun build(
         root: Component,
         onlyShowing: Boolean = true,
-        remote: (Component) -> UiNode = RemoteDriverModel::build,
+        remote: (Component) -> UiModelBuild = RemoteDriverModel::build,
         remoteUnavailable: () -> String? = RemoteDriverModel::unavailableReason,
     ): UiModelResult {
         val unavailable = remoteUnavailable()
@@ -25,7 +28,8 @@ object UiModel {
             return UiModelResult(FallbackUiWalker(onlyShowing).build(root), SOURCE_SWING, "remote driver unavailable: $unavailable")
         }
         return try {
-            UiModelResult(remote(root), SOURCE_REMOTE_DRIVER, null)
+            val built = remote(root)
+            UiModelResult(built.root, SOURCE_REMOTE_DRIVER, null, built.xpath)
         } catch (e: Exception) {
             val cause = (e as? InvocationTargetException)?.targetException ?: e
             log.warn("The remote-driver UI model failed; using the Swing walker", cause)

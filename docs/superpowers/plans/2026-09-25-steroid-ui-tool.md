@@ -1208,6 +1208,40 @@ before Phase 2 and record the ruling in the ledger. If the times are far
 above the spec's target (well under a second per call), measure where the
 time goes before continuing.
 
+### Phase 1 results (2026-09-26, IU-261.22158.277 sandbox)
+
+- The first live call failed: on 2026.1 the model classes are in the main
+  jar, and the main class loader refuses them with a `PluginException`
+  ("must not be requested from main classloader"), which escaped the
+  fallback. Fixed in `f8c66fd4` (content-module loaders first, any refusal
+  skipped).
+- `source=remote-driver` works. Project frame: 34 ms server side, 3.2 KB,
+  42 refs. With the Settings dialog open: 414 ms for both windows, Settings
+  listed first with its tree rows, page links and OK/Cancel/Apply states.
+- Painted text repeats entries (`Search Everywhere|Search Everywhere`):
+  drop consecutive duplicates in Task 5.
+- The test task and `runIde` share the sandbox: stop the sandbox IDE before
+  running `:ij-plugin:test` (it cannot copy locked jars).
+
+Rulings for Phase 2, from what Phase 1 showed:
+
+- Ruling: input events are dispatched with `IdeEventQueue.dispatchEvent`,
+  each inside its own `invokeLater(…, ModalityState.any())` task, then a
+  barrier task is queued. This keeps the delivery that 0.109 verified
+  (window-sourced mouse events, keys to the focus owner or the target) and
+  still returns when a dispatch opens a modal dialog, because the dialog's
+  loop runs the barrier. Spec decisions 5 and 6 said "post"; the effect they
+  asked for is the same. Cost if wrong: posting would have to replace the
+  task wrapper in `UiInput` only.
+- Ruling: the modality watcher moves to Phase 3 (Tasks 11–12), where
+  `modal=dialog` and `ui.open` need it. Phase 2 detects opened and closed
+  windows by comparing the showing window list before and after a step.
+  Cost if wrong: one extra class in Phase 2.
+- Ruling: while a modal dialog shows, targets are searched only in the
+  topmost modal dialog and the windows it owns, which are the only windows
+  a user can click. Cost if wrong: a target in a blocked window reports "no
+  match" instead of "blocked by a modal dialog".
+
 ---
 
 ## Phase 2: actions

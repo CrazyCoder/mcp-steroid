@@ -6,7 +6,11 @@ import com.intellij.ide.plugins.contentModules
 import com.intellij.openapi.extensions.PluginId
 import org.w3c.dom.Document
 import org.w3c.dom.Element
+import org.w3c.dom.NodeList
 import java.awt.Component
+import javax.xml.xpath.XPathConstants
+import javax.xml.xpath.XPathExpressionException
+import javax.xml.xpath.XPathFactory
 
 /**
  * The Performance Testing plugin's UI model (`XpathDataModelCreator`), which adds the text a component
@@ -61,7 +65,7 @@ object RemoteDriverModel {
     }
 
     /** Builds the model of [root] and its showing descendants. Call on the EDT. */
-    fun build(root: Component): UiNode {
+    fun build(root: Component): UiModelBuild {
         val type = creatorClass()
         val creator = type.getConstructor().newInstance()
         // RemoteDriverDataModelExtension and the Remote Development extensions call the JMX test driver,
@@ -75,7 +79,17 @@ object RemoteDriverModel {
             .invoke(creator, root, true, null) as Document
         val top = document.documentElement.childElements().firstOrNull { it.tagName == "div" }
             ?: error("the UI model of ${root.javaClass.name} is empty")
-        return toNode(top)
+        return UiModelBuild(toNode(top)) { xpath -> evaluate(document, xpath) }
+    }
+
+    /** The components of the elements [xpath] selects in [document]. */
+    private fun evaluate(document: Document, xpath: String): Set<Component> {
+        val nodes = try {
+            XPathFactory.newInstance().newXPath().compile(xpath).evaluate(document, XPathConstants.NODESET) as NodeList
+        } catch (e: XPathExpressionException) {
+            throw IllegalArgumentException("bad xpath '$xpath': ${e.message ?: e.cause?.message}", e)
+        }
+        return (0 until nodes.length).mapNotNull { (nodes.item(it) as? Element)?.getUserData("component") as? Component }.toSet()
     }
 
     private fun toNode(e: Element): UiNode {
@@ -85,7 +99,7 @@ object RemoteDriverModel {
             component = component,
             className = e.getAttribute("class").ifEmpty { UiComponentFacts.simpleClassName(component) },
             name = e.getAttribute("accessiblename").let(UiComponentFacts::clean).takeIf { it.isNotEmpty() },
-            text = e.getAttribute("visible_text").split(SEPARATOR).map(UiComponentFacts::clean).filter { it.isNotEmpty() },
+            text = e.getAttribute("visible_text").split(SEPARATOR).map(UiComponentFacts::clean).filter { it.isNotEmpty() }.dropRepeats(),
             tooltip = e.getAttribute("tooltiptext").let(UiComponentFacts::clean).takeIf { it.isNotEmpty() },
             value = UiComponentFacts.value(component),
             states = UiComponentFacts.states(component),
@@ -93,6 +107,9 @@ object RemoteDriverModel {
             children = e.childElements().filter { it.tagName == "div" }.map(::toNode).toList(),
         )
     }
+
+    /** A label painted twice in a row (a tooltip and its text, a split button's halves) is listed once. */
+    private fun List<String>.dropRepeats(): List<String> = filterIndexed { i, s -> i == 0 || s != this[i - 1] }
 
     private fun Element.childElements(): Sequence<Element> =
         (0 until childNodes.length).asSequence().map { childNodes.item(it) }.filterIsInstance<Element>()
