@@ -49,8 +49,8 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         By default it is a dry run that changes nothing: it returns the element and its usages as
         path:line: text, the problems and their fixes for fix, or the intentions available for intention.
         Pass "apply": true to change the code; the response lists the changed files and how Edit > Undo takes
-        the change back: one step named "MCP Steroid: ..." (fix with all: one step per fix). A refactoring that finds conflicts, such as a rename to a name
-        already in use, returns them and changes nothing.
+        the change back: one step named "MCP Steroid: ..." (fix with all: one step per fix). A refactoring
+        that finds conflicts, such as a rename to a name already in use, returns them and changes nothing.
 
         - rename: "new_name"
         - safe_delete: fails with the usages that block it

@@ -8,13 +8,13 @@ import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.QuickFix
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
+import com.intellij.lang.LanguageImportStatements
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.application.smartReadAction
-import com.intellij.lang.LanguageImportStatements
 import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
@@ -23,6 +23,7 @@ import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiDocumentManager
@@ -49,7 +50,7 @@ import com.jonnyzzz.mcpSteroid.ui.UiStepFailure
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** A refactoring that could not run. The message says why; nothing was changed. */
+/** A refactoring that could not run or did not finish. The message says why, and which files it changed, if any. */
 class RefactorFailure(message: String) : RuntimeException(message)
 
 /**
@@ -120,15 +121,19 @@ class RefactorEngine(private val project: Project) {
         return "${CodeLocation.shortPath(project, file)}:${line + 1}"
     }
 
+    /** `path:line: text` for the line of [file] that holds [offset], as usages and blocking usages print. Read action. */
+    private fun lineAt(file: VirtualFile, offset: Int): String? {
+        val document = FileDocumentManager.getInstance().getDocument(file) ?: return null
+        val line = document.getLineNumber(offset.coerceIn(0, document.textLength))
+        val text = document.getText(TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line))).trim()
+        return "${CodeLocation.shortPath(project, file)}:${line + 1}: ${text.take(120)}"
+    }
+
     private suspend fun usageLines(named: Named): List<String> = smartReadAction(project) {
         ReferencesSearch.search(named.element, GlobalSearchScope.projectScope(project)).findAll().mapNotNull { ref ->
             val element = ref.element
             val file = element.containingFile?.virtualFile ?: return@mapNotNull null
-            val document = FileDocumentManager.getInstance().getDocument(file) ?: return@mapNotNull null
-            val offset = element.textRange.startOffset + ref.rangeInElement.startOffset
-            val line = document.getLineNumber(offset)
-            val text = document.getText(com.intellij.openapi.util.TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line))).trim()
-            "${CodeLocation.shortPath(project, file)}:${line + 1}: ${text.take(120)}"
+            lineAt(file, element.textRange.startOffset + ref.rangeInElement.startOffset)
         }.distinct().sorted()
     }
 
@@ -184,10 +189,7 @@ class RefactorEngine(private val project: Project) {
         SafeDeleteProcessorDelegate.EP_NAME.extensionList.firstOrNull { it.handlesElement(element) }?.findUsages(element, arrayOf(element), found)
         found.filter { it is SafeDeleteReferenceUsageInfo && !it.isSafeDelete }.mapNotNull { usage ->
             val file = usage.virtualFile ?: return@mapNotNull null
-            val document = FileDocumentManager.getInstance().getDocument(file) ?: return@mapNotNull null
-            val line = document.getLineNumber(usage.navigationOffset.coerceIn(0, document.textLength))
-            val text = document.getText(com.intellij.openapi.util.TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line))).trim()
-            "used at ${CodeLocation.shortPath(project, file)}:${line + 1}: ${text.take(120)}"
+            lineAt(file, usage.navigationOffset)?.let { "used at $it" }
         }.distinct()
     }
 
@@ -274,7 +276,7 @@ class RefactorEngine(private val project: Project) {
         try {
             val available = readAction { availableIntentions(target.psiFile, editor, target.offset) }
             val listing = available.joinToString("; ") { it.text }
-            if (!params.apply) return "intentions at ${where(target.document, target.file, target.offset)}: $listing"
+            if (!params.apply) return "dry run: intentions at${where(target.document, target.file, target.offset)}: $listing"
             val wanted = params.name ?: throw RefactorFailure("intention needs name: one of $listing")
             val action = available.firstOrNull { it.text == wanted } ?: available.firstOrNull { it.text.startsWith(wanted, ignoreCase = true) }
                 ?: throw RefactorFailure("no intention \"$wanted\" at the target; available: $listing")

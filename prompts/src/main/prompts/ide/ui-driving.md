@@ -58,8 +58,8 @@ image.
 Two ways to refactor, for two jobs:
 
 - **Change code**: the `steroid_refactor` tool (rename, safe delete, move, quick fix, intention, imports,
-  formatting). It opens no dialog, tab or caret change, so a person working in the same IDE is not
-  interrupted.
+  formatting, usages). It opens no dialog or tab, moves no caret and saves only the files it changed, so a
+  person working in the same IDE is not interrupted.
 - **Do what a user does**: the steps below. They open the file, move the caret and show the dialog, the
   preview or the in-place template, which is what a reproduction of a user's report needs, and they
   reach refactorings the tool does not cover.

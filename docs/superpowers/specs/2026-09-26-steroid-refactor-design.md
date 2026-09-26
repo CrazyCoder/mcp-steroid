@@ -120,7 +120,8 @@ Usages print as `path:line: <line text>`, the first 30, then a count. Paths are
 relative to the project base directory.
 
 `apply` returns the changed files with the lines added and removed in each, and
-the undo command's name.
+how Edit > Undo takes the change back: one command named "MCP Steroid: …", or
+one per fix for `fix` with `all`.
 
 ### Threading and dialogs
 
