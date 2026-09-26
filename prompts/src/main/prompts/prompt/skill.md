@@ -111,10 +111,12 @@ Capture a screenshot of the IDE frame and return image content.
 - `task_id` (required): Task identifier for logging
 - `reason` (required): Why the screenshot is needed
 - `window_id` (optional): Window id from `steroid_list_windows` to target a specific window
-- `marks` (optional): outline every interactive control and label it with its `steroid_ui` ref, such as `e12`
+- `marks` (optional): outline every interactive control and label it with its `steroid_ui` ref, such as `e12`,
+  and every row and tab in view with its row ref, such as `e12#3`
 
 To act on something you see, take the screenshot with `marks=true`, read the control's ref off the image,
-and act with `steroid_ui`: `{"action":"click","ref":"e12"}`, or `fill`, `select`, `check`, `inspect`. This
+and act with `steroid_ui`: `{"action":"click","ref":"e12"}`, `{"action":"select","ref":"e12#3"}`, or `fill`,
+`check`, `inspect`. A `scroll` step brings a control that is out of view into the picture. This
 beats clicking at pixel coordinates: no scale arithmetic on a HiDPI display, the ref still finds the control
 after a resize or scroll, and the step reports what it caused. Use coordinates with `steroid_input` only for
 what has no ref: a web view (JCEF), a canvas, a drag.

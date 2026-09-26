@@ -26,8 +26,10 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         To read controls, their names and states, a steroid_ui snapshot is cheaper: it is text, with refs.
 
         To act on something seen in the picture, pass marks=true. Every interactive control is outlined and
-        labelled with its steroid_ui ref, such as e12. Then act on it with steroid_ui by that ref:
-        {"action":"click","ref":"e12"}, or fill, select, check, inspect. Prefer this to clicking at pixel
+        labelled with its steroid_ui ref, such as e12, and every row of a list, tree or table and every tab
+        in view with its row ref, such as e12#3, at the row's right end. Then act on it with steroid_ui by
+        that ref: {"action":"click","ref":"e12"}, {"action":"select","ref":"e12#3"}, or fill, check, inspect.
+        Controls scrolled out of view are not marked: a scroll step brings them in. Prefer this to clicking at pixel
         coordinates: a ref needs no scale arithmetic, still finds the control after a resize or scroll, and the
         step reports what it caused. Use coordinates with steroid_input only for what has no ref, such as a web
         view (JCEF), a canvas, or a drag.
@@ -64,8 +66,8 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
 
     val marks = InputSchemaElement.param("marks")
         .description(
-            "Draw each interactive control's ref (as steroid_ui lists it) on the returned image, so a control seen " +
-                "in the picture can be addressed with steroid_ui by its ref. Default false."
+            "Draw each interactive control's ref (as steroid_ui lists it), and each row's and tab's row ref such as " +
+                "e12#3, on the returned image, so what is seen in the picture can be addressed with steroid_ui by its ref. Default false."
         )
         .cliSynopsis("draw steroid_ui refs on the image")
         .boolean()

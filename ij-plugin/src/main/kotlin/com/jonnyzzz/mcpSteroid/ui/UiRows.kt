@@ -5,50 +5,78 @@ import com.intellij.ui.SimpleColoredComponent
 import java.awt.Component
 import java.awt.Container
 import java.awt.Point
+import java.awt.Rectangle
 import javax.swing.JComboBox
+import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JList
+import javax.swing.JPopupMenu
+import javax.swing.JTabbedPane
 import javax.swing.JTable
 import javax.swing.JTree
+import javax.swing.SwingUtilities
+import javax.swing.plaf.basic.ComboPopup
 import javax.swing.text.JTextComponent
+import javax.swing.tree.TreePath
 
-/** One row of a list, tree or table as a snapshot shows it. [expanded] is null for a list row or a tree leaf. */
+/** One row of a list, tree, table or tabbed pane as a snapshot shows it. [expanded] is null for a list row or a tree leaf. */
 data class UiRow(val index: Int, val text: String, val depth: Int, val selected: Boolean, val expanded: Boolean?)
 
 /** The rows a snapshot lists for a component: the ones in view, and how many rows it has in all. */
 data class UiRowsView(val rows: List<UiRow>, val total: Int)
 
 /**
- * The rows of lists, trees, tables and combo boxes, read through their cell renderers, as a user sees them. A
- * tree's rows are its expanded rows. Call on the EDT.
+ * The rows of lists, trees, tables and combo boxes, read through their cell renderers, as a user sees them, and the
+ * tabs of a tabbed pane. A tree's rows are its expanded rows. Call on the EDT.
  */
 object UiRows {
     private const val MAX_ROWS = 2_000
     private const val MAX_SHOWN = 40
-    private const val PATH_SEPARATOR = " > "
+    const val PATH_SEPARATOR = " > "
 
     fun rows(c: Component): List<String>? = when (c) {
         is JList<*> -> (0 until minOf(c.model.size, MAX_ROWS)).map { listRow(c, it) }
         is JTree -> (0 until minOf(c.rowCount, MAX_ROWS)).map { treeRow(c, it) }
         is JTable -> (0 until minOf(c.rowCount, MAX_ROWS)).map { tableRow(c, it) }
         is JComboBox<*> -> (0 until minOf(c.itemCount, MAX_ROWS)).map { comboRow(c, it) }
+        is JTabbedPane -> (0 until c.tabCount).map { tabRow(c, it) }
         else -> null
     }
 
     /**
-     * The rows of a list, tree or table in its view, at most [MAX_SHOWN], with their depth and state. Null for other
-     * components, and for one with no rows.
+     * Where row [index] of [c] is, in [c]'s coordinates: a list's cell, a tree row's node, a table row's first cell, a
+     * tab. Null for a combo box, whose items show in a popup, and for a row out of range.
      */
-    fun view(c: Component): UiRowsView? {
+    fun bounds(c: Component, index: Int): Rectangle? = when (c) {
+        is JList<*> -> c.getCellBounds(index, index)
+        is JTree -> c.getRowBounds(index)
+        is JTable -> if (index in 0 until c.rowCount) c.getCellRect(index, 0, true) else null
+        is JTabbedPane -> if (index in 0 until c.tabCount) c.getBoundsAt(index) else null
+        else -> null
+    }
+
+    /** The combo box whose open popup shows [list], or null when [list] is not a combo box's popup list. */
+    fun comboOf(list: Component): JComboBox<*>? {
+        if (list !is JList<*>) return null
+        val popup = SwingUtilities.getAncestorOfClass(JPopupMenu::class.java, list) as? JPopupMenu ?: return null
+        return (popup as? ComboPopup)?.let { popup.invoker as? JComboBox<*> }
+    }
+
+    /**
+     * The rows of a list, tree, table or tabbed pane in its view, at most [max], with their depth and state. Null for
+     * other components, and for one with no rows.
+     */
+    fun view(c: Component, max: Int = MAX_SHOWN): UiRowsView? {
         val total = when (c) {
             is JList<*> -> c.model.size
             is JTree -> c.rowCount
             is JTable -> c.rowCount
+            is JTabbedPane -> c.tabCount
             else -> return null
         }
         if (total == 0) return null
         val range = visibleRange(c, total)
-        val shown = (range.first..minOf(range.last, range.first + MAX_SHOWN - 1)).map { i -> row(c, i) }
+        val shown = (range.first..minOf(range.last, range.first + max - 1)).map { i -> row(c, i) }
         return UiRowsView(shown, total)
     }
 
@@ -85,8 +113,21 @@ object UiRows {
                 c.setRowSelectionInterval(index, index)
                 c.scrollRectToVisible(c.getCellRect(index, 0, true))
             }
-            is JComboBox<*> -> c.selectedIndex = index
+            is JComboBox<*> -> {
+                c.selectedIndex = index
+                c.hidePopup()
+            }
+            is JTabbedPane -> c.selectedIndex = index
             else -> throw UiStepFailure("${UiComponentFacts.simpleClassName(c)} has no rows")
+        }
+    }
+
+    /** Scrolls row [index] of [c] into view without selecting it. */
+    fun scrollTo(c: Component, index: Int) {
+        when (c) {
+            is JList<*> -> c.ensureIndexIsVisible(index)
+            is JTree -> c.scrollRowToVisible(index)
+            else -> bounds(c, index)?.let { (c as? JComponent)?.scrollRectToVisible(it) }
         }
     }
 
@@ -96,8 +137,31 @@ object UiRows {
         is JTree -> c.isRowSelected(index)
         is JTable -> c.isRowSelected(index)
         is JComboBox<*> -> c.selectedIndex == index
+        is JTabbedPane -> c.selectedIndex == index
         else -> false
     }
+
+    /**
+     * The row of the child of [parent] that shows [segment], its text exactly, else part of it, or -1 when no child
+     * matches. Without a parent, any row counts. Several matching rows are an error that lists them.
+     */
+    fun childRow(tree: JTree, parent: TreePath?, segment: String): Int {
+        val children = (0 until tree.rowCount).filter { parent == null || tree.getPathForRow(it)?.parentPath == parent }
+        val exact = children.filter { treeRow(tree, it) == segment }
+        val candidates = exact.ifEmpty { children.filter { treeRow(tree, it).contains(segment) } }
+        return when (candidates.size) {
+            0 -> -1
+            1 -> candidates.single()
+            else -> throw UiStepFailure(
+                "${candidates.size} rows match \"$segment\"; pass \"index\" or a longer path: " +
+                    candidates.take(10).joinToString("; ") { "#$it ${treePath(tree, it)}" }
+            )
+        }
+    }
+
+    /** The children of [parent] in view, as `#index text`, for a message about a child that is not there. */
+    fun childRows(tree: JTree, parent: TreePath): List<String> =
+        (0 until tree.rowCount).filter { tree.getPathForRow(it)?.parentPath == parent }.map { "#$it ${treeRow(tree, it)}" }
 
     /** A tree row's text with its ancestors', such as `Editor > General > Appearance`. The root is left out when hidden. */
     fun treePath(tree: JTree, row: Int): String {
@@ -119,6 +183,7 @@ object UiRows {
             UiRow(i, treeRow(c, i), depth.coerceAtLeast(0), c.isRowSelected(i), if (leaf) null else c.isExpanded(i))
         }
         is JTable -> UiRow(i, tableRow(c, i), 0, c.isRowSelected(i), null)
+        is JTabbedPane -> UiRow(i, tabRow(c, i), 0, c.selectedIndex == i, null)
         else -> error("no rows in ${c.javaClass.name}")
     }
 
@@ -156,6 +221,12 @@ object UiRows {
         val shown = table.prepareRenderer(table.getCellRenderer(row, 0), row, 0)
         return text(shown) ?: value?.toString().orEmpty()
     }
+
+    /** A tab's title, else the text of the component shown as its tab, such as a label with a counter. */
+    private fun tabRow(tabs: JTabbedPane, i: Int): String =
+        tabs.getTitleAt(i)?.let(UiComponentFacts::clean)?.takeIf { it.isNotEmpty() }
+            ?: tabs.getTabComponentAt(i)?.let(::text)
+            ?: ""
 
     @Suppress("UNCHECKED_CAST")
     private fun comboRow(combo: JComboBox<*>, i: Int): String {

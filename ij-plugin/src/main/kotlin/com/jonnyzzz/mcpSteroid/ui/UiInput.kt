@@ -46,14 +46,18 @@ data class KeyReport(val recipient: Component)
 class UiInput {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
-    suspend fun click(target: Component, button: Int, count: Int, modifiers: Int, offset: Point?): ClickReport {
+    /**
+     * Clicks [target] at [offset], else at the centre of [area], a part of it such as a row, else at its centre. The
+     * area, or the whole target, is scrolled into view first.
+     */
+    suspend fun click(target: Component, button: Int, count: Int, modifiers: Int, offset: Point?, area: Rectangle? = null): ClickReport {
         val aim = withContext(edtAny) {
             require(target.isShowing) { "the target is not showing" }
-            (target as? JComponent)?.scrollRectToVisible(Rectangle(0, 0, target.width, target.height))
+            (target as? JComponent)?.scrollRectToVisible(area ?: Rectangle(0, 0, target.width, target.height))
             val window = target as? Window ?: SwingUtilities.getWindowAncestor(target)
                 ?: throw IllegalStateException("the target is not in a window")
             activate(window)
-            val local = offset ?: Point(target.width / 2, target.height / 2)
+            val local = offset ?: area?.let { Point(it.centerX.toInt(), it.centerY.toInt()) } ?: Point(target.width / 2, target.height / 2)
             Aim(window, SwingUtilities.convertPoint(target, local, window))
         }
         val recorder = PressRecorder(aim.window)
@@ -92,11 +96,13 @@ class UiInput {
         )
     }
 
-    suspend fun hover(target: Component) {
+    /** Moves the pointer over the centre of [area], a part of [target] such as a row, else over the target's centre. */
+    suspend fun hover(target: Component, area: Rectangle? = null) {
         withContext(edtAny) {
             require(target.isShowing) { "the target is not showing" }
             val window = SwingUtilities.getWindowAncestor(target) ?: throw IllegalStateException("the target is not in a window")
-            val point = SwingUtilities.convertPoint(target, Point(target.width / 2, target.height / 2), window)
+            val local = area?.let { Point(it.centerX.toInt(), it.centerY.toInt()) } ?: Point(target.width / 2, target.height / 2)
+            val point = SwingUtilities.convertPoint(target, local, window)
             for (x in listOf(point.x - 1, point.x)) {
                 later {
                     IdeEventQueue.getInstance().dispatchEvent(

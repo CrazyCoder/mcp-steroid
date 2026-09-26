@@ -24,6 +24,7 @@ enum class UiAction(val wire: String) {
     GOTO("goto"),
     RUN("run"),
     INSPECT("inspect"),
+    SCROLL("scroll"),
 }
 
 enum class UiWaitCondition(val wire: String) {
@@ -65,6 +66,8 @@ data class UiStep(
     val keys: String? = null,
     val row: String? = null,
     val index: Int? = null,
+    /** For scroll: how many pages to scroll the target's scroll pane, down when positive. */
+    val pages: Int? = null,
     val condition: UiWaitCondition? = null,
     val title: String? = null,
     val file: String? = null,
@@ -89,12 +92,32 @@ object UiSteps {
     private val TARGET_FIELDS = setOf("ref", "name", "text", "class", "xpath", "nth")
     private val FIELDS = TARGET_FIELDS + setOf(
         "action", "button", "count", "modifiers", "offset_x", "offset_y", "keys", "row", "index", "for", "title", "timeout_ms",
-        "file", "line", "column", "symbol", "id",
+        "file", "line", "column", "symbol", "id", "pages",
     )
     private val BUTTONS = setOf("left", "right", "middle")
     /** Actions whose "text" is what they enter or look for in the editor, not a target. */
     private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO)
-    private val NEEDS_TARGET = setOf(UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT, UiAction.INSPECT)
+    private val NEEDS_TARGET = setOf(
+        UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT, UiAction.INSPECT, UiAction.SCROLL,
+    )
+    /** Actions that take a row of a list, tree, table or tabbed pane: "row", "index" or a row ref. */
+    private val ROW_ACTIONS = setOf(UiAction.SELECT, UiAction.INSPECT, UiAction.CLICK, UiAction.HOVER, UiAction.SCROLL)
+    private val ROW_REF = Regex("""(e\d+)#(\d+)""")
+
+    /**
+     * [step] with a row ref such as `e12#3` split into its control's ref and the row index, as a snapshot lists row #3
+     * under `[ref=e12]` and a marked screenshot labels it.
+     */
+    fun withRowRef(step: UiStep): UiStep {
+        val ref = step.target?.ref ?: return step
+        val m = ROW_REF.matchEntire(ref) ?: return step
+        require(step.row == null && step.index == null) { "the row ref $ref already names row #${m.groupValues[2]}; drop row and index" }
+        require(step.action in ROW_ACTIONS) {
+            "a row ref such as $ref works with ${ROW_ACTIONS.joinToString { it.wire }}; ${step.action.wire} acts on a whole control"
+        }
+        val index = m.groupValues[2].toIntOrNull() ?: throw IllegalArgumentException("row index in $ref is too large")
+        return step.copy(target = step.target.copy(ref = m.groupValues[1]), index = index)
+    }
 
     fun parse(json: String): List<UiStep> {
         val root = try {
@@ -139,6 +162,7 @@ object UiSteps {
             keys = obj.string("keys"),
             row = obj.string("row"),
             index = obj.int("index"),
+            pages = obj.int("pages"),
             condition = obj.string("for")?.let { wanted ->
                 UiWaitCondition.entries.firstOrNull { it.wire == wanted }
                     ?: throw IllegalArgumentException("unknown wait condition '$wanted'; use one of ${UiWaitCondition.entries.joinToString { it.wire }}")
@@ -152,8 +176,9 @@ object UiSteps {
             nth = obj.int("nth") ?: 0,
             timeoutMs = (obj.long("timeout_ms") ?: DEFAULT_TIMEOUT_MS).coerceIn(0, MAX_TIMEOUT_MS),
         )
-        validate(step)
-        return step
+        val split = withRowRef(step)
+        validate(split)
+        return split
     }
 
     private fun validate(step: UiStep) {
@@ -161,6 +186,15 @@ object UiSteps {
         if (step.action in NEEDS_TARGET) require(step.target != null) { "$action needs a target: ref, name, text, class or xpath" }
         step.button?.let { require(it in BUTTONS) { "unknown button '$it'; use left, right or middle" } }
         require(step.count in 1..2) { "count must be 1 or 2, was ${step.count}" }
+        if (step.row != null || step.index != null) {
+            require(step.action in ROW_ACTIONS) { "row and index go with ${ROW_ACTIONS.joinToString { it.wire }}, not $action" }
+            require(step.row == null || step.index == null) { "pass row or index, not both" }
+        }
+        step.index?.let { require(it >= 0) { "index is 0-based, was $it" } }
+        if (step.pages != null) {
+            require(step.action == UiAction.SCROLL) { "pages goes with scroll, not $action" }
+            require(step.row == null && step.index == null) { "scroll takes pages or a row, not both" }
+        }
         when (step.action) {
             UiAction.FILL, UiAction.TYPE -> require(step.text != null) { "$action needs text" }
             UiAction.PRESS -> require(!step.keys.isNullOrBlank()) { "press needs keys, such as \"ENTER\" or \"ctrl+shift+A\"" }

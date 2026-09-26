@@ -34,14 +34,16 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         class, accessible name in quotes, label="..." for the caption before an unnamed field, a ref such
         as [ref=e12], states such as [disabled] or [checked], value="..." for text fields and combo boxes,
         text=... for text it paints (tabs, editor text), tip="..." for its tooltip, and action=<id> for the
-        IDE action behind a toolbar button or menu item, which a run step takes. Under a list, tree
-        or table come its rows in view, one per line: #index, the row text indented by tree depth, and
-        [expanded], [collapsed] or [selected]. A ref stays valid while its control is showing.
+        IDE action behind a toolbar button or menu item, which a run step takes. Under a list, tree,
+        table or tabbed pane come its rows or tabs in view, one per line: #index, the row text indented by
+        tree depth, and [expanded], [collapsed] or [selected]. Row #9 under [ref=e91] is the row ref e91#9,
+        which the row steps below take as their "ref". A ref stays valid while its control is showing.
 
         Pass window_id (from steroid_list_windows) to snapshot one window. To see the controls,
-        steroid_take_screenshot with marks=true labels each one on the image with the ref used here, so a
-        control spotted in the picture is targeted by ref, never by its pixels. snapshot=full adds each
-        control's screen bounds, for steroid_input on what has no ref.
+        steroid_take_screenshot with marks=true labels each one on the image with the ref used here, and
+        each row and tab in view with its row ref, so what is spotted in the picture is targeted by ref,
+        never by its pixels. snapshot=full adds each control's screen bounds, for steroid_input on what has
+        no ref.
 
         Steps (a JSON array in `steps`) act on controls in order and report what each one caused: where the
         press landed, whether a button's action ran, IDE actions, windows opened or closed, the new focus. The
@@ -56,18 +58,24 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         "timeout_ms" (default 5000) for its target to show and be enabled. Only the topmost window with a
         match counts, and while a modal dialog shows, only that dialog and its popups are searched.
 
-        - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}
-        - {"action":"hover", target}
+        - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}:
+          with "row", "index" or a row ref, presses that row or tab, such as a double click to open a row
+        - {"action":"hover", target, optional "row" or "index"}
         - {"action":"type", "text":"...", optional target}: types into the target, or the control that has
           the focus in the topmost window
         - {"action":"fill", target, "text":"..."}: replaces a text field's text
           (in type and fill, "text" is the text to enter, so target the field by ref, name or class)
         - {"action":"press", "keys":"ENTER" or "ctrl+shift+A", optional target}: keymap shortcuts run
         - {"action":"check"|"uncheck", target}: clicks a checkbox only when its state differs
-        - {"action":"select", target, "row":"text" or "index":N}: selects a list, tree or table row, or a
-          combo item, without clicking it, so a list that acts on a click does not act. "row" is the row's text,
-          else part of it, and "A > B > C" is a tree path; several matching rows are an error that lists them
-          by index. A tree lists the rows of expanded parents: select a parent and press RIGHT to expand it
+        - {"action":"select", target, "row":"text" or "index":N, or a row ref}: selects a list, tree or table
+          row, a tab, or a combo item, without clicking it, so a list that acts on a click does not act. "row"
+          is the row's text, else part of it, and "A > B > C" is a tree path, whose collapsed parents it
+          expands; several matching rows are an error that lists them by index. An open combo box popup's
+          rows are the combo box's items
+        - {"action":"scroll", target, optional "row" or "index"}: scrolls the control or row into view, for a
+          screenshot; or {"action":"scroll", target, "pages":N}: scrolls the scroll pane around the target by N
+          pages, up when negative. Reports which part of the content shows. Other steps scroll their target
+          into view by themselves
         - {"action":"close", optional target}: cancels the dialog or popup, or closes a separate window such
           as Settings (the topmost one without a target)
         - {"action":"wait", "for":"visible|hidden|enabled", target} or {"for":"window","title":"..."} or {"for":"idle"}

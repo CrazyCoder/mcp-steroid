@@ -21,8 +21,13 @@ windows such as Settings. Each line is one control: class, accessible name, `lab
 before an unnamed field, `[ref=e12]`, states such as `[disabled]` or `[checked]`, `value="..."` for text
 fields and combo boxes, `text=...` for the text it paints (tabs, editor text), `tip="..."`, and
 `action=<id>` for the IDE action behind a toolbar button or menu item, which a `run` step takes. A list,
-tree or table lists its rows in view under it, one per line, as `#index text`, indented by tree depth and
-marked `[expanded]`, `[collapsed]` or `[selected]`.
+tree, table or tabbed pane lists its rows or tabs in view under it, one per line, as `#index text`,
+indented by tree depth and marked `[expanded]`, `[collapsed]` or `[selected]`. Row `#9` under `[ref=e91]`
+is the row ref `e91#9`, which `select`, `click`, `hover`, `scroll` and `inspect` take as their `ref`.
+
+A long scroll pane, such as the installed plugins list, lists the controls in view and counts the rest on
+one line, such as `… 1283 below scrolled out of view`. Steps still find those controls by name or text and
+scroll them into view themselves.
 
 Steps act by ref or by what a control shows, and each one reports what it caused: where the press landed,
 whether a button's action ran, the IDE actions, windows opened or closed. A click that opens a modal dialog
@@ -33,7 +38,10 @@ topmost window and names the nearest controls.
 `select` sets a row through the list's selection, as the keyboard does, without clicking it: in Find
 Action or Search Everywhere a click would run the row. Press `ENTER` afterwards to act on the row. A row
 is found by its text, else by part of it, and a tree row also by its path such as
-`Editor > General > Appearance`; when several rows match, the step fails and lists them by index. `press`
+`Editor > General > Appearance`, whose collapsed parents `select` expands; when several rows match, the
+step fails and lists them by index. `select` also switches a tab, and on an open combo box popup's list it
+picks the combo box's item. `click` with a row ref presses the row itself, as a double click to open a
+row needs. `press`
 and `type` without a target go to the control that has the focus in the topmost window, even while the IDE
 is not the active application.
 
@@ -57,8 +65,13 @@ each step for a reproduction.
 
 When the text is not enough, because layout, icons or colours matter or a control has no name, take
 `steroid_take_screenshot` with `marks=true`. Every interactive control on the image is outlined and
-labelled with its ref, the same ref a snapshot shows. Read the ref off the picture and act by it:
-`{"action":"click","ref":"e12"}`, `fill`, `select`, `check` or `inspect`. Do not click at pixel
+labelled with its ref, the same ref a snapshot shows, and every row and tab in view carries its row ref,
+such as `e12#3`, at the row's right end. Read the ref off the picture and act by it:
+`{"action":"click","ref":"e12"}`, `{"action":"select","ref":"e12#3"}`, `fill`, `check` or `inspect`.
+A control scrolled out of view, or hidden under a popup, has no mark: bring it in with
+`{"action":"scroll","name":"Gherkin"}`, or page with `{"action":"scroll","ref":"e30","pages":1}`, whose
+report says which part of the content shows and whose diff lists the controls that came into view, then
+take the screenshot. Do not click at pixel
 coordinates with `steroid_input` for a control that has a ref: a ref needs no HiDPI scale arithmetic,
 still finds the control after a resize or scroll, and the step reports what it caused. Keep coordinates
 for what has no ref: a web view (JCEF), a canvas, a drag.

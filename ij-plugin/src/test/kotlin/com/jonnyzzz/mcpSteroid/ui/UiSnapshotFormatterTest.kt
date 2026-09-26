@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import javax.swing.JPanel
@@ -21,7 +22,23 @@ class UiSnapshotFormatterTest {
         rows: UiRowsView? = null,
         label: String? = null,
         action: String? = null,
-    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids, rows, label, action)
+        offscreen: UiOffscreen? = null,
+    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids, rows, label, action, offscreen)
+
+    @Test
+    fun `a long run of controls out of view is counted, a short one is listed`() {
+        fun list(above: Int, below: Int) = node("PluginsList", name = "Installed", kids =
+            List(above) { node("JCheckBox", name = "a$it", interactive = true, offscreen = UiOffscreen.ABOVE) } +
+                node("JCheckBox", name = "shown", interactive = true) +
+                List(below) { node("JCheckBox", name = "b$it", interactive = true, offscreen = UiOffscreen.BELOW) })
+        var n = 0
+        val long = UiSnapshotFormatter.format(header, node("JPanel", kids = listOf(list(5, 40))), { "e${++n}" }, 400, false).text
+        assertTrue(long, long.contains("- JCheckBox \"shown\""))
+        assertFalse(long, long.contains("\"a0\"") || long.contains("\"b0\""))
+        assertTrue(long, long.contains("- … 5 above and 40 below scrolled out of view"))
+        val short = UiSnapshotFormatter.format(header, node("JPanel", kids = listOf(list(2, 3))), { "e${++n}" }, 400, false).text
+        assertTrue(short, short.contains("\"a0\"") && short.contains("\"b2\"") && !short.contains("out of view"))
+    }
 
     @Test
     fun `an action button shows its action id after the ref`() {

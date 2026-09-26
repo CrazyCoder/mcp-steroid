@@ -35,6 +35,38 @@ class UiStepsTest {
     }
 
     @Test
+    fun `a row ref is split into its control's ref and the row index`() {
+        val step = UiSteps.parse("""[{"action":"click","ref":"e91#9","count":2}]""").single()
+        assertEquals(UiTarget(ref = "e91"), step.target)
+        assertEquals(9, step.index)
+        assertEquals(12, UiSteps.parse("""[{"action":"select","ref":"e3#12"}]""").single().index)
+    }
+
+    @Test
+    fun `a row ref works only with row steps and names its row once`() {
+        assertTrue(fails("""[{"action":"check","ref":"e91#9"}]""").contains("check acts on a whole control"))
+        assertTrue(fails("""[{"action":"select","ref":"e91#9","index":2}]""").contains("already names row #9"))
+    }
+
+    @Test
+    fun `row and index go only with row steps, one of them, from 0`() {
+        assertTrue(fails("""[{"action":"fill","ref":"e1","text":"x","index":1}]""").contains("not fill"))
+        assertTrue(fails("""[{"action":"select","ref":"e1","row":"a","index":1}]""").contains("not both"))
+        assertTrue(fails("""[{"action":"click","ref":"e1","index":-1}]""").contains("0-based"))
+        assertEquals("Java", UiSteps.parse("""[{"action":"hover","ref":"e1","row":"Java"}]""").single().row)
+    }
+
+    @Test
+    fun `scroll takes a target and pages or a row`() {
+        val step = UiSteps.parse("""[{"action":"scroll","ref":"e5","pages":-2}]""").single()
+        assertEquals(UiAction.SCROLL, step.action)
+        assertEquals(-2, step.pages)
+        assertTrue(fails("""[{"action":"scroll","pages":1}]""").contains("scroll needs a target"))
+        assertTrue(fails("""[{"action":"click","ref":"e5","pages":1}]""").contains("pages goes with scroll"))
+        assertTrue(fails("""[{"action":"scroll","ref":"e5#3","pages":1}]""").contains("pages or a row"))
+    }
+
+    @Test
     fun `a ref target is kept as a ref`() {
         assertEquals(UiTarget(ref = "e12"), UiSteps.parse("""[{"action":"hover","ref":"e12"}]""").single().target)
     }

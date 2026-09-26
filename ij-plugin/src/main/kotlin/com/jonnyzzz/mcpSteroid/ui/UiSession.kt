@@ -21,6 +21,7 @@ import com.intellij.util.ui.UIUtil
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiSnapshotMode
 import com.jonnyzzz.mcpSteroid.server.UiStep
+import com.jonnyzzz.mcpSteroid.server.UiSteps
 import com.jonnyzzz.mcpSteroid.server.UiTarget
 import com.jonnyzzz.mcpSteroid.server.UiWaitCondition
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
@@ -33,6 +34,7 @@ import java.awt.Dialog
 import java.awt.Frame
 import java.awt.KeyboardFocusManager
 import java.awt.Point
+import java.awt.Rectangle
 import java.awt.Window
 import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
@@ -42,10 +44,13 @@ import javax.swing.AbstractButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JList
+import javax.swing.JScrollPane
 import javax.swing.JTree
+import javax.swing.JViewport
 import javax.swing.RootPaneContainer
 import javax.swing.SwingUtilities
 import javax.swing.text.JTextComponent
+import javax.swing.tree.TreePath
 import kotlin.time.TimeSource
 
 /** A step that could not do what it asked for. The message says what the IDE showed instead. */
@@ -166,7 +171,7 @@ class UiSession(
     }
 
     /** Runs one step and returns its report line; throws [UiStepFailure] when it cannot do what it asks. */
-    suspend fun perform(step: UiStep): String = runStep(step)
+    suspend fun perform(step: UiStep): String = runStep(UiSteps.withRowRef(step))
 
     /** The component [target] addresses, waiting up to [timeoutMs] for one showing match. */
     suspend fun find(target: UiTarget, timeoutMs: Long): Component = resolve(target, timeoutMs, requireEnabled = false).component
@@ -186,18 +191,21 @@ class UiSession(
         return when (step.action) {
             UiAction.CLICK -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
+                val row = rowArea(node, step)
                 clickOpensWindow = withContext(edtAny) { (node.component as? AbstractButton)?.text?.let(::opensWindow) == true }
                 val offset = if (step.offsetX != null || step.offsetY != null) {
                     Point(step.offsetX ?: (node.component.width / 2), step.offsetY ?: (node.component.height / 2))
                 } else null
-                val click = input.click(node.component, button(step.button), step.count, UiInput.modifiersMask(step.modifiers), offset)
-                withContext(edtAny) { describeClick(node, click) }
+                val click = input.click(node.component, button(step.button), step.count, UiInput.modifiersMask(step.modifiers), offset, row?.area)
+                withContext(edtAny) { row?.let { "on ${it.label}: " }.orEmpty() + describeClick(node, click) }
             }
             UiAction.HOVER -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
-                input.hover(node.component)
-                "moved over ${describe(node)}"
+                val row = rowArea(node, step)
+                input.hover(node.component, row?.area)
+                "moved over ${row?.let { "${it.label} in " }.orEmpty()}${describe(node)}"
             }
+            UiAction.SCROLL -> scrollStep(step)
             UiAction.TYPE -> {
                 val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = true) }
                 val report = input.type(step.text!!, node?.component ?: keyRecipient())
@@ -255,20 +263,143 @@ class UiSession(
      * a list that acts on a click, such as Find Action's results, and a combo box would need its popup opened.
      */
     private suspend fun selectStep(step: UiStep): String {
-        val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
+        val found = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
+        // An open combo box popup's list shows the combo box's items: selecting in the list alone would not pick one.
+        val node = withContext(edtAny) { UiRows.comboOf(found.component)?.let { FallbackUiWalker().leaf(it) } } ?: found
         val host = node.component
+        val pick = pickRow(node, step)!!
         return withContext(edtAny) {
-            val rows = UiRows.rows(host) ?: throw UiStepFailure("${describe(node)} has no rows; select works on lists, trees, tables and combo boxes")
-            val index = step.index ?: UiRows.find(host, rows, step.row!!)
-            if (index !in rows.indices) {
-                val shown = rows.withIndex().take(20).joinToString("; ") { (i, row) -> "#$i $row" }
-                throw UiStepFailure("no row ${step.row?.let { "\"$it\"" } ?: "#${step.index}"} in ${describe(node)}; rows: $shown" +
-                    if (rows.size > 20) "; +${rows.size - 20} more" else "")
-            }
-            UiRows.select(host, index)
-            if (!UiRows.isSelected(host, index)) throw UiStepFailure("${describe(node)} did not take the selection of row #$index")
-            "selected row #$index \"${rows[index]}\" in ${describe(node)}"
+            UiRows.select(host, pick.index)
+            if (!UiRows.isSelected(host, pick.index)) throw UiStepFailure("${describe(node)} did not take the selection of row #${pick.index}")
+            pick.expandedNote() + "selected row #${pick.index} \"${pick.text}\" in ${describe(node)}"
         }
+    }
+
+    /** A row a step picked, and the tree rows it expanded to reach it. */
+    private class RowPick(val index: Int, val text: String, val expanded: List<String>) {
+        fun expandedNote() = if (expanded.isEmpty()) "" else "expanded ${expanded.joinToString(", ") { "\"$it\"" }}; "
+    }
+
+    /**
+     * The row "row" or "index" of [step] names in [node]'s list, tree, table or tabbed pane, or null when the step
+     * names none. A tree path whose parents are collapsed, such as `Editor > Code Style > Java`, expands them.
+     */
+    private suspend fun pickRow(node: UiNode, step: UiStep): RowPick? {
+        if (step.row == null && step.index == null) return null
+        val c = node.component
+        val rows = withContext(edtAny) { UiRows.rows(c) }
+            ?: throw UiStepFailure("${describe(node)} has no rows; rows are in lists, trees, tables, tabbed panes and combo boxes")
+        val wanted = step.row
+        val index = step.index ?: withContext(edtAny) { UiRows.find(c, rows, wanted!!) }
+        if (index in rows.indices) return RowPick(index, rows[index], emptyList())
+        if (wanted != null && c is JTree && UiRows.PATH_SEPARATOR in wanted) return expandPath(c, wanted, step.timeoutMs)
+        val shown = rows.withIndex().take(20).joinToString("; ") { (i, row) -> "#$i $row" }
+        throw UiStepFailure("no row ${wanted?.let { "\"$it\"" } ?: "#$index"} in ${describe(node)}; rows: $shown" +
+            if (rows.size > 20) "; +${rows.size - 20} more" else "")
+    }
+
+    /**
+     * Finds `A > B > C` in [tree] one segment at a time, expanding each parent as a user would and waiting up to
+     * [timeoutMs] for its children to load. The first segment may be any row in view.
+     */
+    private suspend fun expandPath(tree: JTree, wanted: String, timeoutMs: Long): RowPick {
+        val started = TimeSource.Monotonic.markNow()
+        val segments = wanted.split(UiRows.PATH_SEPARATOR).map { it.trim() }
+        val expanded = mutableListOf<String>()
+        var parent: TreePath? = null
+        for ((i, segment) in segments.withIndex()) {
+            var row: Int
+            while (true) {
+                // An async tree model shows a "loading" child first, so wait for the row itself. Read the deadline
+                // first: a busy EDT can run the expansion only after the time is up, and the look after it counts.
+                val late = started.elapsedNow().inWholeMilliseconds >= timeoutMs
+                row = withContext(edtAny) { UiRows.childRow(tree, parent, segment) }
+                if (row >= 0 || late) break
+                delay(POLL_MS)
+            }
+            if (row < 0) {
+                val reached = segments.take(i).joinToString(UiRows.PATH_SEPARATOR)
+                val children = withContext(edtAny) { parent?.let { UiRows.childRows(tree, it) } }
+                throw UiStepFailure(
+                    when {
+                        parent == null -> "no row \"$segment\" in the tree's rows in view"
+                        children.isNullOrEmpty() -> "\"$reached\" shows no children after $timeoutMs ms"
+                        else -> "no row \"$segment\" under \"$reached\"; its rows: ${children.take(20).joinToString("; ")}"
+                    }
+                )
+            }
+            parent = withContext(edtAny) {
+                val path = tree.getPathForRow(row)
+                if (i < segments.lastIndex && !tree.isExpanded(path)) {
+                    tree.expandPath(path)
+                    expanded += UiRows.treePath(tree, row)
+                }
+                path
+            }
+        }
+        return withContext(edtAny) {
+            val row = tree.getRowForPath(parent)
+            RowPick(row, UiRows.treePath(tree, row), expanded)
+        }
+    }
+
+    /** Row [pick] of [node] scrolled into view, with where it is: the row's area in the component and how to name it. */
+    private class RowArea(val area: Rectangle, val label: String)
+
+    /** The row a click or hover step names, scrolled into view, or null when it names none. */
+    private suspend fun rowArea(node: UiNode, step: UiStep): RowArea? {
+        val pick = pickRow(node, step) ?: return null
+        return withContext(edtAny) {
+            val c = node.component
+            val area = UiRows.bounds(c, pick.index)
+                ?: throw UiStepFailure("${describe(node)} shows its items in a popup: pick one with select")
+            UiRows.scrollTo(c, pick.index)
+            RowArea(area, pick.expandedNote() + "row #${pick.index} \"${pick.text.take(80)}\"")
+        }
+    }
+
+    /**
+     * Brings the target, or its row, into view, as a user scrolls to it; or with "pages", scrolls the scroll pane
+     * around the target by that many pages, down when positive. The report says what part of the content shows.
+     */
+    private suspend fun scrollStep(step: UiStep): String {
+        val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
+        val c = node.component
+        val pages = step.pages
+        if (pages == null) {
+            val row = rowArea(node, step)
+            return withContext(edtAny) {
+                if (row == null) (c as? JComponent)?.scrollRectToVisible(Rectangle(0, 0, c.width, c.height))
+                "scrolled ${row?.let { "${it.label} of " }.orEmpty()}${describe(node)} into view" + (viewport(c)?.let { "; ${position(it)}" }.orEmpty())
+            }
+        }
+        return withContext(edtAny) {
+            val port = viewport(c) ?: throw UiStepFailure("${describe(node)} is not in a scroll pane")
+            val view = port.view ?: throw UiStepFailure("the scroll pane around ${describe(node)} shows nothing")
+            val extent = port.extentSize
+            val maxY = maxOf(0, view.height - extent.height)
+            val y = (port.viewPosition.y.toLong() + pages.toLong() * extent.height).coerceIn(0, maxY.toLong()).toInt()
+            port.viewPosition = Point(port.viewPosition.x, y)
+            "scrolled ${UiComponentFacts.simpleClassName(port.parent ?: port)} by $pages page(s); ${position(port)}"
+        }
+    }
+
+    /** The viewport of the scroll pane that holds [c], or [c]'s own when it is a scroll pane. EDT. */
+    private fun viewport(c: Component): JViewport? =
+        (c as? JScrollPane)?.viewport ?: SwingUtilities.getAncestorOfClass(JViewport::class.java, c) as? JViewport
+
+    /** Which part of a viewport's content shows, such as `showing 600-1200 of 2400 px, the bottom`. EDT. */
+    private fun position(port: JViewport): String {
+        val view = port.view ?: return "the scroll pane is empty"
+        val top = port.viewPosition.y
+        val bottom = top + port.extentSize.height
+        val where = when {
+            top <= 0 && bottom >= view.height -> "all of it"
+            top <= 0 -> "the top"
+            bottom >= view.height -> "the bottom"
+            else -> "${top * 100 / maxOf(1, view.height)}% down"
+        }
+        return "showing $top-$bottom of ${view.height} px, $where"
     }
 
     private suspend fun closeStep(step: UiStep): String {
@@ -359,6 +490,7 @@ class UiSession(
     private suspend fun inspectStep(step: UiStep): String {
         val started = UiInspect.startRecording()
         val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
+        val pick = pickRow(node, step)
         return withContext(edtAny) {
             val c = node.component
             val out = StringBuilder(describe(node)).append('\n').append(UiInspect.describe(c, project))
@@ -367,12 +499,9 @@ class UiSession(
             }
             val rows = UiRows.rows(c)
             if (rows != null && c !is JComboBox<*>) {
-                val index = step.index ?: step.row?.let { UiRows.find(c, rows, it) } ?: rows.indices.firstOrNull { UiRows.isSelected(c, it) }
-                when (index) {
-                    null -> out.append("\nrows: none selected; pass \"row\" or \"index\" to inspect one")
-                    !in rows.indices -> throw UiStepFailure("no row ${step.row?.let { "\"$it\"" } ?: "#$index"} in ${describe(node)}")
-                    else -> out.append("\nrow #").append(index).append(" \"").append(rows[index].take(80)).append("\": ").append(UiInspect.describeRow(c, index))
-                }
+                val index = pick?.index ?: rows.indices.firstOrNull { UiRows.isSelected(c, it) }
+                if (index == null) out.append("\nrows: none selected; pass \"row\" or \"index\" to inspect one")
+                else out.append("\nrow #").append(index).append(" \"").append(rows[index].take(80)).append("\": ").append(UiInspect.describeRow(c, index))
             }
             out.toString()
         }

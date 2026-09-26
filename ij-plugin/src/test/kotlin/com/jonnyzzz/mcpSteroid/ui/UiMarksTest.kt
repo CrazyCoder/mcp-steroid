@@ -2,7 +2,9 @@
 package com.jonnyzzz.mcpSteroid.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.awt.Color
 import java.awt.Rectangle
@@ -20,6 +22,22 @@ class UiMarksTest {
         assertNotEquals(Color.WHITE.rgb, marked.getRGB(110, 70))
         assertEquals(Color.WHITE.rgb, marked.getRGB(80, 55))
         assertEquals(Color.WHITE.rgb, original.getRGB(110, 70))
+    }
+
+    @Test
+    fun `a row mark is labelled at the row's right end and not outlined`() {
+        val marked = UiMarks.draw(white(), listOf(UiMarks.Mark("e7#3", Rectangle(10, 40, 180, 30), row = true)))
+        assertEquals(Color.WHITE.rgb, marked.getRGB(10, 55))
+        assertEquals(Color.WHITE.rgb, marked.getRGB(100, 40))
+        assertNotEquals(Color.WHITE.rgb, marked.getRGB(185, 55))
+    }
+
+    @Test
+    fun `a mark is covered when a popup hides at least half of it`() {
+        val mark = Rectangle(0, 0, 100, 20)
+        assertTrue(UiMarks.covered(mark, Rectangle(50, 0, 200, 200)))
+        assertFalse(UiMarks.covered(mark, Rectangle(60, 0, 200, 200)))
+        assertFalse(UiMarks.covered(mark, Rectangle(0, 30, 100, 20)))
     }
 
     @Test

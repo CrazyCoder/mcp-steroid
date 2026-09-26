@@ -12,9 +12,12 @@ import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JSlider
 import javax.swing.JSpinner
+import javax.swing.JTabbedPane
 import javax.swing.JTable
 import javax.swing.JToggleButton
 import javax.swing.JTree
+import javax.swing.JViewport
+import javax.swing.SwingUtilities
 import javax.swing.text.JTextComponent
 
 /** Facts read from a live component. Call on the EDT. */
@@ -41,8 +44,17 @@ object UiComponentFacts {
     fun simpleName(name: String): String = name.substringAfterLast('.').substringAfterLast('$').trimStart { it.isDigit() }
 
     fun interactive(c: Component): Boolean = when (c) {
-        is AbstractButton, is JTextComponent, is JList<*>, is JTree, is JTable, is JComboBox<*>, is JSlider, is JSpinner -> true
+        is AbstractButton, is JTextComponent, is JList<*>, is JTree, is JTable, is JComboBox<*>, is JSlider, is JSpinner, is JTabbedPane -> true
         else -> generateSequence<Class<*>>(c.javaClass) { it.superclass }.any { it.simpleName in CLICKABLE_CLASS_NAMES }
+    }
+
+    /** Where a showing control lies that its scroll pane keeps out of view, or null when part of it shows. EDT. */
+    fun offscreen(c: Component): UiOffscreen? {
+        if (c !is JComponent || !c.isShowing || !c.visibleRect.isEmpty) return null
+        val port = SwingUtilities.getAncestorOfClass(JViewport::class.java, c) as? JViewport ?: return null
+        val view = port.view ?: return null
+        val at = SwingUtilities.convertRectangle(c.parent, c.bounds, view)
+        return if (at.y + at.height <= port.viewPosition.y) UiOffscreen.ABOVE else UiOffscreen.BELOW
     }
 
     fun name(c: Component): String? = c.accessibleContext?.accessibleName?.let(::clean)?.takeIf { it.isNotEmpty() }

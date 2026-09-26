@@ -20,6 +20,8 @@ data class UiNode(
     val label: String? = null,
     /** The id of the IDE action behind a toolbar button or menu item, which a run step takes. */
     val action: String? = null,
+    /** Where a scroll pane keeps it out of view, or null when it is in view. */
+    val offscreen: UiOffscreen? = null,
 ) {
     /** Listed in a snapshot: it shows something, or an agent can act on it. */
     val listed: Boolean get() = interactive || !name.isNullOrBlank() || text.isNotEmpty() || !tooltip.isNullOrBlank()
@@ -29,6 +31,9 @@ data class UiNode(
         children.forEach { yieldAll(it.walk()) }
     }
 }
+
+/** Which way a control scrolled out of view lies: above the part a scroll pane shows, or below or beside it. */
+enum class UiOffscreen { ABOVE, BELOW }
 
 enum class UiState(val label: String) {
     DISABLED("disabled"),
