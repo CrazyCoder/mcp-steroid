@@ -59,7 +59,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         match counts, and while a modal dialog shows, only that dialog and its popups are searched.
 
         - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}:
-          with "row", "index" or a row ref, presses that row or tab, such as a double click to open a row
+          with "row", "index" or a row ref, presses that row or tab, such as a double click to open a row; a
+          tabbed pane matched by name or text presses the tab of that title
         - {"action":"hover", target, optional "row" or "index"}
         - {"action":"type", "text":"...", optional target}: types into the target, or the control that has
           the focus in the topmost window

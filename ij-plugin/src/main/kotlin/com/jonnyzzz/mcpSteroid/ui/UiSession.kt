@@ -45,6 +45,7 @@ import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JScrollPane
+import javax.swing.JTabbedPane
 import javax.swing.JTree
 import javax.swing.JViewport
 import javax.swing.RootPaneContainer
@@ -191,7 +192,7 @@ class UiSession(
         return when (step.action) {
             UiAction.CLICK -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
-                val row = rowArea(node, step)
+                val row = rowArea(node, tabOf(node, step))
                 clickOpensWindow = withContext(edtAny) { (node.component as? AbstractButton)?.text?.let(::opensWindow) == true }
                 val offset = if (step.offsetX != null || step.offsetY != null) {
                     Point(step.offsetX ?: (node.component.width / 2), step.offsetY ?: (node.component.height / 2))
@@ -341,6 +342,17 @@ class UiSession(
             val row = tree.getRowForPath(parent)
             RowPick(row, UiRows.treePath(tree, row), expanded)
         }
+    }
+
+    /**
+     * [step] aimed at a tab when it clicks a tabbed pane without a row: the tab its name or text names. A tabbed pane's
+     * name is its selected tab's title, so a click by that name means the tab, not the middle of the pane's content.
+     */
+    private fun tabOf(node: UiNode, step: UiStep): UiStep {
+        if (node.component !is JTabbedPane || step.row != null || step.index != null) return step
+        val tab = step.target?.name ?: step.target?.text
+            ?: throw UiStepFailure("${describe(node)} is clicked on a tab: pass \"row\" with the tab's title, or a row ref")
+        return step.copy(row = tab)
     }
 
     /** Row [pick] of [node] scrolled into view, with where it is: the row's area in the component and how to name it. */

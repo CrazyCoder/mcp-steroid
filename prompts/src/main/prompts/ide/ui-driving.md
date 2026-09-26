@@ -209,7 +209,7 @@ seconds, a small dialog milliseconds.
 ## Read tree, list and table rows
 
 A `steroid_ui` snapshot lists the rows in view of each list, tree and table, and `select` takes any row
-by its text, its tree path or its index. Read the rows from a script when you need all of them. The
+by its text, its tree path, its index or its row ref. Read the rows from a script when you need all of them. The
 fixtures of the same plugin read them through the cell renderers, so they return the text a row shows.
 Give them a read-only AssertJ robot: their click methods drive `java.awt.Robot`, which moves the user's
 real mouse.
