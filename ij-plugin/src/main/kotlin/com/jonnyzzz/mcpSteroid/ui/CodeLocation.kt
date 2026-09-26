@@ -62,6 +62,7 @@ object CodeLocation {
     fun symbolStarts(text: String, symbol: String): List<Int> =
         Regex("(?<![\\w$])" + Regex.escape(symbol) + "(?![\\w$])").findAll(text).map { it.range.first }.toList()
 
+    /** The [nth] of [starts], or a failure that names [what] and how many were found. */
     fun pick(starts: List<Int>, nth: Int, what: String): Int =
         starts.getOrNull(nth) ?: throw UiStepFailure(
             if (starts.isEmpty()) "$what not found (found 0)" else "$what: nth $nth asked, found ${starts.size}"

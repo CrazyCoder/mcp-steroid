@@ -5,8 +5,9 @@ Run a named inspection on a file and apply its quick fix. The tool is resolved f
 Prefer the `steroid_refactor` tool, which needs no script:
 `{"op":"fix","file":"src/Util.kt","inspection":"SimplifiableCallChain"}` lists the problems and their
 fixes, and `"apply": true` applies the fix on the target's line (`symbol` or `line`), or every fix in the
-file with `"all": true`. Use the script below to choose a fix other than the first, or to post-process
-the problems.
+file with `"all": true`. Without `inspection`, a dry run lists what every enabled inspection reports from
+WEAK WARNING up, with short names and severities (`"all": true` adds INFORMATION-level suggestions). Use
+the script below to choose a fix other than the first, or to post-process the problems.
 
 The inspection-driving machinery (`InspectionEngine`, `LocalInspectionToolWrapper`, the
 inspection profile) is platform-level and identical in IDEA, PyCharm, WebStorm, Rider,

@@ -3,7 +3,9 @@ LSP: textDocument/references - Find All References
 This example demonstrates how to find all references to a symbol,
 
 Prefer the `steroid_refactor` tool, which needs no script:
-`{"op":"usages","file":"src/Util.kt","symbol":"parse"}` returns every reference as `path:line: text`.
+`{"op":"usages","file":"src/Util.kt","symbol":"parse"}` returns every reference as `path:line: text`,
+including those that reach the symbol through an export of the same name, such as
+`module.exports = { parse }` in JavaScript.
 Use the script below to post-process the references.
 
 ```kotlin

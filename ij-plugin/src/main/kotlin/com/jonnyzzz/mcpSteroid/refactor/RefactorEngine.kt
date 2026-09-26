@@ -40,6 +40,7 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNameIdentifierOwner
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiReference
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.intellij.psi.impl.source.resolve.reference.impl.PsiMultiReference
 import com.intellij.psi.search.GlobalSearchScope
@@ -177,20 +178,26 @@ class RefactorEngine(private val project: Project) {
         return lineAt(file, injection.injectedToHost(element, offset))
     }
 
-    private suspend fun usageLines(element: PsiElement): List<UsageLine> = smartReadAction(project) {
-        ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll().mapNotNull { ref ->
-            lineAt(ref.element, ref.element.textRange.startOffset + ref.rangeInElement.startOffset)
-        }.distinct().sorted()
-    }
+    /** The references to [element] in the project. Read action. */
+    private fun references(element: PsiElement): Collection<PsiReference> =
+        ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll()
+
+    /** The lines [refs] are on. Read action. */
+    private fun lines(refs: Collection<PsiReference>): List<UsageLine> = refs.mapNotNull { ref ->
+        lineAt(ref.element, ref.element.textRange.startOffset + ref.rangeInElement.startOffset)
+    }.distinct().sorted()
+
+    private suspend fun usageLines(element: PsiElement): List<UsageLine> = smartReadAction(project) { lines(references(element)) }
 
     /**
      * The declarations of [element]'s name that a reference to it gives their value, so code reaches [element]
      * through their name: a JavaScript export `{ name }`, `{ name: name }` or `exports.name = name`. The reference is
-     * the declaration's name, its value, or the right side of an assignment to it. Read action.
+     * the declaration's name, its value, or the right side of an assignment to it. [refs] are the references to
+     * [element]. Read action.
      */
-    private fun aliases(element: PsiElement): List<PsiNamedElement> {
+    private fun aliases(element: PsiElement, refs: Collection<PsiReference>): List<PsiNamedElement> {
         val name = (element as? PsiNamedElement)?.name ?: return emptyList()
-        return ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll().mapNotNull { ref ->
+        return refs.mapNotNull { ref ->
             val at = ref.element
             val parent = at.parent ?: return@mapNotNull null
             (generateSequence(at) { it.parent }.takeWhile { it.textRange == at.textRange } + parent + parent.children.asSequence())
@@ -209,9 +216,9 @@ class RefactorEngine(private val project: Project) {
 
     /** The usages of the element, then those that reach it through an alias, and the declarations its name refers to. */
     private suspend fun usages(named: Named): String {
-        val lines = usageLines(named.element)
-        val (aliases, aliased) = smartReadAction(project) {
-            aliases(named.element).map { it to describe(it) } to aliased(named.element).map { describe(it) }
+        val (lines, aliases, aliased) = smartReadAction(project) {
+            val refs = references(named.element)
+            Triple(lines(refs), aliases(named.element, refs).map { it to describe(it) }, aliased(named.element).map { describe(it) })
         }
         return buildString {
             append(named.description).append(listing("used on", lines))
@@ -280,11 +287,12 @@ class RefactorEngine(private val project: Project) {
                 it !== element && it.javaClass == element.javaClass && (it as? PsiNamedElement)?.name == newName
             }.map { describe(it) }
             val also = renames.keys.filter { it != element }
-            RenamePlan(renameConflicts(element, newName, usages, renames), lines, siblings, also.map { describe(it) },
-                aliases(element).filter { it !in also }.map { it to describe(it) })
+            val refs = references(element)
+            RenamePlan(renameConflicts(element, newName, usages, renames), lines, lines(refs) - lines.toSet(), siblings,
+                also.map { describe(it) }, aliases(element, refs).filter { it !in also }.map { it to describe(it) })
         }
         val changed = plan.changed.toSet()
-        val untouched = usageLines(element) - changed
+        val untouched = plan.untouched
         return buildString {
             append("dry run: rename ${named.description} to $newName\n").append(conflictLines(plan.conflicts))
             if (plan.conflicts.isEmpty() && plan.sameName.isNotEmpty()) {
@@ -304,8 +312,8 @@ class RefactorEngine(private val project: Project) {
     }
 
     private class RenamePlan(
-        val conflicts: List<String>, val changed: List<UsageLine>, val sameName: List<String>, val also: List<String>,
-        val aliases: List<Pair<PsiNamedElement, String>>,
+        val conflicts: List<String>, val changed: List<UsageLine>, val untouched: List<UsageLine>, val sameName: List<String>,
+        val also: List<String>, val aliases: List<Pair<PsiNamedElement, String>>,
     )
 
     /** The usages that would stop a safe delete, from the language's safe-delete delegate, with no dialog. */
