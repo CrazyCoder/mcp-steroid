@@ -67,7 +67,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.time.Duration
 import com.intellij.openapi.application.readAction as intellijReadAction
-import com.intellij.openapi.application.edtWriteAction
+import com.intellij.openapi.util.Computable
 import com.intellij.openapi.application.writeAction as intellijWriteAction
 import com.intellij.openapi.application.smartReadAction as intellijSmartReadAction
 import kotlin.time.Duration.Companion.milliseconds
@@ -663,15 +663,21 @@ class McpScriptContextImpl(
     override suspend fun <T> readAction(action: () -> T): T = intellijReadAction(action)
 
     /**
-     * Set by modal=dialog. The platform's writeAction is a background write action, and it cannot take the write
-     * lock while a modal dialog's event loop runs on the EDT, so under a dialog the write runs on the EDT, under
-     * the script's context modality, the way the dialog's own code writes.
+     * Set by modal=dialog. A modal dialog's event loop runs inside an EDT task that holds the write-intent lock,
+     * so no write action that asks for the lock from another thread can get it while the dialog is open: neither
+     * the platform's background writeAction nor, from 2026.3, edtWriteAction, which takes its permit before it
+     * switches to the EDT. Under a dialog the write runs on the EDT, in the dialog's loop, under the script's
+     * context modality, the way the dialog's own code writes.
      */
     @Volatile
     var runsUnderDialog: Boolean = false
 
     override suspend fun <T> writeAction(action: () -> T): T =
-        if (runsUnderDialog) edtWriteAction(action) else intellijWriteAction(action)
+        if (runsUnderDialog) {
+            withContext(Dispatchers.EDT) { ApplicationManager.getApplication().runWriteAction(Computable(action)) }
+        } else {
+            intellijWriteAction(action)
+        }
 
     override suspend fun <T> smartReadAction(action: () -> T): T = intellijSmartReadAction(project, action)
 
