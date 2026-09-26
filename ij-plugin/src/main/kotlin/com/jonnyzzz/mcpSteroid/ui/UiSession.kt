@@ -14,6 +14,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.popup.util.PopupUtil
 import com.intellij.openapi.wm.WindowManager
+import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiSnapshotMode
@@ -341,9 +342,9 @@ class UiSession(
             buildList {
                 add(line)
                 if (actions.isNotEmpty()) add("IDE actions: ${actions.joinToString()}")
-                // A tooltip comes and goes with the mouse, so it is not something the step opened.
-                (windowsAfter - windowsBefore).filterNot(UiWindows::isTooltip).forEach { add("opened ${describeWindow(it)}") }
-                (windowsBefore - windowsAfter).filterNot(UiWindows::isTooltip).forEach { add("closed ${describeWindow(it)}") }
+                // A hover popup comes and goes with the mouse, so it is not something the step opened.
+                (windowsAfter - windowsBefore).filterNot(UiWindows::isHoverPopup).forEach { add("opened ${describeWindow(it)}") }
+                (windowsBefore - windowsAfter).filterNot(UiWindows::isHoverPopup).forEach { add("closed ${describeWindow(it)}") }
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner?.let { add("focus: ${describeComponent(it)}") }
             }.joinToString("; ")
         }
@@ -475,7 +476,19 @@ class UiSession(
             is Dialog -> if (w.isModal) "modal dialog" else "dialog"
             else -> "popup"
         }
-        return "$kind ${WindowIdUtil.compute(w, w)}" + (windowTitle(w)?.takeIf { it.isNotBlank() }?.let { " \"$it\"" } ?: "")
+        val title = windowTitle(w)?.takeIf { it.isNotBlank() }?.let { " \"$it\"" } ?: firstText(w)?.let { " showing \"$it\"" }
+        return "$kind ${WindowIdUtil.compute(w, w)}" + title.orEmpty()
+    }
+
+    /** The first text a window without a title shows, such as a hint balloon's, so a report says what opened. EDT. */
+    private fun firstText(w: Window): String? {
+        val root = (w as? RootPaneContainer)?.rootPane ?: return null
+        return UIUtil.uiTraverser(root).asSequence()
+            .filter { it.isShowing }
+            .mapNotNull { UiComponentFacts.ownText(it) ?: (it as? SimpleColoredComponent)?.getCharSequence(false)?.toString() }
+            .map(UiComponentFacts::clean)
+            .firstOrNull { it.isNotEmpty() }
+            ?.let { if (it.length > FIRST_TEXT_MAX) it.take(FIRST_TEXT_MAX) + "…" else it }
     }
 
     private fun header(window: Window, model: UiModelResult) = UiWindowHeader(
@@ -504,5 +517,6 @@ class UiSession(
         private const val POLL_MS = 100L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L
+        private const val FIRST_TEXT_MAX = 60
     }
 }

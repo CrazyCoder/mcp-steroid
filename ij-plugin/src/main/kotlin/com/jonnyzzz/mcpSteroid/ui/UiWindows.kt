@@ -22,11 +22,11 @@ object UiWindows {
 
     /**
      * The showing windows of [project]: [frame], the unowned windows whose content belongs to the project, and their
-     * dialogs and heavyweight popups, topmost first. Tooltips are left out: they come and go with the mouse. Call on
-     * the EDT.
+     * dialogs and heavyweight popups, topmost first. Hover popups are left out: they come and go with the mouse. Call
+     * on the EDT.
      */
     fun projectWindows(project: Project, frame: Window): List<Window> {
-        val showing = Window.getWindows().filter { it.isShowing && !isTooltip(it) }
+        val showing = Window.getWindows().filter { it.isShowing && !isHoverPopup(it) }
         val tops = listOf(frame) + showing.filter { it !== frame && it.owner == null && projectOf(it) === project }
         return order(tops, showing, Window::getOwner)
     }
@@ -37,13 +37,16 @@ object UiWindows {
         return CommonDataKeys.PROJECT.getData(DataManager.getInstance().getDataContext(root))
     }
 
-    /** A popup window that hosts a tooltip: a Swing one, or the IDE's help tooltip over a toolbar button. EDT. */
-    fun isTooltip(w: Window): Boolean {
+    /**
+     * A popup window the mouse opens by hovering: a tooltip, the IDE's help tooltip over a toolbar button, or the hint
+     * that shows the whole text of a cut-off tree or list row. EDT.
+     */
+    fun isHoverPopup(w: Window): Boolean {
         // Only a popup window can be one, so the walk never runs over a dialog's or a frame's controls.
         if (w.owner == null || w.type != Window.Type.POPUP) return false
         val root = (w as? RootPaneContainer)?.rootPane ?: return false
-        return UIUtil.uiTraverser(root).any { it is JToolTip || it.javaClass.name.startsWith(HELP_TOOLTIP) }
+        return UIUtil.uiTraverser(root).any { c -> c is JToolTip || HOVER_CLASS_PREFIXES.any { c.javaClass.name.startsWith(it) } }
     }
 
-    private const val HELP_TOOLTIP = "com.intellij.ide.HelpTooltip"
+    private val HOVER_CLASS_PREFIXES = listOf("com.intellij.ide.HelpTooltip", "com.intellij.ui.AbstractExpandableItemsHandler")
 }
