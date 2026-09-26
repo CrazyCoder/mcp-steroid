@@ -110,7 +110,7 @@ default, where the editor and the actions live.
 | `rename` | `RenameProcessor`, previews off | Element, conflicts, the lines it would change, the references it leaves alone (a Markdown code span), and same-name declarations next to the target |
 | `safe_delete` | `SafeDeleteProcessor` | Element, usages that block the delete |
 | `move` | `MoveFilesOrDirectoriesProcessor` on the target file; the language updates package statements (Kotlin does) | References to the file |
-| `fix` | Inspection by short name from the current profile; fix applied on the EDT in one command, in a write action only when `startInWriteAction()` | Problems with their fixes; without `inspection`, every enabled local inspection's problems with short names |
+| `fix` | Inspection by short name from the current profile; fix applied on the EDT in one command, in a write action only when `startInWriteAction()` | Problems with their severities and fixes; without `inspection`, every enabled local inspection's problems from WEAK WARNING up, with short names, and with `all` every level |
 | `intention` | `IntentionManager` actions available at the caret, applied the way the editor applies them | Intentions available at the target |
 | `optimize_imports` | The language's `ImportOptimizer`s: `processFile` in a read action, the result applied in one write command. `OptimizeImportsProcessor` returned before it did anything in the live test | The lines it would add and remove, made on a copy of the file, or "no change" |
 | `reformat` | `CodeStyleManager.reformat` in one write command, which is synchronous | Same, on a copy |
@@ -194,6 +194,12 @@ spec are updated when it does.
   resolution data) that smart mode does not cover, and references come back
   partial. The tool waits up to 30 s for them, once per long task, and names
   any that still run.
+- The `fix` listing without `inspection` leaves out what ranks below WEAK
+  WARNING, the level the editor highlights from: on a JavaScript file 60 of 81
+  problems were INFORMATION-level suggestions (unnecessary parentheses, ES2015
+  migration aids) and proofreading style hints. It says how many it left out,
+  and `all` lists them. Each problem shows the severity the editor uses: the
+  level the problem sets, else the inspection's level in the profile.
 - Usages in injected code, such as a JavaScript fence in Markdown, print the
   host file's path and line.
 - `symbol` skips occurrences in comments: the first match of a JavaScript

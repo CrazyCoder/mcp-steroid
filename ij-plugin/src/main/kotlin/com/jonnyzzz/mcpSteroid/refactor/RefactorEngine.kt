@@ -1,15 +1,18 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.refactor
 
+import com.intellij.codeInsight.daemon.HighlightDisplayKey
 import com.intellij.codeInsight.intention.IntentionAction
 import com.intellij.codeInsight.intention.IntentionManager
 import com.intellij.codeInsight.intention.impl.ShowIntentionActionsHandler
 import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemDescriptorUtil
+import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.QuickFix
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.LanguageImportStatements
+import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
@@ -364,10 +367,24 @@ class RefactorEngine(private val project: Project) {
     private fun problemOffset(problem: ProblemDescriptor): Int =
         (problem.psiElement?.textRange?.startOffset ?: 0) + (problem.textRangeInElement?.startOffset ?: 0)
 
-    /** `path:line: description [fix: ...]`, with the inspection's short name when [named]. Read action. */
-    private fun problemLine(target: Target, problem: ProblemDescriptor, named: String?): String {
+    /**
+     * The severity the editor shows [problem] of the inspection [shortName] with: the level the problem sets itself,
+     * else the inspection's level in the current profile. Read action.
+     */
+    private fun severity(target: Target, shortName: String, problem: ProblemDescriptor): HighlightSeverity = when (problem.highlightType) {
+        ProblemHighlightType.ERROR, ProblemHighlightType.GENERIC_ERROR -> HighlightSeverity.ERROR
+        ProblemHighlightType.WARNING -> HighlightSeverity.WARNING
+        ProblemHighlightType.WEAK_WARNING -> HighlightSeverity.WEAK_WARNING
+        ProblemHighlightType.INFORMATION -> HighlightSeverity.INFORMATION
+        else -> HighlightDisplayKey.find(shortName)?.let { InspectionProjectProfileManager.getInstance(project).currentProfile.getErrorLevel(it, target.psiFile).severity }
+            ?: HighlightSeverity.WARNING
+    }
+
+    /** `path:line: SEVERITY description [fix: ...]`, with the inspection's short name when [named]. Read action. */
+    private fun problemLine(target: Target, problem: ProblemDescriptor, shortName: String, named: Boolean): String {
         val line = target.document.getLineNumber(problemOffset(problem).coerceIn(0, target.document.textLength)) + 1
-        return "${CodeLocation.shortPath(project, target.file)}:$line: " + (named?.let { "[$it] " } ?: "") +
+        return "${CodeLocation.shortPath(project, target.file)}:$line: " + (if (named) "[$shortName] " else "") +
+            severity(target, shortName, problem).name + " " +
             // As the Problems view renders it: #ref becomes the reported code, #loc goes.
             plainText(ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)) +
             (problem.fixes?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
@@ -378,13 +395,18 @@ class RefactorEngine(private val project: Project) {
         val shortName = params.inspection ?: run {
             if (params.apply) throw RefactorFailure("fix needs inspection: the short name in brackets that a dry run without it lists")
             val found = inspect(target, enabledInspections(target))
-            // An inspection can report one problem twice, as a warning and as an editor-only hint.
-            val lines = readAction { found.map { (name, p) -> problemLine(target, p, name) }.distinct() }
-            return "dry run: the enabled inspections report ${lines.size} problem(s); compiler and annotator errors are not listed" +
+            val (lines, hidden) = readAction {
+                // Below a weak warning the editor highlights nothing, or only proofreading: suggestions, not problems.
+                val (shown, hidden) = found.partition { (name, p) -> params.all || severity(target, name, p) >= HighlightSeverity.WEAK_WARNING }
+                // An inspection can report one problem twice, as a warning and as an editor-only hint.
+                shown.map { (name, p) -> problemLine(target, p, name, named = true) }.distinct() to hidden.size
+            }
+            val left = if (hidden == 0) "" else "; $hidden suggestion(s) and proofreading hint(s) below WEAK WARNING are left out, all: true lists them"
+            return "dry run: the enabled inspections report ${lines.size} problem(s)$left; compiler and annotator errors are not listed" +
                 lines.joinToString("") { "\n$it" }
         }
         val found = problems(target, shortName)
-        val listing = readAction { found.map { problemLine(target, it, null) } }
+        val listing = readAction { found.map { problemLine(target, it, shortName, named = false) } }
         if (!params.apply) return "dry run: $shortName reports ${found.size} problem(s)" + listing.joinToString("") { "\n$it" }
         if (params.all) {
             var applied = 0

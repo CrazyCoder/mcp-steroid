@@ -53,5 +53,11 @@ internal fun renameConflicts(target: PsiElement, newName: String, usages: Array<
 
 /** [html] as plain text: tags and entities dropped, whitespace folded, as refactoring messages carry markup. */
 internal fun plainText(html: String): String =
-    html.replace(Regex("(?i)<(br|p|/p|li|tr)\\b[^>]*>"), " ").replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
-        .replace(Regex("\\s+"), " ").trim()
+    html.replace(Regex("(?i)<(br|p|/p|li|tr)\\b[^>]*>"), " ").replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&apos;", "'")
+        // Numeric entities, such as the &#32; a JavaScript type message puts between words.
+        .replace(Regex("&#(x[0-9a-fA-F]+|[0-9]+);")) { m ->
+            val code = m.groupValues[1]
+            (if (code.startsWith("x")) code.drop(1).toIntOrNull(16) else code.toIntOrNull())?.takeIf { Character.isValidCodePoint(it) }?.let { String(Character.toChars(it)) } ?: m.value
+        }
+        .replace("&amp;", "&").replace(Regex("\\s+"), " ").trim()

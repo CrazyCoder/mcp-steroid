@@ -64,7 +64,9 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         - fix: "inspection" is the inspection's short name (such as SimplifiableCallChain); "all": true
           fixes every problem it reports in the file, else the one on the target's line (the first, without a
           target). A dry run without "inspection" lists what every enabled inspection reports in the file,
-          with short names; compiler and annotator errors are not inspections and are not listed
+          with short names and severities, from WEAK WARNING up as the editor highlights them ("all": true
+          adds INFORMATION-level suggestions and proofreading); compiler and annotator errors are not
+          inspections and are not listed. An explicit "inspection" works at any level
         - intention: "name" is the intention's text, such as "Convert to expression body"
         - optimize_imports, reformat: act on "file"
 
@@ -108,8 +110,8 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
     val intentionName = stringParam("name", "intention: the intention's text.")
 
     val all = InputSchemaElement.param("all")
-        .description("fix: fix every problem the inspection reports in the file.")
-        .cliSynopsis("fix every problem in the file")
+        .description("fix: fix every problem the inspection reports in the file; without inspection, list every level.")
+        .cliSynopsis("fix every problem in the file; list every level")
         .boolean()
         .withDefaultValue(false)
         .registerToSchema()
