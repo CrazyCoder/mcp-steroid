@@ -533,29 +533,6 @@ class VisionService(
             ?: throw IllegalStateException("No IDE frame or editor component available for screenshot")
     }
 
-    /**
-     * Find a component by window ID. Searches both project frames and all displayable windows.
-     * @return The component if found, null otherwise
-     */
-    private fun findComponentByWindowId(windowId: String): Component? {
-        // Search project frames first
-        for (frame in WindowManager.getInstance().allProjectFrames) {
-            val component = frame.component
-            val window = SwingUtilities.getWindowAncestor(component)
-            if (WindowIdUtil.compute(window, component) == windowId) {
-                return component
-            }
-        }
-        // Fall back to all displayable windows
-        for (window in Window.getWindows()) {
-            if (!window.isDisplayable) continue
-            if (WindowIdUtil.compute(window, window) == windowId) {
-                return window
-            }
-        }
-        return null
-    }
-
     private inner class SwingInputExecutor(
         private val windowId: String,
     ) {

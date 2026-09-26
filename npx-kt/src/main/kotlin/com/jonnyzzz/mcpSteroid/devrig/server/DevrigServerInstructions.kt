@@ -27,7 +27,7 @@ call hierarchies, subtypes, references, symbol resolution, rename/refactor, runn
 
 Its tools are all named steroid_* (steroid_list_projects, steroid_open_project,
 steroid_list_windows, steroid_execute_code, steroid_execute_feedback, steroid_take_screenshot,
-steroid_input, steroid_fetch_resource). If your harness loads MCP tool schemas on demand, load
+steroid_input, steroid_ui, steroid_fetch_resource). If your harness loads MCP tool schemas on demand, load
 them before you decide the IDE is unavailable.
 
 Start here:

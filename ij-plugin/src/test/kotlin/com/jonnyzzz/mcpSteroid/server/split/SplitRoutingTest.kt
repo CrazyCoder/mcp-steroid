@@ -42,6 +42,7 @@ class SplitRoutingTest {
         assertEquals(ToolSide.LOCAL, routeTool(SplitRole.FRONTEND, "steroid_list_windows", none))
         assertEquals(ToolSide.LOCAL, routeTool(SplitRole.FRONTEND, "steroid_take_screenshot", none))
         assertEquals(ToolSide.LOCAL, routeTool(SplitRole.FRONTEND, "steroid_input", none))
+        assertEquals(ToolSide.LOCAL, routeTool(SplitRole.FRONTEND, "steroid_ui", none))
         assertEquals(ToolSide.LOCAL, routeTool(SplitRole.FRONTEND, "steroid_fetch_resource", none))
     }
 

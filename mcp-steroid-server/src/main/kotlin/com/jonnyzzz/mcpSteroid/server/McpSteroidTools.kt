@@ -29,6 +29,7 @@ abstract class McpSteroidTools {
         ExecuteFeedbackToolSpec { handler<ExecuteFeedbackToolHandler>() },
         VisionScreenshotToolSpec { handler<VisionScreenshotToolHandler>() },
         VisionInputToolSpec { handler<VisionInputToolHandler>() },
+        UiToolSpec { handler<UiToolHandler>() },
         FetchResourceToolHandler { handler<PromptsContextHandler>() },
     )
 

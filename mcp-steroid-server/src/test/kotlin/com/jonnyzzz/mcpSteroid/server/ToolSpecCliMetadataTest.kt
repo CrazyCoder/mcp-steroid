@@ -199,6 +199,7 @@ class ToolSpecCliMetadataTest {
             "steroid_execute_feedback" to mapOf("code" to "--code-file"),
             "steroid_take_screenshot" to emptyMap(),
             "steroid_input" to emptyMap(),
+            "steroid_ui" to emptyMap(),
             "steroid_fetch_resource" to emptyMap(),
             "steroid_open_project" to emptyMap(),
         )
@@ -249,6 +250,7 @@ class ToolSpecCliMetadataTest {
             "steroid_execute_feedback" to emptyList(),
             "steroid_take_screenshot" to emptyList(),
             "steroid_input" to emptyList(),
+            "steroid_ui" to emptyList(),
             "steroid_fetch_resource" to emptyList(),
             "steroid_open_project" to listOf("wait" to "--wait"),
         )

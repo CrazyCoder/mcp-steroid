@@ -54,7 +54,7 @@ class DevrigToolSpecsGoldenSchemaTest {
     @Test
     fun `every devrig tool's inputSchema is byte-identical to the schema captured from main, descriptions masked`() {
         val tools = devrigToolSpecsForTest().associateBy { it.name }
-        assertEquals(8, tools.size, "devrigToolSpecs() must list exactly the 8 tools this golden test covers")
+        assertEquals(9, tools.size, "devrigToolSpecs() must list exactly the 9 tools this golden test covers")
 
         assertGoldenSchema(tools, "steroid_list_projects", GOLDEN_LIST_PROJECTS)
         assertGoldenSchema(tools, "steroid_list_windows", GOLDEN_LIST_WINDOWS)
@@ -62,6 +62,7 @@ class DevrigToolSpecsGoldenSchemaTest {
         assertGoldenSchema(tools, "steroid_execute_feedback", GOLDEN_EXECUTE_FEEDBACK)
         assertGoldenSchema(tools, "steroid_take_screenshot", GOLDEN_TAKE_SCREENSHOT)
         assertGoldenSchema(tools, "steroid_input", GOLDEN_INPUT)
+        assertGoldenSchema(tools, "steroid_ui", GOLDEN_UI)
         assertGoldenSchema(tools, "steroid_fetch_resource", GOLDEN_FETCH_RESOURCE)
         assertGoldenSchema(tools, "steroid_open_project", GOLDEN_OPEN_PROJECT)
     }
@@ -107,6 +108,8 @@ class DevrigToolSpecsGoldenSchemaTest {
         const val GOLDEN_TAKE_SCREENSHOT = """{"type":"object","properties":{"project_name":{"type":"string","description":"<description omitted by golden-schema mask>"},"task_id":{"type":"string","description":"<description omitted by golden-schema mask>"},"reason":{"type":"string","description":"<description omitted by golden-schema mask>"},"window_id":{"type":"string","description":"<description omitted by golden-schema mask>"}},"required":["project_name","task_id","reason"]}"""
 
         const val GOLDEN_INPUT = """{"type":"object","properties":{"project_name":{"type":"string","description":"<description omitted by golden-schema mask>"},"task_id":{"type":"string","description":"<description omitted by golden-schema mask>"},"reason":{"type":"string","description":"<description omitted by golden-schema mask>"},"window_id":{"type":"string","description":"<description omitted by golden-schema mask>"},"sequence":{"type":"string","description":"<description omitted by golden-schema mask>"}},"required":["project_name","task_id","reason","window_id","sequence"]}"""
+
+        const val GOLDEN_UI = """{"type":"object","properties":{"project_name":{"type":"string","description":"<description omitted by golden-schema mask>"},"task_id":{"type":"string","description":"<description omitted by golden-schema mask>"},"reason":{"type":"string","description":"<description omitted by golden-schema mask>"},"window_id":{"type":"string","description":"<description omitted by golden-schema mask>"},"steps":{"type":"string","description":"<description omitted by golden-schema mask>"},"snapshot":{"type":"string","description":"<description omitted by golden-schema mask>","enum":["full","diff","none"]},"max_nodes":{"type":"integer","description":"<description omitted by golden-schema mask>"},"trace":{"type":"boolean","description":"<description omitted by golden-schema mask>"},"side":{"type":"string","description":"<description omitted by golden-schema mask>","enum":["frontend","backend"]}},"required":["project_name","task_id","reason"]}"""
 
         const val GOLDEN_FETCH_RESOURCE = """{"type":"object","properties":{"uri":{"type":"string","description":"<description omitted by golden-schema mask>"},"project_name":{"type":"string","description":"<description omitted by golden-schema mask>"}},"required":["uri","project_name"]}"""
 
