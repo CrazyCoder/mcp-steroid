@@ -344,12 +344,11 @@
   devrig invocation form, and the alternative is a logback `reset()` + `JoranConfigurator` re-read after
   parsing. Pick that up only if a real client trips on it.
 
-- [ ] **Screenshot metadata from the remote-driver UI model**. `screenshot-tree.md` lists class names and the
-  text of labels, buttons and text fields only. The Performance Testing plugin's `XpathDataModelCreator`
-  (taught in `mcp-steroid://ide/ui-driving`) adds accessible names, tooltips and painted text: tree and list
-  rows, tabs, editor text. Using it in `SwingComponentTreeProvider` means plugin code against an internal
-  module of a bundled plugin, with a fallback for when that plugin is disabled. Decide after seeing how
-  agents use the recipe.
+- [ ] **Watch modality through `ModalityStateListener.TOPIC`** (deferred from the steroid_ui spec, decision
+  14). steroid_ui compares the showing window list before and after a step, `ui.open { }` polls it every
+  50 ms, and the `smart_non_modal` dialog monitor polls every second. The public app-level topic reports every
+  modal dialog or modal progress as it opens or closes, which would replace all three polls and name a
+  dialog-less modal progress too. Worth doing when one of the polls shows up as slow or flaky.
 
 ## Split mode follow-ups (from the 2026-09-25 split-plugin review)
 

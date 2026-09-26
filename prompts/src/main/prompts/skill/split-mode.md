@@ -44,6 +44,7 @@ Through the client's endpoint:
 | `steroid_list_projects`, `steroid_open_project`, `steroid_execute_feedback` | backend |
 | `steroid_execute_code` | backend, or the client with `side=frontend` |
 | `steroid_list_windows`, `steroid_take_screenshot`, `steroid_input` | client |
+| `steroid_ui` | client, or the backend with `side=backend` |
 | `steroid_fetch_resource` | client |
 
 - `project_name` keys come from the backend, and every tool accepts them, including the UI tools that run
@@ -104,6 +105,10 @@ closes it with Cancel, as in a regular IDE. Drive client dialogs with `side=fron
 
 ## Driving UI with the ui-driving recipe
 
+`steroid_ui` reads and drives the client's windows by default. A backend dialog or host Settings page is
+drawn in the client from the backend's components, so the client lists it as one panel; call `steroid_ui`
+with `side=backend` to read and act on its controls.
+
 The recipe's UI model and `dispatchEvent` input work on both sides. Run the script on the side that owns
 the components: `side=frontend` for client windows and popups, the backend for its dialogs and host
 Settings pages. A `steroid_input` click at screen coordinates goes to the window on top at that point, as a
@@ -120,6 +125,6 @@ the frames, not what the user sees.
 
 # See also
 
-- [Find and drive UI controls with XPath](mcp-steroid://ide/ui-driving)
+- [Find and drive UI controls with steroid_ui and ui helpers](mcp-steroid://ide/ui-driving)
 - [Execute code tool description](mcp-steroid://skill/execute-code-tool-description)
 - [Managing backends](mcp-steroid://open-project/managing-backends)

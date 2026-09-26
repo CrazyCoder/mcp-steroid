@@ -20,7 +20,7 @@ A runtime mirror of this file lives at
 ## Tenet 1 — minimal MCP tool surface
 
 **Don't propose new `steroid_*` tools.** MCP Steroid intentionally maintains
-a small set of MCP tools. Today there are 8:
+a small set of MCP tools. Today there are 9:
 
 - `steroid_list_projects`
 - `steroid_list_windows`
@@ -29,6 +29,7 @@ a small set of MCP tools. Today there are 8:
 - `steroid_execute_feedback`
 - `steroid_take_screenshot`
 - `steroid_input`
+- `steroid_ui`
 - `steroid_fetch_resource`
 
 This is the entire surface. The number is intentionally low. Improvements
@@ -54,6 +55,18 @@ failed 64% of real calls, and it was removed too (#206, July 2026); a
 tolerance-matching successor is backlogged as #208. Both removals are what
 Tenet 1 looks like in practice — unlock IDE depth rather than keep an
 attractive-but-unreliable generic edit path.
+
+**Worked example — `steroid_ui` added (September 2026).** Driving IDE UI
+through `steroid_execute_code` cost about 6 s per step on IntelliJ IDEA
+2026.3 EAP, of which 5.6 s was Kotlin compilation and 0.43 s the script
+itself, and the `ide/ui-driving` recipe made the agent resend about 80
+lines of helpers every time. Gate 1: every `steroid_execute_code` call
+compiles, so no IntelliJ API path removes that cost. Gate 2: a recipe can
+shorten the script but not skip the compiler. `steroid_ui` snapshots and
+drives the UI with no compilation (34 ms for a project frame, 1.7 s for a
+five-step Settings flow on 2026.1). The three-reviewer vote of gate 3 was
+not run; the maintainer of the Plus fork approved the design in
+`docs/superpowers/specs/2026-09-25-steroid-ui-tool-design.md`.
 
 ## Tenet 2 — power lives in prompts and direct IntelliJ API usage
 
@@ -168,6 +181,13 @@ eval data showed 64% of real calls failed on exact-match resolution
 the surface is necessary but not sufficient: a method must also prove
 agents can use it reliably at scale. New context methods must clear both
 bars.
+
+**`ui` joined with `steroid_ui`.** It exposes the same engine as the tool
+to scripts that need logic between UI steps, so it adds no second UI
+abstraction: a ref from a `steroid_ui` snapshot works in `ui.*` and the
+other way round. `ui.open { }` is the one capability a script could not
+write in five lines of IntelliJ API: it returns the dialog a block opened
+without the script waiting inside the dialog's event loop.
 
 ## Tenet 5 — the devrig↔plugin WIRE is additive-only (the devrig-computed output is not)
 

@@ -1,21 +1,70 @@
-IDE: Find and drive UI controls with XPath
+IDE: Find and drive UI controls with steroid_ui and ui helpers
 
-Snapshot the IDE's Swing UI, find controls by name or painted text with XPath, then click, type and close dialogs, all in one steroid_execute_code call.
+Read the IDE's windows as a compact list of controls with refs, then click, type, select and close by ref or name with steroid_ui, or with ui helpers inside a script.
 
 # When to use this recipe
 
 Use it when a task needs the IDE's own UI: a dialog with no API, a tool window row, a settings page, a
-popup. One script can open the window, find controls by what they show, act on them and verify the
-result, instead of a screenshot and a `steroid_input` call per step.
-
-Prefer an API when one exists. An action ID (`ActionManager.getInstance().getAction(id)`), a service or a
-`DialogWrapper` method is shorter and never breaks on a layout change. See
+popup. Prefer an API when one exists. An action ID (`ActionManager.getInstance().getAction(id)`), a service
+or a `DialogWrapper` method is shorter and never breaks on a layout change. See
 [action discovery](mcp-steroid://ide/action-discovery) for finding action IDs.
 
-The recipes use the UI model of the **Performance Testing** plugin (`com.jetbrains.performancePlugin`),
-which JetBrains IDEs bundle for their own UI tests. It is internal API. If that plugin is disabled, the
-`com.jetbrains.performancePlugin.*` imports do not resolve; walk the components with
-`UIUtil.findComponentsOfType(root, JButton::class.java)` and `accessibleContext.accessibleName` instead.
+Start with the `steroid_ui` tool. It compiles no code, so a snapshot or a step answers in well under a
+second, where a `steroid_execute_code` call spends seconds compiling. Use the `ui` helpers of
+`steroid_execute_code` when the steps need logic between them, and the XPath model below for queries the
+helpers do not cover.
+
+## Snapshot and act with steroid_ui
+
+`steroid_ui` without steps lists the project's showing windows, topmost first. Each line is one control:
+class, accessible name, `[ref=e12]`, states such as `[disabled]` or `[checked]`, `value="..."` for text
+fields and combo boxes, `text=...` for the text it paints (tree and list rows, tabs), and `tip="..."`.
+
+Steps act by ref or by what a control shows, and each one reports what it caused: where the press landed,
+whether a button's action ran, the IDE actions, windows opened or closed. A click that opens a modal dialog
+returns while the dialog is up. The first failing step stops the run and names the nearest controls.
+
+For example, these steps open Settings, change two options on the Appearance page and cancel:
+
+- `{"action":"press","keys":"ctrl+alt+S"}`
+- `{"action":"select","name":"Settings categories","row":"Appearance & Behavior"}`
+- `{"action":"click","name":"Appearance","class":"ActionLink"}`
+- `{"action":"select","name":"Zoom:","nth":0,"row":"110%"}`
+- `{"action":"check","name":"Compact mode"}`
+- `{"action":"click","name":"Cancel"}`
+
+Pass them as one JSON array in `steps`.
+
+Several controls often share a name, because a label carries its field's name. Matching prefers the
+interactive control, and when two remain, add `nth`, a `class` or the ref. While a modal dialog shows,
+only that dialog and its popups are searched. Add `"trace": true` to record a picture before and after
+each step for a reproduction, and pass `marks=true` to `steroid_take_screenshot` to see the refs on the
+image.
+
+## Drive UI from a script with ui helpers
+
+The `ui` helpers of the script context run the same engine, with the same refs. Each action returns the
+line `steroid_ui` would report and throws when it cannot do what it asks. `ui.open { }` runs code that shows
+a dialog in its own EDT task and returns the dialog, so the script keeps running while it is up:
+
+```kotlin
+import com.intellij.openapi.options.ShowSettingsUtil
+
+val settings = ui.open { ShowSettingsUtil.getInstance().showSettingsDialog(project, "Editor") }
+println("opened: " + (settings as? java.awt.Dialog)?.title)
+println(ui.select(ui.name("Settings categories"), "Appearance & Behavior"))
+println(ui.click(ui.name("Appearance") and ui.cls("ActionLink")))
+println(ui.check(ui.name("Compact mode")))
+println(ui.click(ui.name("Cancel")))
+```
+
+To work in a dialog that is already open with IntelliJ APIs, run the script with `modal=dialog`: its
+`withContext(Dispatchers.EDT)` blocks and its `writeAction { }` run under the dialog's modality while the
+dialog stays open.
+
+The helpers and the tool use the UI model of the **Performance Testing** plugin
+(`com.jetbrains.performancePlugin`), which JetBrains IDEs bundle for their own UI tests, and fall back to
+Swing names and labels when it is disabled. The next sections use that model directly.
 
 ## Snapshot and find
 
@@ -278,7 +327,8 @@ withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
 - Tool windows that are hidden are not in the model. Show one with
   `ToolWindowManager.getInstance(project).getToolWindow(id)?.show()` first.
 - With `modal=smart_non_modal`, a dialog your script opens fails the call unless the script calls
-  `allowModalDialog()` first. Run dialog scripts with `modal=unleashed`.
+  `allowModalDialog()` first. Open dialogs with `ui.open { }`, and run scripts that work inside an already
+  open dialog with `modal=dialog`.
 - In Split Mode, run the script on the side that owns the window's components. A dialog or Settings page
   that the backend owns is only a picture in the JetBrains Client. See
   [Split Mode](mcp-steroid://skill/split-mode).
