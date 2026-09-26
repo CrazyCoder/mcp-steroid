@@ -161,6 +161,20 @@ ship. Its design decisions carry over, its code does not:
 12. **`steroid_input` stays.** It remains the tool for raw coordinates and
     key chords, and it moves onto the shared input code. Its description
     points to `steroid_ui` first.
+13. **Work inside an open modal dialog, under its modality.** A new
+    `steroid_execute_code` mode, `modal=dialog`, runs the script with the
+    modality of the topmost modal dialog as its context modality, so its
+    EDT hops and write actions run while that dialog is open. `steroid_ui`
+    and the `ui.*` helpers do their EDT work under the modality of the
+    target's window. See [Modal dialogs](#modal-dialogs).
+14. **Watch modality through the platform topic.** Steroid subscribes to
+    `ModalityStateListener.TOPIC` instead of polling the window list. It
+    feeds the `unexpected` modal report, `wait for=window`, and the
+    dialog monitor of `smart_non_modal`.
+15. **Open a dialog without blocking the caller.** `ui.open { … }` runs its
+    block in a separate EDT task and returns the dialog that the block
+    opened, reported by the topic. The script keeps running while the
+    dialog is up.
 
 Rejected:
 
@@ -173,6 +187,12 @@ Rejected:
   reused, not its code.
 - **A compile cache for scripts.** It helps repeated identical scripts only.
   UI steps differ in every call.
+- **`TestDialogManager` to answer message dialogs.** `MessagesServiceImpl`
+  consults it only when the application is in unit-test or headless mode,
+  and its setters assert that mode.
+- **`ModalityState.any()` for scripts.** The platform allows `any()` only for
+  purely UI work: no PSI, VFS, project model or indexes, and no modal
+  dialogs (`isModalAwareContext`).
 
 ## Design
 
@@ -299,6 +319,10 @@ except the tool spec, which goes to `mcp-steroid-server` with the others.
   `steroid_take_screenshot` gains `marks` (default `false`): each ref's
   bounds and label are drawn on a copy of the image, `screenshot-marked.png`,
   which is returned instead of the plain image.
+- `ModalMode` gains `DIALOG` (`modal=dialog`), and `ScriptExecutor` runs its
+  pre-flight and context as described in [Modal dialogs](#modal-dialogs).
+  The `modal` parameter description of `steroid_execute_code` lists it.
+  `DialogKiller`'s monitor moves onto `ModalityWatcher`.
 - `SplitRouting.ROUTED_TOOLS` gains `steroid_ui` with home `FRONTEND`. It
   accepts `side`, like `steroid_execute_code`.
 - devrig: `DevrigUiToolHandler` forwards the call as
@@ -312,6 +336,72 @@ except the tool spec, which goes to `mcp-steroid-server` with the others.
   - The `steroid_input` description points to `steroid_ui`.
 - `TODO.md`: the "Screenshot metadata from the remote-driver UI model" item
   is resolved by this work.
+
+### Modal dialogs
+
+Today a modal dialog stops Steroid in four places:
+
+| Where | Why |
+|---|---|
+| `smart_non_modal` pre-flight | It closes leftover dialogs and fails when one survives |
+| A script's `withContext(Dispatchers.EDT)` and `writeAction` | The script has no context modality, so the EDT dispatcher falls back to non-modal work, which the platform holds until every modal dialog closes |
+| A script that shows a dialog on the EDT (`Messages.show…`, `DialogWrapper.show()`) | The call runs the dialog's event loop and returns only when the dialog closes. `runBoundedByTimeout` closes it at the deadline |
+| `steroid_input` click that opens a dialog | The click is dispatched synchronously inside an EDT task, which then runs the dialog's loop |
+
+The platform's own answer is the modality state. `EdtCoroutineDispatcher`
+dispatches with the coroutine's context modality
+(`ModalityState.asContextElement()`), and a task under the modality of a
+dialog runs while that dialog is open. This is how a dialog's own code does
+its work. `ModalityState.current()`, read on the EDT, is the modality of the
+topmost modal dialog. `ModalityState.stateForComponent(c)` is the modality
+of the dialog that holds `c`.
+
+**`modal=dialog`.** A fourth mode of `steroid_execute_code`:
+
+1. Pre-flight: read `ModalityState.current()` on the EDT. When it is
+   non-modal, fail with "no modal dialog is open; use smart_non_modal". Do
+   not close dialogs, commit documents or refresh VFS: the VFS refresh would
+   change the project model under a dialog the caller does not own, which
+   `awaitRefreshUnlessModal` already avoids.
+2. Run the script body with `state.asContextElement()`. Its
+   `Dispatchers.EDT` hops, `writeAction { }`, and platform code that reads
+   `ModalityState.defaultModalityState()` run under the dialog.
+3. When a nested modal dialog opens during the run, work under the outer
+   dialog waits again. The script can read the nested dialog with
+   `ui.snapshot()` and answer it, because `ui.*` helpers use the target's
+   own modality.
+4. The response header names the dialog the script ran under.
+
+`smart_non_modal`'s failure message for a surviving dialog names this mode.
+The `ui-driving` recipe replaces `allowModalDialog()` plus `unleashed` with
+`modal=dialog` for scripts that work in an open dialog.
+
+**Modality events.** A `ModalityWatcher` app service subscribes to
+`ModalityStateListener.TOPIC` (public API in `core-api`, an app-level topic).
+`beforeModalityStateChanged(entering, modalEntity)` gives the dialog window
+or the modal progress. The watcher keeps the stack of modal entities and a
+flow of changes. Users:
+
+- `UiSession`: the windows that opened or closed during a step, and the
+  `unexpected` mark for a modal no step addressed.
+- `wait for=window`: completes on the event, not on a poll.
+- The `smart_non_modal` monitor, which polls every second today, reacts to
+  the event.
+- `ui.open { }` below.
+
+**`ui.open { block }`.** Runs `block` with
+`ApplicationManager.getApplication().invokeLater(block, state)`, where
+`state` is the script's context modality or non-modal, and suspends until
+the watcher reports a modal entity entered after the call, or the timeout
+ends. It returns the dialog window and a snapshot of it. A block that opens
+no modal dialog fails with the timeout. The dialog's event loop then runs in
+its own EDT task, and the script continues. This replaces the recipe's
+`invokeLater` plus `Window.getWindows()` polling.
+
+**Answering a dialog.** Through `steroid_ui` or `ui.*`: click a button by
+name, or `close`, which calls `DialogWrapper.doCancelAction()`. Message
+dialogs, including the alert dialogs of `AlertMessagesManager`, are
+`DialogWrapper`s with named buttons, so the same steps answer them.
 
 ### Errors
 
@@ -351,6 +441,12 @@ reported as `action_performed: false`, and the agent decides.
     stale.
   - `trace=true` writes the files listed above.
   - `ui.*` helpers from `steroid_execute_code` do the same dialog run.
+  - `modal=dialog`: with the test dialog open, a script's `writeAction`
+    changes a document and returns while the dialog stays open. The same
+    script under `non_modal` fails at the gate.
+  - `ui.open { }` around an action that shows a `Messages` dialog returns
+    the dialog, and a `steroid_ui` click on its button closes it and ends
+    the action.
   These run on CI. Locally, run only this class.
 - **Fallback**: the integration test runs once more with the Performance
   Testing plugin disabled, and the snapshot header shows the fallback.
