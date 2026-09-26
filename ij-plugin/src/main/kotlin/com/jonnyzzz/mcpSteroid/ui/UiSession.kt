@@ -68,6 +68,7 @@ class UiSession(
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput()
+    private val editorSteps = UiEditorSteps(project)
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
     /** The windows after the previous step, to report the ones that opened or closed between two steps. */
@@ -80,6 +81,7 @@ class UiSession(
         val before = if (mode == UiSnapshotMode.DIFF) render(withBounds = false) else null
         val reports = mutableListOf<UiStepReport>()
         var failure: String? = null
+        var failedStep: UiStep? = null
         val runStarted = TimeSource.Monotonic.markNow()
         for ((i, step) in steps.withIndex()) {
             val label = "step ${i + 1} ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
@@ -105,6 +107,7 @@ class UiSession(
             }
             if (outcome.isFailure) {
                 failure = "$label failed: $line"
+                failedStep = step
                 break
             }
             windowsAfterLastStep = UiSettle.showingWindows()
@@ -112,6 +115,8 @@ class UiSession(
         }
         val snapshot = when {
             failure != null && windowId != null && withContext(edtAny) { listedWindows().isEmpty() } -> ""
+            // A goto or run failure names what went wrong in the code or the action; the windows add nothing.
+            failure != null && failedStep?.action in EDITOR_ACTIONS -> ""
             failure != null -> render(withBounds = false, scopeOnly = true, topOnly = true)
             mode == UiSnapshotMode.TREE -> render(withBounds = false)
             mode == UiSnapshotMode.FULL -> render(withBounds = true)
@@ -169,6 +174,10 @@ class UiSession(
     private suspend fun runStep(step: UiStep): String = when (step.action) {
         UiAction.WAIT -> waitStep(step)
         UiAction.SNAPSHOT -> snapshotStep(step)
+        // Checked once the windows settled: an in-place refactoring shows its name lookup before its template is up.
+        UiAction.RUN -> withEffects { actStep(step) }.let {
+            if (inplaceActive()) "$it; started an in-place template: type the value, then press ENTER" else it
+        }
         else -> withEffects { actStep(step) }
     }
 
@@ -223,6 +232,8 @@ class UiSession(
             }
             UiAction.SELECT -> selectStep(step)
             UiAction.CLOSE -> closeStep(step)
+            UiAction.GOTO -> editorSteps.goto(step)
+            UiAction.RUN -> editorSteps.run(step, actionComponent(), ::inplaceActive)
             UiAction.WAIT, UiAction.SNAPSHOT -> error("not an action step")
         }
     }
@@ -482,6 +493,20 @@ class UiSession(
             ?: throw UiStepFailure("no control has the keyboard focus in the project's windows; give the step a target")
     }
 
+    /**
+     * Where a run step's action looks for its context: the editor a goto step of this call focused, which may not
+     * have the focus yet while another application is active; else the control that has the focus in the project's
+     * windows; else the selected editor; else the project frame.
+     */
+    private suspend fun actionComponent(): Component = withContext(edtAny) {
+        val scope = scopeWindows()
+        editorSteps.gotoEditor?.takeIf { it.isShowing }
+            ?: KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner?.takeIf { SwingUtilities.getWindowAncestor(it) in scope }
+            ?: FileEditorManager.getInstance(project).selectedTextEditor?.contentComponent?.takeIf { it.isShowing }
+            ?: (projectFrame() as? RootPaneContainer)?.rootPane
+            ?: projectFrame()
+    }
+
     private fun scopeModels(): List<UiModelResult> = scopeWindows().map { UiModel.build(it) }
 
     private fun describeClick(node: UiNode, click: ClickReport): String = buildList {
@@ -562,6 +587,7 @@ class UiSession(
     }
 
     companion object {
+        private val EDITOR_ACTIONS = setOf(UiAction.GOTO, UiAction.RUN)
         private const val POLL_MS = 100L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L

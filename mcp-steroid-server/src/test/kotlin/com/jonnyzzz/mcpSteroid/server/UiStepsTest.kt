@@ -93,6 +93,35 @@ class UiStepsTest {
     }
 
     @Test
+    fun `goto reads its file and one locator, and its text is a snippet, not a target`() {
+        val bySymbol = UiSteps.parse("""[{"action":"goto","file":"src/A.kt","symbol":"foo","nth":1}]""").single()
+        assertEquals(UiAction.GOTO, bySymbol.action)
+        assertEquals("src/A.kt", bySymbol.file)
+        assertEquals("foo", bySymbol.symbol)
+        assertEquals(1, bySymbol.nth)
+        val byText = UiSteps.parse("""[{"action":"goto","file":"A.kt","text":"a + b"}]""").single()
+        assertEquals("a + b", byText.text)
+        assertNull(byText.target)
+        val byLine = UiSteps.parse("""[{"action":"goto","file":"A.kt","line":3,"column":7}]""").single()
+        assertEquals(3, byLine.line)
+        assertEquals(7, byLine.column)
+    }
+
+    @Test
+    fun `goto needs a file and exactly one locator`() {
+        assertTrue(fails("""[{"action":"goto","symbol":"foo"}]""").contains("needs a file"))
+        assertTrue(fails("""[{"action":"goto","file":"A.kt"}]""").contains("exactly one"))
+        assertTrue(fails("""[{"action":"goto","file":"A.kt","line":1,"symbol":"foo"}]""").contains("exactly one"))
+        assertTrue(fails("""[{"action":"goto","file":"A.kt","line":0}]""").contains("1-based"))
+    }
+
+    @Test
+    fun `run needs an action id`() {
+        assertEquals("RenameElement", UiSteps.parse("""[{"action":"run","id":"RenameElement"}]""").single().id)
+        assertTrue(fails("""[{"action":"run"}]""").contains("action id"))
+    }
+
+    @Test
     fun `input that is not an array of objects fails`() {
         assertTrue(fails("""{"action":"click"}""").contains("JSON array"))
         assertTrue(fails("""[1]""").contains("object"))

@@ -69,9 +69,16 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           as Settings (the topmost one without a target)
         - {"action":"wait", "for":"visible|hidden|enabled", target} or {"for":"window","title":"..."} or {"for":"idle"}
         - {"action":"snapshot", optional target}: adds a snapshot of the target's subtree or of all windows
+        - {"action":"goto", "file":"src/A.kt", and one of "line":N (with "column":N), "symbol":"name" or
+          "text":"exact snippet", plus "nth" for a later occurrence}: opens the file in the editor, focuses it,
+          and puts the caret there, or selects the snippet. The file is absolute or relative to the project
+        - {"action":"run", "id":"RenameElement"}: runs an IDE action by id where the focus is, after a goto in the
+          editor. Reports a disabled action, an unknown id with similar ids, and an in-place template to type into
 
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]
+        Refactoring example: [{"action":"goto","file":"src/Util.kt","symbol":"parse"},
+                  {"action":"run","id":"ChangeSignature"}], then fill and click in the dialog it opens.
 
         A click that opens a modal dialog returns while the dialog is up, and the report names it. A step
         that runs an action or presses a button named with an ellipsis ("Settings…") waits up to 10 s for

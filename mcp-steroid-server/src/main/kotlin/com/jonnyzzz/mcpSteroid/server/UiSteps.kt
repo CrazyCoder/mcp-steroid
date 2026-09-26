@@ -21,6 +21,8 @@ enum class UiAction(val wire: String) {
     CLOSE("close"),
     WAIT("wait"),
     SNAPSHOT("snapshot"),
+    GOTO("goto"),
+    RUN("run"),
 }
 
 enum class UiWaitCondition(val wire: String) {
@@ -64,6 +66,13 @@ data class UiStep(
     val index: Int? = null,
     val condition: UiWaitCondition? = null,
     val title: String? = null,
+    val file: String? = null,
+    val line: Int? = null,
+    val column: Int? = null,
+    val symbol: String? = null,
+    val id: String? = null,
+    /** Which occurrence a goto symbol or text means, from 0; a target carries its own. */
+    val nth: Int = 0,
     val timeoutMs: Long = UiSteps.DEFAULT_TIMEOUT_MS,
 )
 
@@ -79,8 +88,11 @@ object UiSteps {
     private val TARGET_FIELDS = setOf("ref", "name", "text", "class", "xpath", "nth")
     private val FIELDS = TARGET_FIELDS + setOf(
         "action", "button", "count", "modifiers", "offset_x", "offset_y", "keys", "row", "index", "for", "title", "timeout_ms",
+        "file", "line", "column", "symbol", "id",
     )
     private val BUTTONS = setOf("left", "right", "middle")
+    /** Actions whose "text" is what they enter or look for in the editor, not a target. */
+    private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO)
     private val NEEDS_TARGET = setOf(UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT)
 
     fun parse(json: String): List<UiStep> {
@@ -109,7 +121,7 @@ object UiSteps {
         val target = UiTarget(
             ref = obj.string("ref"),
             name = obj.string("name"),
-            text = obj.string("text").takeIf { action != UiAction.TYPE && action != UiAction.FILL },
+            text = obj.string("text").takeIf { action !in TEXT_IS_INPUT },
             cls = obj.string("class"),
             xpath = obj.string("xpath"),
             nth = obj.int("nth"),
@@ -122,7 +134,7 @@ object UiSteps {
             modifiers = obj.string("modifiers"),
             offsetX = obj.int("offset_x"),
             offsetY = obj.int("offset_y"),
-            text = obj.string("text").takeIf { action == UiAction.TYPE || action == UiAction.FILL },
+            text = obj.string("text").takeIf { action in TEXT_IS_INPUT },
             keys = obj.string("keys"),
             row = obj.string("row"),
             index = obj.int("index"),
@@ -131,6 +143,12 @@ object UiSteps {
                     ?: throw IllegalArgumentException("unknown wait condition '$wanted'; use one of ${UiWaitCondition.entries.joinToString { it.wire }}")
             },
             title = obj.string("title"),
+            file = obj.string("file"),
+            line = obj.int("line"),
+            column = obj.int("column"),
+            symbol = obj.string("symbol"),
+            id = obj.string("id"),
+            nth = obj.int("nth") ?: 0,
             timeoutMs = (obj.long("timeout_ms") ?: DEFAULT_TIMEOUT_MS).coerceIn(0, MAX_TIMEOUT_MS),
         )
         validate(step)
@@ -153,6 +171,13 @@ object UiSteps {
                 UiWaitCondition.WINDOW -> require(!step.title.isNullOrBlank()) { "wait for=window needs a title" }
                 UiWaitCondition.IDLE -> Unit
             }
+            UiAction.GOTO -> {
+                require(!step.file.isNullOrBlank()) { "goto needs a file" }
+                require(listOfNotNull(step.line, step.symbol, step.text).size == 1) { "goto needs exactly one of line, symbol or text" }
+                step.line?.let { require(it >= 1) { "line is 1-based, was $it" } }
+                step.column?.let { require(it >= 1) { "column is 1-based, was $it" } }
+            }
+            UiAction.RUN -> require(!step.id.isNullOrBlank()) { "run needs an action id, such as \"RenameElement\"" }
             else -> Unit
         }
     }
