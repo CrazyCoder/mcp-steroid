@@ -61,8 +61,8 @@ class GitVcsAddFileDialogTest {
 
         console.writeStep("Wait for Git detection + a non-modal ADD confirmation (silencer flip or platform default)")
         // The real invariant is that the "Add to VCS?" modal will NOT fire — i.e. the ADD confirmation is
-        // anything other than SHOW_CONFIRMATION (0). Both DO_ACTION_SILENTLY (1, the Git default in IDEA
-        // 2026.1) and DO_NOTHING_SILENTLY (2, what VcsConfirmationSilencer flips a SHOW_CONFIRMATION to) are
+        // anything other than SHOW_CONFIRMATION (0). Both DO_NOTHING_SILENTLY (1, what VcsConfirmationSilencer
+        // flips a SHOW_CONFIRMATION to) and DO_ACTION_SILENTLY (2, a user's "add silently" choice) are
         // non-modal. Git root detection is async, so poll until HAS_GIT=true and ADD_CONFIRMATION ∈ {1,2}.
         // Step 3 below is the authoritative check: actually create a file and confirm no modal appears.
         val probeCode = """
