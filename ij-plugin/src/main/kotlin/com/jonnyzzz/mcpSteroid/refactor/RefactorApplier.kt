@@ -19,6 +19,7 @@ import com.intellij.util.diff.Diff
 import com.jonnyzzz.mcpSteroid.ui.CodeLocation
 import com.jonnyzzz.mcpSteroid.ui.UiModel
 import com.jonnyzzz.mcpSteroid.ui.UiSettle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -83,10 +84,14 @@ internal class RefactorApplier(private val project: Project) {
                 }
             }, disposable)
             block()
-        } catch (e: RefactorFailure) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Any failure, the processor's own exceptions included, says whether files changed before it.
+            val reason = (e as? RefactorFailure)?.message ?: "$title failed: ${e.javaClass.simpleName}: ${e.message}"
             val partial = withContext(Dispatchers.EDT) { changeLines(originals) }
             throw RefactorFailure(
-                e.message + if (partial.isEmpty()) "\nnothing was changed"
+                reason + if (partial.isEmpty()) "\nnothing was changed"
                 else "\nit changed these files before it stopped, left unsaved; $undo:\n" + partial.joinToString("\n") { it.second }
             )
         } finally {
@@ -114,7 +119,6 @@ internal class RefactorApplier(private val project: Project) {
             generateSequence(changes) { it.link }.forEach { added += it.inserted; removed += it.deleted }
             document to "${CodeLocation.shortPath(project, file)} +$added -$removed"
         }
-
 
     /**
      * The dialog's messages, then its Cancel. Reads the UI model the steroid_ui snapshot shows: labels, and the rows
