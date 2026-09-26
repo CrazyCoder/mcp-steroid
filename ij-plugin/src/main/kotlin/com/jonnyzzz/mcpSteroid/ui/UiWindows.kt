@@ -9,7 +9,7 @@ import java.awt.Window
 import javax.swing.JToolTip
 import javax.swing.RootPaneContainer
 
-/** Which windows belong to a project frame, in the order a snapshot lists them. */
+/** Which windows belong to a project, in the order a snapshot lists them. */
 object UiWindows {
     /**
      * [all] in creation order, as `Window.getWindows()` returns them. [tops] are the windows without an owner that
@@ -39,7 +39,8 @@ object UiWindows {
 
     /** A popup window that hosts a tooltip: a Swing one, or the IDE's help tooltip over a toolbar button. EDT. */
     fun isTooltip(w: Window): Boolean {
-        if (w.owner == null) return false
+        // Only a popup window can be one, so the walk never runs over a dialog's or a frame's controls.
+        if (w.owner == null || w.type != Window.Type.POPUP) return false
         val root = (w as? RootPaneContainer)?.rootPane ?: return false
         return UIUtil.uiTraverser(root).any { it is JToolTip || it.javaClass.name.startsWith(HELP_TOOLTIP) }
     }

@@ -63,7 +63,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"select", target, "row":"text" or "index":N}: selects a list, tree or table row, or a
           combo item, without clicking it, so a list that acts on a click does not act. "row" is the row's text,
           else part of it, and "A > B > C" is a tree path; several matching rows are an error that lists them
-          by index. A tree row shows while its parent is expanded: press RIGHT on the tree to expand one
+          by index. A tree lists the rows of expanded parents: select a parent and press RIGHT to expand it
         - {"action":"close", optional target}: cancels the dialog or popup, or closes a separate window such
           as Settings (the topmost one without a target)
         - {"action":"wait", "for":"visible|hidden|enabled", target} or {"for":"window","title":"..."} or {"for":"idle"}

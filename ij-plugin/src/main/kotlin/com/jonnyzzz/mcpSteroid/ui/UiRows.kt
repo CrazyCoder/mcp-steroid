@@ -24,8 +24,8 @@ data class UiRowsView(val rows: List<UiRow>, val total: Int)
  */
 object UiRows {
     private const val MAX_ROWS = 2_000
-    const val MAX_SHOWN = 40
-    const val PATH_SEPARATOR = " > "
+    private const val MAX_SHOWN = 40
+    private const val PATH_SEPARATOR = " > "
 
     fun rows(c: Component): List<String>? = when (c) {
         is JList<*> -> (0 until minOf(c.model.size, MAX_ROWS)).map { listRow(c, it) }
