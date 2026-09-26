@@ -61,3 +61,7 @@
 
 - [ ] Add post-publish validation (GitHub release asset checksum + website link checks).
 - [ ] Automate the full release sequence in a single script following the commit-then-build principle.
+- [ ] Next release: attach the plugin zip once. `release.yml` uploads the same file as `mcp-steroid-plus-<version>.zip`
+  and `mcp-steroid-plugin.zip`. Keep the versioned name, write it to `release.json`'s `zip` field and the
+  `.sha256` file, and drop the copy. JetDesk builds its download URL from that field
+  (`releases/latest/download/<zip>`), so it follows the rename without a change.
