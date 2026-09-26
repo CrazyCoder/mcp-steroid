@@ -27,7 +27,7 @@ import kotlin.time.TimeSource
 class UiScriptApi(private val project: Project) : McpUi {
     private fun session() = UiSession(project, windowId = null, maxNodes = SNAPSHOT_NODES)
 
-    override suspend fun snapshot(): String = session().render(withBounds = true)
+    override suspend fun snapshot(bounds: Boolean): String = session().render(withBounds = bounds)
 
     override suspend fun find(target: UiQuery, timeoutMs: Long): Component = session().find(target.toTarget(), timeoutMs)
 
@@ -47,6 +47,8 @@ class UiScriptApi(private val project: Project) : McpUi {
     override suspend fun uncheck(target: UiQuery) = step(UiStep(UiAction.UNCHECK, target.toTarget()))
 
     override suspend fun select(target: UiQuery, row: String) = step(UiStep(UiAction.SELECT, target.toTarget(), row = row))
+
+    override suspend fun select(target: UiQuery, index: Int) = step(UiStep(UiAction.SELECT, target.toTarget(), index = index))
 
     override suspend fun close(target: UiQuery?) = step(UiStep(UiAction.CLOSE, target?.toTarget()))
 

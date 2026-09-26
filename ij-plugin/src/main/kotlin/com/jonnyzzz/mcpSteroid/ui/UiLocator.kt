@@ -62,9 +62,25 @@ object UiLocator {
         generateSequence<Class<*>>(c.javaClass) { it.superclass }.any { it.simpleName == cls || it.name == cls } ||
             UiComponentFacts.simpleClassName(c) == cls
 
-    /** The listed components most like the target: the same class first, then the closest name or text. */
+    /**
+     * The listed components most like the target: the same class first, then the closest name or text. A class
+     * alone that matches nothing is compared by the words of the class names, so `SearchTextField` suggests a
+     * `TextFieldWithProcessing`.
+     */
     private fun candidates(nodes: List<UiNode>, target: UiTarget): List<UiNode> {
         val wanted = target.name ?: target.text
+        val cls = target.cls
+        if (wanted == null && cls != null && nodes.none { classMatches(it.component, cls) }) {
+            val words = camelWords(cls)
+            return nodes.asSequence()
+                .filter { it.listed && it.interactive }
+                .map { it to camelWords(it.className).count { w -> w in words } }
+                .filter { it.second > 0 }
+                .sortedByDescending { it.second }
+                .take(MAX_CANDIDATES)
+                .map { it.first }
+                .toList()
+        }
         return nodes.asSequence()
             .filter { it.listed }
             .filter { target.cls == null || classMatches(it.component, target.cls!!) || wanted != null }
@@ -82,6 +98,12 @@ object UiLocator {
         val distance = labels.minOfOrNull { distance(it.lowercase(), wanted.lowercase()) } ?: 500
         return classPenalty + distance
     }
+
+    private fun camelWords(name: String): Set<String> =
+        name.split(CAMEL).filter { it.length > 1 }.map { it.lowercase() }.toSet()
+
+    /** Word boundaries in a class name: `JTextField` is J, Text, Field. */
+    private val CAMEL = Regex("(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|[^A-Za-z0-9]+")
 
     private fun distance(a: String, b: String): Int {
         val prev = IntArray(b.length + 1) { it }

@@ -32,11 +32,11 @@ import java.awt.KeyboardFocusManager
 import java.awt.Point
 import java.awt.Window
 import java.awt.event.MouseEvent
+import java.awt.event.WindowEvent
 import java.util.Collections
 import javax.swing.AbstractButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
-import javax.swing.JList
 import javax.swing.RootPaneContainer
 import javax.swing.SwingUtilities
 import javax.swing.text.JTextComponent
@@ -99,7 +99,9 @@ class UiSession(
             reports += UiStepReport(i + 1, "$label: $line")
         }
         val snapshot = when {
-            failure != null -> render(withBounds = false, scopeOnly = true)
+            failure != null && windowId != null && withContext(edtAny) { listedWindows().isEmpty() } -> ""
+            failure != null -> render(withBounds = false, scopeOnly = true, topOnly = true)
+            mode == UiSnapshotMode.TREE -> render(withBounds = false)
             mode == UiSnapshotMode.FULL -> render(withBounds = true)
             mode == UiSnapshotMode.NONE -> ""
             else -> UiSnapshotDiff.diff(before.orEmpty(), render(withBounds = false)).ifEmpty { "(the snapshot did not change)" }
@@ -113,15 +115,24 @@ class UiSession(
         return withContext(edtAny) { scopeWindows().firstOrNull()?.let { t.picture(it, index, suffix) } }
     }
 
-    /** The snapshot text of the windows in scope. */
-    suspend fun render(withBounds: Boolean, scopeOnly: Boolean = false): String = withContext(edtAny) {
+    /**
+     * The snapshot text of the listed windows, or of the windows in scope. [topOnly] keeps the topmost one and names
+     * the others, which is what a failed step needs: the window its target was looked for in.
+     */
+    suspend fun render(withBounds: Boolean, scopeOnly: Boolean = false, topOnly: Boolean = false): String = withContext(edtAny) {
+        val windows = (if (scopeOnly) scopeWindows() else listedWindows())
+        if (windows.isEmpty()) return@withContext "(window_id $windowId is no longer showing)"
         var budget = maxNodes
-        windowModels(scopeOnly).joinToString("\n\n") { wm ->
-            val text = UiSnapshotFormatter.format(header(wm.window, wm.model), wm.model.root, { registry.refFor(it.component) },
+        val shown = if (topOnly) windows.take(1) else windows
+        val text = shown.joinToString("\n\n") { window ->
+            val model = UiModel.build(window)
+            val text = UiSnapshotFormatter.format(header(window, model), model.root, { registry.refFor(it.component) },
                 budget.coerceAtLeast(1), withBounds)
             budget -= text.listedCount
             text.text
         }
+        val others = windows.drop(shown.size)
+        if (others.isEmpty()) text else text + "\n\nalso showing: " + others.joinToString("; ") { describeWindow(it) }
     }
 
     /** Runs one step and returns its report line; throws [UiStepFailure] when it cannot do what it asks. */
@@ -153,15 +164,13 @@ class UiSession(
             }
             UiAction.TYPE -> {
                 val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = true) }
-                val report = input.type(step.text!!, node?.component)
+                val report = input.type(step.text!!, node?.component ?: keyRecipient())
                 "typed ${step.text!!.length} character(s) into ${withContext(edtAny) { describeComponent(report.recipient) }}"
             }
             UiAction.FILL -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
-                val field = withContext(edtAny) {
-                    (node.component as? JComboBox<*>)?.takeIf { it.isEditable }?.editor?.editorComponent as? JTextComponent
-                        ?: node.component as? JTextComponent
-                } ?: throw UiStepFailure("${describe(node)} is not a text field")
+                val field = withContext(edtAny) { textField(node.component) }
+                    ?: throw UiStepFailure("${describe(node)} is not a text field and holds no single one")
                 withContext(edtAny) { field.selectAll() }
                 if (step.text!!.isEmpty()) input.press(UiInput.parseKeys("DELETE"), field) else input.type(step.text!!, field)
                 val value = withContext(edtAny) { field.text }
@@ -170,7 +179,7 @@ class UiSession(
             UiAction.PRESS -> {
                 val chord = UiInput.parseKeys(step.keys!!)
                 val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = true) }
-                val report = input.press(chord, node?.component)
+                val report = input.press(chord, node?.component ?: keyRecipient())
                 "pressed ${step.keys} on ${withContext(edtAny) { describeComponent(report.recipient) }}"
             }
             UiAction.CHECK, UiAction.UNCHECK -> {
@@ -192,60 +201,46 @@ class UiSession(
         }
     }
 
-    private suspend fun selectStep(step: UiStep): String {
-        val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
-        var host = node.component
-        if (host is JComboBox<*>) {
-            val combo = host
-            // An editable combo box's centre is its text field, so open it by its arrow button when it has one.
-            val arrow = withContext(edtAny) { combo.components.firstOrNull { it is AbstractButton && it.isShowing } }
-            val listsBefore = withContext(edtAny) { showingLists().toSet() }
-            input.click(arrow ?: combo, MouseEvent.BUTTON1, 1, 0, null)
-            host = waitForComboList(combo, listsBefore) ?: throw UiStepFailure("clicked ${describe(node)}, but no list of its items appeared")
-        }
-        val list = host
-        val (index, rows) = withContext(edtAny) {
-            val rows = UiRows.rows(list) ?: throw UiStepFailure("${describe(node)} has no rows; select works on lists, trees, tables and combo boxes")
-            val index = step.index ?: UiRows.indexOf(rows, step.row!!)
-            index to rows
-        }
-        if (index !in rows.indices) {
-            throw UiStepFailure("no row ${step.row?.let { "\"$it\"" } ?: "#${step.index}"} in ${describe(node)}; rows: ${rows.take(20).joinToString(" | ")}${if (rows.size > 20) " | +${rows.size - 20}" else ""}")
-        }
-        val bounds = withContext(edtAny) { UiRows.reveal(list, index) } ?: throw UiStepFailure("row $index of ${describe(node)} has no bounds")
-        val click = input.click(list, MouseEvent.BUTTON1, 1, 0, Point(bounds.x + minOf(bounds.width / 2, 40), bounds.y + bounds.height / 2))
-        return "selected row \"${rows[index]}\"" + if (click.pressed == null) "; no component took the press" else ""
-    }
-
-    private suspend fun waitForComboList(combo: JComboBox<*>, listsBefore: Set<JList<*>>): JList<*>? {
-        val started = TimeSource.Monotonic.markNow()
-        while (started.elapsedNow().inWholeMilliseconds < COMBO_POPUP_MS) {
-            withContext(edtAny) { comboList(combo, listsBefore) }?.let { return it }
-            delay(POLL_MS / 2)
-        }
-        return null
+    /**
+     * The field a fill types into: [c] itself, an editable combo box's editor, or the one editable text field inside
+     * a wrapper such as `SearchTextField`. EDT.
+     */
+    private fun textField(c: Component): JTextComponent? {
+        (c as? JTextComponent)?.let { return it }
+        (c as? JComboBox<*>)?.takeIf { it.isEditable }?.let { return it.editor?.editorComponent as? JTextComponent }
+        return UIUtil.findComponentsOfType(c as? JComponent ?: return null, JTextComponent::class.java)
+            .filter { it.isShowing && it.isEditable }
+            .singleOrNull()
     }
 
     /**
-     * The item list of an open combo box popup: a showing list over the combo's own model, else the one list that
-     * appeared since the click. A list that showed before the click belongs to something else.
+     * Selects a row through the component's selection, as the keyboard does. A click would also activate the row in
+     * a list that acts on a click, such as Find Action's results, and a combo box would need its popup opened.
      */
-    private fun comboList(combo: JComboBox<*>, listsBefore: Set<JList<*>>): JList<*>? {
-        val lists = showingLists()
-        return lists.firstOrNull { it.model === combo.model } ?: (lists - listsBefore).singleOrNull()
+    private suspend fun selectStep(step: UiStep): String {
+        val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
+        val host = node.component
+        return withContext(edtAny) {
+            val rows = UiRows.rows(host) ?: throw UiStepFailure("${describe(node)} has no rows; select works on lists, trees, tables and combo boxes")
+            val index = step.index ?: UiRows.find(host, rows, step.row!!)
+            if (index !in rows.indices) {
+                val shown = rows.withIndex().take(20).joinToString("; ") { (i, row) -> "#$i $row" }
+                throw UiStepFailure("no row ${step.row?.let { "\"$it\"" } ?: "#${step.index}"} in ${describe(node)}; rows: $shown" +
+                    if (rows.size > 20) "; +${rows.size - 20} more" else "")
+            }
+            UiRows.select(host, index)
+            if (!UiRows.isSelected(host, index)) throw UiStepFailure("${describe(node)} did not take the selection of row #$index")
+            "selected row #$index \"${rows[index]}\" in ${describe(node)}"
+        }
     }
-
-    private fun showingLists(): List<JList<*>> = Window.getWindows().filter { it.isShowing }.flatMap { w ->
-        (w as? RootPaneContainer)?.rootPane?.let { UIUtil.findComponentsOfType(it, JList::class.java) }.orEmpty()
-    }.filter { it.isShowing }
 
     private suspend fun closeStep(step: UiStep): String {
         val window = if (step.target != null) {
             val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
             withContext(edtAny) { node.component as? Window ?: SwingUtilities.getWindowAncestor(node.component) }
         } else {
-            withContext(edtAny) { scopeWindows().firstOrNull { it !is Frame } }
-        } ?: throw UiStepFailure("there is no dialog or popup to close")
+            withContext(edtAny) { scopeWindows().firstOrNull { it !== projectFrame() } }
+        } ?: throw UiStepFailure("there is no dialog, popup or separate window to close")
         val closed = withContext(edtAny) {
             val inside = (window as? RootPaneContainer)?.rootPane
                 ?.let { UIUtil.findComponentsOfType(it, JComponent::class.java).lastOrNull() }
@@ -255,13 +250,20 @@ class UiSession(
             when {
                 dialog != null -> {
                     ApplicationManager.getApplication().invokeLater({ dialog.doCancelAction() }, ModalityState.any())
-                    "cancelled dialog \"$title\""
+                    "cancelled the dialog"
                 }
                 popup != null -> {
                     ApplicationManager.getApplication().invokeLater({ popup.cancel() }, ModalityState.any())
-                    "closed popup ${WindowIdUtil.compute(window, window)}"
+                    "cancelled the popup"
                 }
-                else -> throw UiStepFailure("window \"$title\" is not a dialog or popup the IDE can close")
+                // A separate window such as Settings closes as by its title bar's close button.
+                window is Frame && window !== projectFrame() -> {
+                    ApplicationManager.getApplication().invokeLater(
+                        { window.dispatchEvent(WindowEvent(window, WindowEvent.WINDOW_CLOSING)) }, ModalityState.any(),
+                    )
+                    "asked the window to close"
+                }
+                else -> throw UiStepFailure("window \"$title\" is not a dialog, popup or separate window the IDE can close")
             }
         }
         UiSettle.barrier()
@@ -300,14 +302,14 @@ class UiSession(
     }
 
     private suspend fun snapshotStep(step: UiStep): String {
-        if (step.target == null) return "\n" + render(withBounds = true)
+        if (step.target == null) return "\n" + render(withBounds = false)
         val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
         return withContext(edtAny) {
             val window = node.component as? Window ?: SwingUtilities.getWindowAncestor(node.component)
             val wrapper = node.copy(children = listOf(node))
             "\n" + UiSnapshotFormatter.format(
                 header(window, UiModelResult(node, "subtree", null)),
-                wrapper, { registry.refFor(it.component) }, maxNodes, withBounds = true,
+                wrapper, { registry.refFor(it.component) }, maxNodes, withBounds = false,
             ).text
         }
     }
@@ -318,7 +320,10 @@ class UiSession(
         val connection = ApplicationManager.getApplication().messageBus.connect()
         connection.subscribe(AnActionListener.TOPIC, object : AnActionListener {
             override fun beforeActionPerformed(action: AnAction, event: AnActionEvent) {
-                actions += ActionManager.getInstance().getId(action) ?: action.javaClass.name
+                // An action made on the fly, such as a tool window button's, has no id: its text says what it is.
+                actions += ActionManager.getInstance().getId(action)
+                    ?: event.presentation.text?.takeIf { it.isNotBlank() }?.let { "\"$it\"" }
+                    ?: action.javaClass.simpleName
             }
         })
         val windowsBefore = UiSettle.showingWindows()
@@ -336,8 +341,9 @@ class UiSession(
             buildList {
                 add(line)
                 if (actions.isNotEmpty()) add("IDE actions: ${actions.joinToString()}")
-                (windowsAfter - windowsBefore).forEach { add("opened ${describeWindow(it)}") }
-                (windowsBefore - windowsAfter).forEach { add("closed ${describeWindow(it)}") }
+                // A tooltip comes and goes with the mouse, so it is not something the step opened.
+                (windowsAfter - windowsBefore).filterNot(UiWindows::isTooltip).forEach { add("opened ${describeWindow(it)}") }
+                (windowsBefore - windowsAfter).filterNot(UiWindows::isTooltip).forEach { add("closed ${describeWindow(it)}") }
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner?.let { add("focus: ${describeComponent(it)}") }
             }.joinToString("; ")
         }
@@ -357,7 +363,7 @@ class UiSession(
                     "${m.matches.size} controls match; add nth, a class or a ref: " +
                         m.matches.take(10).joinToString("; ") { describe(it) }
                 )
-                is UiMatch.None -> Unit
+                is UiMatch.None -> if (windowId != null && withContext(edtAny) { listedWindows().isEmpty() }) break
             }
             if (started.elapsedNow().inWholeMilliseconds >= timeoutMs) break
             delay(POLL_MS)
@@ -365,7 +371,8 @@ class UiSession(
         return when (val m = last) {
             is UiMatch.One -> throw UiStepFailure("${describe(m.node)} stayed disabled for $timeoutMs ms")
             is UiMatch.None -> throw UiStepFailure(
-                "no match after $timeoutMs ms" + modalNote() +
+                (if (withContext(edtAny) { listedWindows().isEmpty() }) "window_id $windowId is no longer showing" else "no match after $timeoutMs ms") +
+                    modalNote() +
                     if (m.candidates.isEmpty()) "" else "; nearest: " + m.candidates.joinToString("; ") { describe(it) }
             )
             is UiMatch.Many -> error("unreachable")
@@ -406,13 +413,29 @@ class UiSession(
         return all.filter { w -> w === modal || generateSequence(w.owner) { it.owner }.any { it === modal } }
     }
 
+    /** The listed windows: the one [windowId] names, none once it closed, else the project's. EDT. */
     private fun listedWindows(): List<Window> {
         if (windowId != null) {
-            val c = findComponentByWindowId(windowId) ?: throw UiStepFailure("no IDE window has window_id $windowId")
-            return listOf(c as? Window ?: SwingUtilities.getWindowAncestor(c) ?: throw UiStepFailure("window_id $windowId is not in a window"))
+            val c = findComponentByWindowId(windowId) ?: return emptyList()
+            return listOf(c as? Window ?: SwingUtilities.getWindowAncestor(c) ?: return emptyList())
         }
-        val frame = WindowManager.getInstance().getFrame(project) ?: throw UiStepFailure("project ${project.name} has no frame")
-        return UiWindows.projectWindows(frame)
+        return UiWindows.projectWindows(project, projectFrame())
+    }
+
+    private fun projectFrame(): Window =
+        WindowManager.getInstance().getFrame(project) ?: throw UiStepFailure("project ${project.name} has no frame")
+
+    /**
+     * Where a key step without a target goes: the focus owner when it is in a window in scope, else the control that
+     * last had the focus in the topmost window, which is where the keyboard goes when a user brings it to front.
+     * The IDE is often not the active application while an agent drives it, and then nothing has the focus.
+     */
+    private suspend fun keyRecipient(): Component = withContext(edtAny) {
+        val scope = scopeWindows()
+        val owner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+        owner?.takeIf { SwingUtilities.getWindowAncestor(it) in scope }
+            ?: scope.firstNotNullOfOrNull { it.mostRecentFocusOwner }
+            ?: throw UiStepFailure("no control has the keyboard focus in the project's windows; give the step a target")
     }
 
     private fun windowModels(scopeOnly: Boolean): List<WindowModel> =
@@ -479,7 +502,6 @@ class UiSession(
 
     companion object {
         private const val POLL_MS = 100L
-        private const val COMBO_POPUP_MS = 1_500L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L
     }

@@ -27,6 +27,7 @@ object UiComponentFacts {
 
     private val TAGS = Regex("<[^>]+>")
     private val SPACES = Regex("\\s+")
+    private val ENTITY = Regex("&(#[xX][0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos|nbsp);")
 
     fun simpleClassName(c: Component): String {
         val type = if (c.javaClass.isAnonymousClass) c.javaClass.superclass else c.javaClass
@@ -80,6 +81,19 @@ object UiComponentFacts {
         return shown ?: clean(item.toString()).takeIf { it.isNotEmpty() }
     }
 
-    /** HTML tags removed, whitespace collapsed. */
-    fun clean(raw: String): String = raw.replace(TAGS, " ").replace(SPACES, " ").trim()
+    /** HTML tags removed, character references such as `&#39;` and `&amp;` decoded, whitespace collapsed. */
+    fun clean(raw: String): String = raw.replace(TAGS, " ").replace(ENTITY, ::decode).replace(SPACES, " ").trim()
+
+    private fun decode(m: MatchResult): String = when (val e = m.groupValues[1]) {
+        "amp" -> "&"
+        "lt" -> "<"
+        "gt" -> ">"
+        "quot" -> "\""
+        "apos" -> "'"
+        "nbsp" -> " "
+        else -> {
+            val code = if (e.startsWith("#x", ignoreCase = true)) e.drop(2).toIntOrNull(16) else e.drop(1).toIntOrNull()
+            code?.takeIf { Character.isValidCodePoint(it) }?.let { String(Character.toChars(it)) } ?: m.value
+        }
+    }
 }

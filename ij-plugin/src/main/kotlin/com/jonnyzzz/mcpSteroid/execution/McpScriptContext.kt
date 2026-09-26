@@ -593,8 +593,8 @@ interface McpUi {
     fun cls(cls: String): UiQuery = UiQuery(cls = cls)
     fun xpath(xpath: String): UiQuery = UiQuery(xpath = xpath)
 
-    /** The snapshot text of the project's showing windows, topmost first, with refs and screen bounds. */
-    suspend fun snapshot(): String
+    /** The snapshot text of the project's showing windows, topmost first, with refs, and screen bounds when [bounds]. */
+    suspend fun snapshot(bounds: Boolean = false): String
 
     /** The component [target] addresses, waiting up to [timeoutMs] for one showing match. */
     suspend fun find(target: UiQuery, timeoutMs: Long = 5_000): java.awt.Component
@@ -606,7 +606,11 @@ interface McpUi {
     suspend fun press(keys: String, target: UiQuery? = null): String
     suspend fun check(target: UiQuery): String
     suspend fun uncheck(target: UiQuery): String
+    /** Selects the row whose text is [row], else the one row that contains it, without clicking it. */
     suspend fun select(target: UiQuery, row: String): String
+
+    /** Selects row [index], from 0, as a snapshot numbers the rows. */
+    suspend fun select(target: UiQuery, index: Int): String
     suspend fun close(target: UiQuery? = null): String
     suspend fun waitFor(target: UiQuery, timeoutMs: Long = 5_000): String
     suspend fun waitForWindow(title: String, timeoutMs: Long = 5_000): String

@@ -16,7 +16,7 @@ class UiToolSpecSchemaTest {
         assertStringProperty(schema, "reason")
         assertStringProperty(schema, "window_id")
         assertStringProperty(schema, "steps")
-        assertEnumProperty(schema, "snapshot", "full", "diff", "none")
+        assertEnumProperty(schema, "snapshot", "tree", "full", "diff", "none")
         assertIntegerProperty(schema, "max_nodes")
         assertBooleanProperty(schema, "trace")
     }

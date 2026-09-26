@@ -14,6 +14,10 @@ data class UiNode(
     val states: Set<UiState>,
     val interactive: Boolean,
     val children: List<UiNode>,
+    /** The rows in view, for a list, tree or table. */
+    val rows: UiRowsView? = null,
+    /** The text of the label or checkbox just before an unnamed field, which a user reads as its caption. */
+    val label: String? = null,
 ) {
     /** Listed in a snapshot: it shows something, or an agent can act on it. */
     val listed: Boolean get() = interactive || !name.isNullOrBlank() || text.isNotEmpty() || !tooltip.isNullOrBlank()

@@ -74,6 +74,12 @@ class UiLocatorTest {
     }
 
     @Test
+    fun `a class that matches nothing suggests controls whose class shares its words`() {
+        val none = UiLocator.find(listOf(root), UiTarget(cls = "SearchTextField")) as UiMatch.None
+        assertEquals(listOf<Any>(field), none.candidates.map { it.component })
+    }
+
+    @Test
     fun `a label that shares its field's name loses to the field`() {
         val label = JLabel("Zoom:")
         val combo = JTextField("100%").apply { accessibleContext.accessibleName = "Zoom:" }

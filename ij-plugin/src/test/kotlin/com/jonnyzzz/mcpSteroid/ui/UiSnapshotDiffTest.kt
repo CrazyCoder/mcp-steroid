@@ -38,9 +38,28 @@ class UiSnapshotDiffTest {
     }
 
     @Test
-    fun `a window that closed shows as its removed header`() {
+    fun `a window that closed is one line`() {
         val after = "window w-9 \"uiprobe\" (frame) source=remote-driver\n- JPanel"
-        val diff = UiSnapshotDiff.diff("$before\n\n$after", after)
-        assertEquals(true, diff.startsWith("- window w-1 \"Settings\""))
+        assertEquals("- window w-1 \"Settings\" (dialog, modal) closed", UiSnapshotDiff.diff("$before\n\n$after", after))
+    }
+
+    @Test
+    fun `a window that opened is listed whole`() {
+        val frame = "window w-9 \"uiprobe\" (frame) source=remote-driver\n- JButton \"Run\" [ref=e5]"
+        assertEquals("+ $before", UiSnapshotDiff.diff(frame, "$before\n\n$frame"))
+    }
+
+    @Test
+    fun `wrapper panels and the memory indicator are no change, other windows are named`() {
+        val frame = "window w-9 \"uiprobe\" (frame) source=remote-driver\n- JPanel\n  - MemoryUsagePanelImpl \"Memory Usage: 500M\" [ref=e9]"
+        val after = before.replace("[ref=e2] [disabled]", "[ref=e2]").replace("- JPanel", "- DialogPanel")
+        assertEquals(
+            """
+            window w-1 "Settings" (dialog, modal):
+            - JButton "Apply" [ref=e2] [disabled]
+            + JButton "Apply" [ref=e2]
+            """.trimIndent(),
+            UiSnapshotDiff.diff("$before\n\n$frame", "$after\n\n" + frame.replace("500M", "700M")),
+        )
     }
 }

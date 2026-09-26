@@ -26,6 +26,7 @@ object CodeWrapperForCompilation {
         "import com.intellij.psi.search.searches.*",
         "import com.intellij.psi.util.*",
         "import kotlinx.coroutines.*",
+        "import com.jonnyzzz.mcpSteroid.execution.UiQuery",
         "import kotlin.time.Duration.Companion.seconds",
         "import kotlin.time.Duration.Companion.minutes",
     )

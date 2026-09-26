@@ -33,6 +33,7 @@ class FallbackUiWalker(
             value = UiComponentFacts.value(c),
             states = UiComponentFacts.states(c),
             interactive = UiComponentFacts.interactive(c),
+            rows = UiRows.view(c),
             children = kids,
         )
     }

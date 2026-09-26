@@ -34,7 +34,11 @@ class UiToolHandlerIJ : UiToolHandler {
         } catch (e: IllegalArgumentException) {
             return builder.addTextContent("ERROR: ${e.message}").markAsError().build()
         }
-        val mode = params.snapshot ?: if (steps.isEmpty()) UiSnapshotMode.FULL else UiSnapshotMode.DIFF
+        // Without steps there is nothing to diff against, so a diff asked for then is the snapshot itself.
+        val mode = when {
+            steps.isEmpty() && (params.snapshot == null || params.snapshot == UiSnapshotMode.DIFF) -> UiSnapshotMode.TREE
+            else -> params.snapshot ?: UiSnapshotMode.DIFF
+        }
         val trace = if (params.trace) UiTrace(project.executionStorage.resolveExecutionDir(executionId).resolve("trace")) else null
         val session = UiSession(project, params.windowId, params.maxNodes, trace)
         // The steps' own waits bound the call, plus an allowance for delivery and settling per step.

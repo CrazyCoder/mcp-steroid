@@ -18,7 +18,9 @@ class UiSnapshotFormatterTest {
         states: Set<UiState> = emptySet(),
         interactive: Boolean = false,
         kids: List<UiNode> = emptyList(),
-    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids)
+        rows: UiRowsView? = null,
+        label: String? = null,
+    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids, rows, label)
 
     @Test
     fun `listed components get a line with ref and states, wrappers with one child are skipped`() {
@@ -64,6 +66,51 @@ class UiSnapshotFormatterTest {
         ))
         val out = UiSnapshotFormatter.format(header, tree, { "e7" }, maxNodes = 400, withBounds = false)
         assertTrue(out.text, out.text.contains("text=row1|row2|row3|row4|row5|row6|row7|row8|+4"))
+    }
+
+    @Test
+    fun `rows in view are listed under their tree by index and depth, in place of the painted text`() {
+        val rows = UiRowsView(
+            listOf(UiRow(3, "Editor", 0, false, true), UiRow(4, "General", 1, true, false), UiRow(5, "Font", 1, false, null)),
+            total = 20,
+        )
+        val tree = node("JPanel", kids = listOf(
+            node("MyTree", name = "Settings categories", text = listOf("Editor", "General"), interactive = true, rows = rows),
+        ))
+        val out = UiSnapshotFormatter.format(header, tree, { "e1" }, maxNodes = 400, withBounds = false)
+        assertEquals(
+            """
+            window w-1 "Settings" (dialog, modal) source=remote-driver
+            - MyTree "Settings categories" [ref=e1]
+              rows 3-5 of 20 in view; select takes any row by text or index
+              #3 Editor [expanded]
+                #4 General [collapsed] [selected]
+                #5 Font
+            """.trimIndent(),
+            out.text,
+        )
+    }
+
+    @Test
+    fun `a leaf that repeats its parent's name is not listed, a caption shows as a label`() {
+        val tree = node("JPanel", kids = listOf(
+            node("EditorTabLabel", name = "Main.kt, Kotlin file", interactive = true, kids = listOf(
+                node("SimpleColoredComponent", name = "Main.kt, Kotlin file", text = listOf("Main.kt")),
+                node("InplaceButton", name = "Close", interactive = true),
+            )),
+            node("ComboBox", value = "Absolute", interactive = true, label = "Show line numbers:"),
+        ))
+        var n = 0
+        val out = UiSnapshotFormatter.format(header, tree, { "e${++n}" }, maxNodes = 400, withBounds = false)
+        assertEquals(
+            """
+            window w-1 "Settings" (dialog, modal) source=remote-driver
+            - EditorTabLabel "Main.kt, Kotlin file" [ref=e1]
+              - InplaceButton "Close" [ref=e2]
+            - ComboBox label="Show line numbers:" [ref=e3] value="Absolute"
+            """.trimIndent(),
+            out.text,
+        )
     }
 
     @Test

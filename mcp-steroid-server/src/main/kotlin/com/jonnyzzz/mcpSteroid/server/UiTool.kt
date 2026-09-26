@@ -18,7 +18,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
 /** What a `steroid_ui` response shows of the UI after its steps. */
-enum class UiSnapshotMode(val wire: String) { FULL("full"), DIFF("diff"), NONE("none") }
+enum class UiSnapshotMode(val wire: String) { TREE("tree"), FULL("full"), DIFF("diff"), NONE("none") }
 
 /**
  * The steroid_ui MCP tool: a snapshot of the IDE's UI with refs, and steps that act on it.
@@ -30,18 +30,21 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         Read and drive the IDE's UI by what it shows: dialogs, popups, tool windows, Settings pages.
 
         With no steps it returns a snapshot of the project's showing windows, topmost first: popups and
-        dialogs, then the project frame. Each line is one control: its class, accessible name in quotes,
-        a ref such as [ref=e12], states such as [disabled] or [checked], value="..." for text fields and
-        combo boxes, text=... for text it paints (tree and list rows, tabs, editor text), and tip="..." for
-        its tooltip. A ref stays valid while its control is showing.
+        dialogs, separate windows such as Settings, then the project frame. Each line is one control: its
+        class, accessible name in quotes, label="..." for the caption before an unnamed field, a ref such
+        as [ref=e12], states such as [disabled] or [checked], value="..." for text fields and combo boxes,
+        text=... for text it paints (tabs, editor text), and tip="..." for its tooltip. Under a list, tree
+        or table come its rows in view, one per line: #index, the row text indented by tree depth, and
+        [expanded], [collapsed] or [selected]. A ref stays valid while its control is showing.
 
         Pass window_id (from steroid_list_windows) to snapshot one window, and snapshot=full to add each
         control's screen bounds, which steroid_input accepts as click:Left@screen:<x>,<y>.
 
         Steps (a JSON array in `steps`) act on controls in order and report what each one caused: where the
         press landed, whether a button's action ran, IDE actions, windows opened or closed, the new focus. The
-        response then shows what changed in the snapshot. The first failing step stops the run and says what
-        the IDE showed instead, with the nearest matching controls.
+        response then shows what changed: a closed window as one line, an opened window whole, and the
+        changed lines of the others. The first failing step stops the run and shows the topmost window, with
+        the nearest matching controls.
 
         A target is "ref":"e12", or any of "name" (exact accessible name), "text" (part of the text a
         control shows), "class" (class or superclass simple name, such as JTextComponent), "xpath" (over the
@@ -51,13 +54,18 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
 
         - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}
         - {"action":"hover", target}
-        - {"action":"type", "text":"...", optional target}: types into the target, or the focused control
+        - {"action":"type", "text":"...", optional target}: types into the target, or the control that has
+          the focus in the topmost window
         - {"action":"fill", target, "text":"..."}: replaces a text field's text
           (in type and fill, "text" is the text to enter, so target the field by ref, name or class)
         - {"action":"press", "keys":"ENTER" or "ctrl+shift+A", optional target}: keymap shortcuts run
         - {"action":"check"|"uncheck", target}: clicks a checkbox only when its state differs
-        - {"action":"select", target, "row":"text" or "index":N}: a list, tree or table row, or a combo item
-        - {"action":"close", optional target}: cancels the dialog or popup (the topmost one without a target)
+        - {"action":"select", target, "row":"text" or "index":N}: selects a list, tree or table row, or a
+          combo item, without clicking it, so a list that acts on a click does not act. "row" is the row's text,
+          else part of it, and "A > B > C" is a tree path; several matching rows are an error that lists them
+          by index. A tree row shows while its parent is expanded: press RIGHT on the tree to expand one
+        - {"action":"close", optional target}: cancels the dialog or popup, or closes a separate window such
+          as Settings (the topmost one without a target)
         - {"action":"wait", "for":"visible|hidden|enabled", target} or {"for":"window","title":"..."} or {"for":"idle"}
         - {"action":"snapshot", optional target}: adds a snapshot of the target's subtree or of all windows
 
@@ -86,10 +94,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
 
     val snapshot = InputSchemaElement.param("snapshot")
         .description(
-            "The snapshot in the response: 'full' (with screen bounds), 'diff' (what the steps changed) or " +
-                "'none'. Default: 'full' without steps, 'diff' with steps."
+            "The snapshot in the response: 'tree' (the controls), 'full' (the controls with their screen " +
+                "bounds), 'diff' (what the steps changed) or 'none'. Default: 'tree' without steps, 'diff' with steps."
         )
-        .cliSynopsis("full | diff | none")
+        .cliSynopsis("tree | full | diff | none")
         .enumString(UiSnapshotMode.entries.associateBy { it.wire })
         .registerToSchema()
 

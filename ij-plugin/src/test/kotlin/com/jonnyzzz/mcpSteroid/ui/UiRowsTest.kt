@@ -2,16 +2,28 @@
 package com.jonnyzzz.mcpSteroid.ui
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.awt.Component
+import java.awt.event.MouseAdapter
+import java.awt.event.MouseEvent
 import javax.swing.DefaultListCellRenderer
+import javax.swing.JComboBox
 import javax.swing.JList
 import javax.swing.JTable
 import javax.swing.JTree
+import javax.swing.SwingUtilities
 import javax.swing.tree.DefaultMutableTreeNode
 
 class UiRowsTest {
+    /** Trees repaint on selection and expansion, which IntelliJ's tree UI asserts happens on the EDT. */
+    private fun <T> onEdt(block: () -> T): T {
+        var result: Result<T>? = null
+        SwingUtilities.invokeAndWait { result = runCatching(block) }
+        return result!!.getOrThrow()
+    }
+
     @Test
     fun `list rows are read through the renderer`() {
         val list = JList(arrayOf("a", "b")).apply {
@@ -41,14 +53,65 @@ class UiRowsTest {
 
     @Test
     fun `a row is found by exact text before substring`() {
-        assertEquals(1, UiRows.indexOf(listOf("Editor Tabs", "Editor"), "Editor"))
-        assertEquals(0, UiRows.indexOf(listOf("Editor Tabs", "Keymap"), "Tabs"))
-        assertEquals(-1, UiRows.indexOf(listOf("Keymap"), "Editor"))
+        val list = JList(arrayOf("Editor Tabs", "Editor", "Keymap"))
+        assertEquals(1, UiRows.find(list, UiRows.rows(list)!!, "Editor"))
+        assertEquals(2, UiRows.find(list, UiRows.rows(list)!!, "map"))
+        assertEquals(-1, UiRows.find(list, UiRows.rows(list)!!, "Plugins"))
     }
 
     @Test
-    fun `a revealed list row has bounds`() {
-        val list = JList(arrayOf("a", "b")).apply { setSize(100, 100) }
-        assertNotNull(UiRows.reveal(list, 1))
+    fun `several matching rows are an error that lists them by index`() {
+        val list = JList(arrayOf("Show Line Numbers", "Keymap", "Show line numbers: Settings"))
+        val e = assertThrows(UiStepFailure::class.java) { UiRows.find(list, UiRows.rows(list)!!, "Show") }
+        assertTrue(e.message, e.message!!.contains("#0 Show Line Numbers") && e.message!!.contains("#2 Show line numbers: Settings"))
+    }
+
+    @Test
+    fun `a tree row is found by its path`() {
+        val root = DefaultMutableTreeNode("root").apply {
+            add(DefaultMutableTreeNode("Appearance & Behavior").apply { add(DefaultMutableTreeNode("Appearance")) })
+            add(DefaultMutableTreeNode("Editor").apply { add(DefaultMutableTreeNode("Appearance")) })
+        }
+        onEdt {
+            val tree = JTree(root).apply { isRootVisible = false; expandRow(0); expandRow(2) }
+            val rows = UiRows.rows(tree)!!
+            assertEquals(listOf("Appearance & Behavior", "Appearance", "Editor", "Appearance"), rows)
+            assertEquals(3, UiRows.find(tree, rows, "Editor > Appearance"))
+            assertThrows(UiStepFailure::class.java) { UiRows.find(tree, rows, "Appearance") }
+        }
+    }
+
+    @Test
+    fun `select sets the selection without a click`() {
+        val list = JList(arrayOf("a", "b", "c"))
+        var clicks = 0
+        list.addMouseListener(object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent) { clicks++ }
+        })
+        UiRows.select(list, 2)
+        assertTrue(UiRows.isSelected(list, 2))
+        assertEquals(0, clicks)
+    }
+
+    @Test
+    fun `a combo box's items are its rows and select picks one`() {
+        val combo = JComboBox(arrayOf("Absolute", "Relative", "Hybrid"))
+        assertEquals(listOf("Absolute", "Relative", "Hybrid"), UiRows.rows(combo))
+        UiRows.select(combo, 1)
+        assertEquals("Relative", combo.selectedItem)
+    }
+
+    @Test
+    fun `the view of a tree has depth, expansion and selection`() {
+        val root = DefaultMutableTreeNode("root").apply {
+            add(DefaultMutableTreeNode("src").apply { add(DefaultMutableTreeNode("Main.kt")) })
+            add(DefaultMutableTreeNode("build.gradle"))
+        }
+        val view = onEdt { UiRows.view(JTree(root).apply { expandRow(1); setSelectionRow(2) })!! }
+        assertEquals(4, view.total)
+        assertEquals(
+            listOf(UiRow(0, "root", 0, false, true), UiRow(1, "src", 1, false, true), UiRow(2, "Main.kt", 2, true, null), UiRow(3, "build.gradle", 1, false, null)),
+            view.rows,
+        )
     }
 }

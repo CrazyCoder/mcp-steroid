@@ -16,13 +16,25 @@ helpers do not cover.
 
 ## Snapshot and act with steroid_ui
 
-`steroid_ui` without steps lists the project's showing windows, topmost first. Each line is one control:
-class, accessible name, `[ref=e12]`, states such as `[disabled]` or `[checked]`, `value="..."` for text
-fields and combo boxes, `text=...` for the text it paints (tree and list rows, tabs), and `tip="..."`.
+`steroid_ui` without steps lists the project's showing windows, topmost first, including separate
+windows such as Settings. Each line is one control: class, accessible name, `label="..."` for the caption
+before an unnamed field, `[ref=e12]`, states such as `[disabled]` or `[checked]`, `value="..."` for text
+fields and combo boxes, `text=...` for the text it paints (tabs, editor text), and `tip="..."`. A list,
+tree or table lists its rows in view under it, one per line, as `#index text`, indented by tree depth and
+marked `[expanded]`, `[collapsed]` or `[selected]`.
 
 Steps act by ref or by what a control shows, and each one reports what it caused: where the press landed,
 whether a button's action ran, the IDE actions, windows opened or closed. A click that opens a modal dialog
-returns while the dialog is up. The first failing step stops the run and names the nearest controls.
+returns while the dialog is up. The response then shows what changed: a closed window as one line, an
+opened window whole, and the changed lines of the rest. The first failing step stops the run, shows the
+topmost window and names the nearest controls.
+
+`select` sets a row through the list's selection, as the keyboard does, without clicking it: in Find
+Action or Search Everywhere a click would run the row. Press `ENTER` afterwards to act on the row. A row
+is found by its text, else by part of it, and a tree row also by its path such as
+`Editor > General > Appearance`; when several rows match, the step fails and lists them by index. `press`
+and `type` without a target go to the control that has the focus in the topmost window, even while the IDE
+is not the active application.
 
 For example, these steps open Settings, change two options on the Appearance page and cancel:
 
@@ -51,7 +63,7 @@ a dialog in its own EDT task and returns the dialog, so the script keeps running
 import com.intellij.openapi.options.ShowSettingsUtil
 
 val settings = ui.open { ShowSettingsUtil.getInstance().showSettingsDialog(project, "Editor") }
-println("opened: " + (settings as? java.awt.Dialog)?.title)
+println("opened: " + ((settings as? java.awt.Dialog)?.title ?: (settings as? java.awt.Frame)?.title))
 println(ui.select(ui.name("Settings categories"), "Appearance & Behavior"))
 println(ui.click(ui.name("Appearance") and ui.cls("ActionLink")))
 println(ui.check(ui.name("Compact mode")))
@@ -258,7 +270,8 @@ handles: invoke the action by ID instead of pressing its shortcut.
 
 ## Read tree, list and table rows
 
-The fixtures in the same plugin read rows through their cell renderers, so they return the text a row
+A `steroid_ui` snapshot lists the rows in view, and `select` takes any row by text or index. Read rows
+from a script when you need all of them. The fixtures in the same plugin read rows through their cell renderers, so they return the text a row
 shows. Give them a read-only AssertJ robot: their click methods drive `java.awt.Robot`, which moves the
 user's real mouse.
 
