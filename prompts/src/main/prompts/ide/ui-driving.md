@@ -56,8 +56,9 @@ image.
 ## Drive UI from a script with ui helpers
 
 The `ui` helpers of the script context run the same engine, with the same refs. Each action returns the
-line `steroid_ui` would report and throws when it cannot do what it asks. `ui.open { }` runs code that shows
-a dialog in its own EDT task and returns the dialog, so the script keeps running while it is up:
+line `steroid_ui` would report and throws when it cannot do what it asks; `ui.select` takes a row's text or
+its index. `ui.open { }` runs code that shows a dialog in its own EDT task and returns the dialog, so the
+script keeps running while it is up:
 
 ```kotlin
 import com.intellij.openapi.options.ShowSettingsUtil
@@ -271,9 +272,9 @@ handles: invoke the action by ID instead of pressing its shortcut.
 ## Read tree, list and table rows
 
 A `steroid_ui` snapshot lists the rows in view, and `select` takes any row by text or index. Read rows
-from a script when you need all of them. The fixtures in the same plugin read rows through their cell renderers, so they return the text a row
-shows. Give them a read-only AssertJ robot: their click methods drive `java.awt.Robot`, which moves the
-user's real mouse.
+from a script when you need all of them. The fixtures in the same plugin read rows through their cell
+renderers, so they return the text a row shows. Give them a read-only AssertJ robot: their click methods
+drive `java.awt.Robot`, which moves the user's real mouse.
 
 ```kotlin
 import com.intellij.ide.projectView.ProjectView

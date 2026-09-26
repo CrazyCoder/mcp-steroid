@@ -16,7 +16,8 @@ data class UiSnapshotText(val text: String, val listedCount: Int, val cut: Int)
  * The snapshot text: a header per window, then one line per listed component, indented by depth. An
  * unlisted component with one child adds no line, so wrapper panels do not deepen the tree, and a leaf that
  * only repeats its parent's name (a tab's title, a separator's label) adds none either. A list, tree or table
- * lists its rows in view under its line, one per row, by index. Call on the EDT.
+ * lists its rows in view under its line, one per row, by index. Call on the EDT when [format] is asked for
+ * bounds.
  */
 object UiSnapshotFormatter {
     private const val MAX_TEXT = 80
