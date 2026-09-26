@@ -163,6 +163,9 @@
     <applicationListeners>
         <listener class="com.jonnyzzz.mcpSteroid.server.SteroidsMcpServerAppLifecycleListener"
                   topic="com.intellij.ide.AppLifecycleListener"/>
+        <!-- The platform's UI freeze reports, surfaced to agents in every tool result -->
+        <listener class="com.jonnyzzz.mcpSteroid.freeze.FreezeListener"
+                  topic="com.intellij.diagnostic.IdePerformanceListener"/>
     </applicationListeners>
 
 </idea-plugin>

@@ -2,19 +2,28 @@
 package com.jonnyzzz.mcpSteroid.server.split
 
 import com.intellij.openapi.diagnostic.thisLogger
+import com.jonnyzzz.mcpSteroid.freeze.FreezeMonitor
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import kotlinx.coroutines.CancellationException
 
-/** Runs [delegate] locally or forwards the call to the backend, per [routeTool]. */
+/**
+ * Runs [delegate] locally or forwards the call to the backend, per [routeTool]. [FreezeMonitor.guard]
+ * reports a UI freeze in the result, and answers a call that a freeze holds up.
+ */
 class RoutedTool(
     private val delegate: McpTool,
     private val role: () -> SplitRole,
     private val bridge: () -> SplitFrontendBridge?,
 ) : McpTool by delegate {
     override suspend fun call(context: ToolCallContext): ToolCallResult {
+        val monitor = FreezeMonitor.getInstanceOrNull() ?: return route(context)
+        return monitor.guard(context.session) { route(context) }
+    }
+
+    private suspend fun route(context: ToolCallContext): ToolCallResult {
         val currentRole = role()
         val side = routeTool(currentRole, delegate.name, context.params.arguments)
         if (currentRole != SplitRole.FRONTEND) return delegate.call(context)

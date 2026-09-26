@@ -77,6 +77,7 @@ class ExecutionManager(
             val executionId = project.executionStorage.writeNewExecution(exec)
             withContext(CoroutineName("mcp-steroid-$executionId")) {
                 log.info("Starting execution $executionId-${exec.taskId}-${exec.reason}...")
+                RunningExecutions.register(executionId.executionId, coroutineContext.job)
 
                 // Broadcast execution started event for Demo Mode
                 executionEventBroadcaster.onExecutionStarted(
