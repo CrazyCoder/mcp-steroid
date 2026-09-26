@@ -96,7 +96,7 @@ default, where the editor and the actions live.
 | -- | -- |
 | `project_name`, `task_id`, `reason` | As in the other tools |
 | `op` | `rename`, `safe_delete`, `move`, `fix`, `intention`, `optimize_imports`, `reformat`, `usages` |
-| `file`, `line`, `column`, `symbol`, `nth` | The target, resolved as in `goto`, then to the named PSI element at the caret or the reference's target |
+| `file`, `line`, `column`, `symbol`, `nth` | The target, resolved as in `goto` except that `symbol` and `nth` skip occurrences in comments, then to the named PSI element at the caret or the reference's target |
 | `new_name` | `rename` |
 | `to` | `move`: the target directory |
 | `inspection`, `all` | `fix`: the inspection short name; `all` applies the fix to every problem in the file |
@@ -194,3 +194,16 @@ spec are updated when it does.
   resolution data) that smart mode does not cover, and references come back
   partial. The tool waits up to 30 s for them, once per long task, and names
   any that still run.
+- Usages in injected code, such as a JavaScript fence in Markdown, print the
+  host file's path and line.
+- `symbol` skips occurrences in comments: the first match of a JavaScript
+  function's name was in its JSDoc, where no element resolves. The response says
+  which occurrence it took when it skipped any.
+- A declaration of the same name that takes the target as its value, such as
+  the export `module.exports = { discoverIde }` (or `{ discoverIde: discoverIde }`,
+  `exports.discoverIde = discoverIde`), is an alias: callers of
+  `bridge.discoverIde` resolve to the property, not the function. `usages` lists
+  the alias's users too. A rename of the function expands the shorthand to
+  `discoverIde: findIde` and leaves those users alone, as the IDE does, so the
+  dry run lists them; a rename of the property renames the function with it
+  (the language's `prepareRenaming`), and the dry run says so.

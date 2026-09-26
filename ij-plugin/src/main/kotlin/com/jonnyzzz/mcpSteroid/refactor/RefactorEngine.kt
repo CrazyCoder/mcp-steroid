@@ -10,6 +10,7 @@ import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.codeInspection.QuickFix
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.LanguageImportStatements
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
@@ -29,6 +30,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
+import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
@@ -36,10 +38,12 @@ import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNameIdentifierOwner
 import com.intellij.psi.PsiNamedElement
 import com.intellij.psi.codeStyle.CodeStyleManager
+import com.intellij.psi.impl.source.resolve.reference.impl.PsiMultiReference
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.move.moveFilesOrDirectories.MoveFilesOrDirectoriesProcessor
+import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.refactoring.rename.RenameUtil
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessor
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessorDelegate
@@ -66,7 +70,12 @@ class RefactorFailure(message: String) : RuntimeException(message)
 class RefactorEngine(private val project: Project) {
     private val applier = RefactorApplier(project)
 
-    suspend fun run(params: RefactorParams): String = when (params.op) {
+    /** Which occurrence of the target's symbol was taken, when some were skipped. */
+    private var symbolNote: String? = null
+
+    suspend fun run(params: RefactorParams): String = op(params).let { text -> symbolNote?.let { "$it\n$text" } ?: text }
+
+    private suspend fun op(params: RefactorParams): String = when (params.op) {
         RefactorOp.USAGES -> usages(named(target(params)))
         RefactorOp.RENAME -> rename(params)
         RefactorOp.SAFE_DELETE -> safeDelete(params)
@@ -87,14 +96,33 @@ class RefactorEngine(private val project: Project) {
         return smartReadAction(project) {
             val psiFile = PsiManager.getInstance(project).findFile(file) ?: throw RefactorFailure("$path is not a source file the IDE parses")
             val document = FileDocumentManager.getInstance().getDocument(file) ?: throw RefactorFailure("$path has no text")
-            val located = params.line != null || params.symbol != null
-            val offset = if (!located) 0 else try {
-                CodeLocation.resolve(document.text, params.line, params.column, params.symbol, null, params.nth).first
+            val symbol = params.symbol
+            val located = params.line != null || symbol != null
+            val offset = try {
+                when {
+                    params.line != null -> CodeLocation.resolve(document.text, params.line, params.column).first
+                    symbol != null -> symbolOffset(psiFile, document, file, symbol, params.nth)
+                    else -> 0
+                }
             } catch (e: UiStepFailure) {
                 throw RefactorFailure(e.message ?: "no such location")
             }
             Target(file, psiFile, document, offset, located)
         }
+    }
+
+    /** The [nth] occurrence of [symbol] outside comments, since a match in a comment names no code. Read action. */
+    private fun symbolOffset(psiFile: PsiFile, document: Document, file: VirtualFile, symbol: String, nth: Int): Int {
+        val (comments, code) = CodeLocation.symbolStarts(document.text, symbol)
+            .partition { PsiTreeUtil.getParentOfType(psiFile.findElementAt(it), PsiComment::class.java, false) != null }
+        val what = "symbol \"$symbol\"" + if (comments.isEmpty()) "" else " outside comments (${comments.size} in comments)"
+        val start = CodeLocation.pick(code, nth, what)
+        if (comments.isNotEmpty()) {
+            val line = document.getLineNumber(start)
+            symbolNote = "took $symbol at ${CodeLocation.shortPath(project, file)}:${line + 1}:${start - document.getLineStartOffset(line) + 1}, " +
+                "skipping ${comments.size} occurrence(s) in comments"
+        }
+        return start
     }
 
     /** The declaration at the target: a reference's target, or the named element whose name is at the offset. */
@@ -139,15 +167,58 @@ class RefactorEngine(private val project: Project) {
         return UsageLine(CodeLocation.shortPath(project, file), line + 1, text.take(120))
     }
 
-    private suspend fun usageLines(named: Named): List<UsageLine> = smartReadAction(project) {
-        ReferencesSearch.search(named.element, GlobalSearchScope.projectScope(project)).findAll().mapNotNull { ref ->
-            val element = ref.element
-            val file = element.containingFile?.virtualFile ?: return@mapNotNull null
-            lineAt(file, element.textRange.startOffset + ref.rangeInElement.startOffset)
+    /** The line that holds [offset] in [element]'s file, in the host file for code injected in another. Read action. */
+    private fun lineAt(element: PsiElement, offset: Int): UsageLine? {
+        val injection = InjectedLanguageManager.getInstance(project)
+        val file = injection.getTopLevelFile(element)?.virtualFile ?: return null
+        return lineAt(file, injection.injectedToHost(element, offset))
+    }
+
+    private suspend fun usageLines(element: PsiElement): List<UsageLine> = smartReadAction(project) {
+        ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll().mapNotNull { ref ->
+            lineAt(ref.element, ref.element.textRange.startOffset + ref.rangeInElement.startOffset)
         }.distinct().sorted()
     }
 
-    private suspend fun usages(named: Named): String = named.description + listing("used on", usageLines(named))
+    /**
+     * The declarations of [element]'s name that a reference to it gives their value, so code reaches [element]
+     * through their name: a JavaScript export `{ name }`, `{ name: name }` or `exports.name = name`. The reference is
+     * the declaration's name, its value, or the right side of an assignment to it. Read action.
+     */
+    private fun aliases(element: PsiElement): List<PsiNamedElement> {
+        val name = (element as? PsiNamedElement)?.name ?: return emptyList()
+        return ReferencesSearch.search(element, GlobalSearchScope.projectScope(project)).findAll().mapNotNull { ref ->
+            val at = ref.element
+            val parent = at.parent ?: return@mapNotNull null
+            (generateSequence(at) { it.parent }.takeWhile { it.textRange == at.textRange } + parent + parent.children.asSequence())
+                .filterIsInstance<PsiNamedElement>().firstOrNull { it != element && it !is PsiFile && it.name == name }
+        }.distinct()
+    }
+
+    /** The declarations [element]'s own name refers to: the other side of [aliases]. Read action. */
+    private fun aliased(element: PsiElement): List<PsiNamedElement> {
+        val name = (element as? PsiNamedElement)?.name ?: return emptyList()
+        val offset = (element as? PsiNameIdentifierOwner)?.nameIdentifier?.textOffset ?: element.textOffset
+        val ref = element.containingFile?.findReferenceAt(offset) ?: return emptyList()
+        val refs = (ref as? PsiMultiReference)?.references?.toList() ?: listOf(ref)
+        return refs.mapNotNull { it.resolve() as? PsiNamedElement }.filter { it != element && it.name == name }.distinct()
+    }
+
+    /** The usages of the element, then those that reach it through an alias, and the declarations its name refers to. */
+    private suspend fun usages(named: Named): String {
+        val lines = usageLines(named.element)
+        val (aliases, aliased) = smartReadAction(project) {
+            aliases(named.element).map { it to describe(it) } to aliased(named.element).map { describe(it) }
+        }
+        return buildString {
+            append(named.description).append(listing("used on", lines))
+            for ((alias, description) in aliases) {
+                val through = usageLines(alias) - lines.toSet()
+                if (through.isNotEmpty()) append("\nthrough $description, which names it").append(listing("used on", through))
+            }
+            aliased.forEach { append("\nits name refers to $it") }
+        }
+    }
 
     /** ": [verb] N line(s)" and the first lines, one per row. */
     private fun listing(verb: String, lines: List<UsageLine>): String = buildString {
@@ -190,38 +261,56 @@ class RefactorEngine(private val project: Project) {
     /**
      * What the rename would do, found the way QuietRenameProcessor finds it: its conflicts, the lines it would change,
      * the references it leaves alone (such as a Markdown code span naming the symbol), and declarations of the new
-     * name next to the target, which a language without a clash check (Rust) does not report.
+     * name next to the target, which a language without a clash check (Rust) does not report. A target whose name
+     * refers to another declaration (a JavaScript shorthand export) renames that one with it, as the processor does;
+     * an alias of the target keeps its name, so its users are listed as left alone.
      */
     private suspend fun renameDryRun(named: Named, newName: String): String {
         val element = named.element
-        val (conflicts, changed, sameName) = smartReadAction(project) {
+        val plan = smartReadAction(project) {
             val renames = linkedMapOf(element to newName)
-            val usages = RenameUtil.findUsages(element, newName, false, false, renames)
-            val lines = usages.mapNotNull { usage -> usage.virtualFile?.let { lineAt(it, usage.navigationOffset) } }.distinct().sorted()
+            // Only for a name that refers to another declaration: prepareRenaming of other elements can ask questions.
+            if (aliased(element).isNotEmpty()) RenamePsiElementProcessor.forElement(element).prepareRenaming(element, newName, renames)
+            val usages = renames.flatMap { (renamed, name) -> RenameUtil.findUsages(renamed, name, false, false, renames).asList() }.toTypedArray()
+            val lines = usages.mapNotNull { usage -> usage.element?.let { lineAt(it, usage.navigationOffset) } }.distinct().sorted()
             val siblings = element.parent?.children.orEmpty().filter {
                 it !== element && it.javaClass == element.javaClass && (it as? PsiNamedElement)?.name == newName
             }.map { describe(it) }
-            Triple(renameConflicts(element, newName, usages, renames), lines, siblings)
+            val also = renames.keys.filter { it != element }
+            RenamePlan(renameConflicts(element, newName, usages, renames), lines, siblings, also.map { describe(it) },
+                aliases(element).filter { it !in also }.map { it to describe(it) })
         }
-        val untouched = usageLines(named) - changed.toSet()
+        val changed = plan.changed.toSet()
+        val untouched = usageLines(element) - changed
         return buildString {
-            append("dry run: rename ${named.description} to $newName\n").append(conflictLines(conflicts))
-            if (conflicts.isEmpty() && sameName.isNotEmpty()) {
+            append("dry run: rename ${named.description} to $newName\n").append(conflictLines(plan.conflicts))
+            if (plan.conflicts.isEmpty() && plan.sameName.isNotEmpty()) {
                 append("same name in the same scope, a clash unless the language allows overloads:\n")
-                sameName.forEach { append("- ").append(it).append('\n') }
+                plan.sameName.forEach { append("- ").append(it).append('\n') }
             }
-            append(named.description).append(listing("would change", changed))
+            plan.also.forEach { append("also renames ").append(it).append('\n') }
+            append(named.description).append(listing("would change", plan.changed))
             if (untouched.isNotEmpty()) append("\nleaves alone").append(listing("the references on", untouched).removePrefix(":"))
+            for ((alias, description) in plan.aliases) {
+                // An alias the rename changes with its users, such as a destructured import, leaves nothing here.
+                val users = usageLines(alias) - changed - untouched.toSet()
+                if (users.isNotEmpty()) append("\n$description names it and keeps its name; rename it to change its users too")
+                    .append(listing("left alone on", users))
+            }
         }
     }
+
+    private class RenamePlan(
+        val conflicts: List<String>, val changed: List<UsageLine>, val sameName: List<String>, val also: List<String>,
+        val aliases: List<Pair<PsiNamedElement, String>>,
+    )
 
     /** The usages that would stop a safe delete, from the language's safe-delete delegate, with no dialog. */
     private suspend fun blockingUsages(element: PsiElement): List<String> = smartReadAction(project) {
         val found = mutableListOf<UsageInfo>()
         SafeDeleteProcessorDelegate.EP_NAME.extensionList.firstOrNull { it.handlesElement(element) }?.findUsages(element, arrayOf(element), found)
         found.filter { it is SafeDeleteReferenceUsageInfo && !it.isSafeDelete }.mapNotNull { usage ->
-            val file = usage.virtualFile ?: return@mapNotNull null
-            lineAt(file, usage.navigationOffset)?.let { "used at $it" }
+            usage.element?.let { lineAt(it, usage.navigationOffset) }?.let { "used at $it" }
         }.distinct()
     }
 

@@ -43,13 +43,16 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         the target through the IDE's code model, so every reference is updated, in any language the IDE
         understands.
 
-        The target is "file" (absolute or relative to the project) with one of "symbol" (a whole-word name,
-        "nth" for a later occurrence) or "line" and "column" (1-based).
+        The target is "file" (absolute or relative to the project) with one of "symbol" (a whole-word name
+        outside comments, "nth" for a later occurrence) or "line" and "column" (1-based).
 
         By default it is a dry run that changes nothing: it returns the element and its usages as
         path:line: text (for rename, the lines it would change and the references it leaves alone), the
         problems and their fixes for fix, the intentions available for intention, or the lines
-        optimize_imports and reformat would add and remove.
+        optimize_imports and reformat would add and remove. A declaration of the same name that takes the
+        target as its value, such as a JavaScript export { name }, is an alias: usages lists its users too,
+        and a rename lists the users it leaves alone; a dry run on the alias says whether renaming it renames
+        the target with it.
         Pass "apply": true to change the code; the response lists the changed files and how Edit > Undo takes
         the change back: one step named "MCP Steroid: ..." (fix with all: one step per fix). A refactoring
         that finds conflicts, such as a rename to a name already in use, returns them and changes nothing.
@@ -97,8 +100,8 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
     val file = stringParam("file", "The target's file, absolute or relative to the project.")
     val line = intParam("line", "1-based line of the target, with column.")
     val column = intParam("column", "1-based column of the target, with line.")
-    val symbol = stringParam("symbol", "The target's name in the file, matched as a whole word.")
-    val nth = intParam("nth", "Which occurrence of symbol, from 0.")
+    val symbol = stringParam("symbol", "The target's name in the file: a whole word outside comments.")
+    val nth = intParam("nth", "Which occurrence of symbol outside comments, from 0.")
     val newName = stringParam("new_name", "rename: the new name.")
     val to = stringParam("to", "move: the target directory, absolute or relative to the project.")
     val inspection = stringParam("inspection", "fix: the inspection's short name; omit it in a dry run to list problems.")

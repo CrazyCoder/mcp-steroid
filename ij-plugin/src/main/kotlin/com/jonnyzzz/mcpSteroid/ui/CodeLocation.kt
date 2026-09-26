@@ -35,8 +35,7 @@ object CodeLocation {
     fun resolve(text: String, line: Int? = null, column: Int? = null, symbol: String? = null, snippet: String? = null, nth: Int = 0): IntRange {
         line?.let { return caretAt(text, it, column ?: 1) }
         symbol?.let { wanted ->
-            val starts = Regex("(?<![\\w$])" + Regex.escape(wanted) + "(?![\\w$])").findAll(text).map { it.range.first }.toList()
-            val start = pick(starts, nth, "symbol \"$wanted\"")
+            val start = pick(symbolStarts(text, wanted), nth, "symbol \"$wanted\"")
             return start until start
         }
         snippet?.let { wanted ->
@@ -59,7 +58,11 @@ object CodeLocation {
         return offset until offset
     }
 
-    private fun pick(starts: List<Int>, nth: Int, what: String): Int =
+    /** Where [symbol] starts in [text] as a whole word. */
+    fun symbolStarts(text: String, symbol: String): List<Int> =
+        Regex("(?<![\\w$])" + Regex.escape(symbol) + "(?![\\w$])").findAll(text).map { it.range.first }.toList()
+
+    fun pick(starts: List<Int>, nth: Int, what: String): Int =
         starts.getOrNull(nth) ?: throw UiStepFailure(
             if (starts.isEmpty()) "$what not found (found 0)" else "$what: nth $nth asked, found ${starts.size}"
         )
