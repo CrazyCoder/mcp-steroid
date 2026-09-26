@@ -41,6 +41,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.AbstractButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
+import javax.swing.JList
+import javax.swing.JTree
 import javax.swing.RootPaneContainer
 import javax.swing.SwingUtilities
 import javax.swing.text.JTextComponent
@@ -524,10 +526,16 @@ class UiSession(
         return "$kind ${WindowIdUtil.compute(w, w)}" + title.orEmpty()
     }
 
-    /** The first text a window without a title shows, such as a hint balloon's, so a report says what opened. EDT. */
+    /**
+     * The first text a passive window without a title shows, such as a hint balloon's, so a report says what opened.
+     * A window with a field or a list, such as Find Action, is left undescribed: its first text is a tab or a caption,
+     * not what the window is. EDT.
+     */
     private fun firstText(w: Window): String? {
         val root = (w as? RootPaneContainer)?.rootPane ?: return null
-        return UIUtil.uiTraverser(root).asSequence()
+        val components = UIUtil.uiTraverser(root).toList()
+        if (components.any { it.isShowing && (it is JTextComponent && it.isEditable || it is JList<*> || it is JTree) }) return null
+        return components.asSequence()
             .filter { it.isShowing }
             .mapNotNull { UiComponentFacts.ownText(it) ?: (it as? SimpleColoredComponent)?.getCharSequence(false)?.toString() }
             .map(UiComponentFacts::clean)

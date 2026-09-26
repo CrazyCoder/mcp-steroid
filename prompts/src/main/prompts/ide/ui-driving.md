@@ -104,9 +104,8 @@ println("Caret line: " + withContext(Dispatchers.EDT) { editor.caretModel.logica
 ```
 
 A step that runs an action or presses a button whose name ends with an ellipsis, such as **Settings…**,
-waits up to 10 seconds for its window, because such a window can take over a second to prepare on the
-first open after the IDE starts. A window that still opens later is reported by the next step, as
-`meanwhile opened ...`. To wait for a particular window, use `ui.waitForWindow(title)` or the `wait` step
+waits for its window, because such a window can take over a second to prepare on the first open after the
+IDE starts. A window that opens later still is reported by the next step, as `meanwhile opened ...`. To wait for a particular window, use `ui.waitForWindow(title)` or the `wait` step
 with `"for":"window"`.
 
 ## Find controls with XPath
