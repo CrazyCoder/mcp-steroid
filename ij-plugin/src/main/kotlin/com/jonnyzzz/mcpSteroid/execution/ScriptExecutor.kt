@@ -6,6 +6,8 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.application.impl.LaterInvocator
+import com.intellij.openapi.progress.util.ProgressWindow
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
@@ -287,22 +289,41 @@ class ScriptExecutor(
         }
         // Tell the agent WHICH modality variant blocked the gate — retrying later helps for a
         // persisting dialog-less progress, never for a surviving dialog window.
-        val detail = when (dialoglessWait) {
-            DialoglessModalityWait.BUDGET_EXPIRED ->
+        val progresses = when (dialoglessWait) {
+            DialoglessModalityWait.BUDGET_EXPIRED, DialoglessModalityWait.DIALOG_PRESENT -> emptyList()
+            else -> modalProgressTitles()
+        }
+        val detail = when {
+            dialoglessWait == DialoglessModalityWait.BUDGET_EXPIRED ->
                 "a dialog-less modal progress (IDE freeze-protection/indexing) persisted past the bounded " +
                     "wait (mcp.steroid.execution.dialogless.modal.wait.ms) — the IDE may still be settling; " +
                     "retrying later can help"
-            DialoglessModalityWait.DIALOG_PRESENT ->
+            dialoglessWait == DialoglessModalityWait.DIALOG_PRESENT ->
                 "a modal dialog window is showing and could not be cleared"
-            else ->
-                "a modal dialog/progress is present and could not be cleared"
+            progresses.isNotEmpty() ->
+                "the modal progress ${progresses.joinToString { "\"$it\"" }} is running. It ends on its own: " +
+                    "retry once it finishes, or use modal=unleashed for a read that does not need it to end"
+            else -> "a modal dialog/progress is present and could not be cleared"
         }
+        val advice = if (progresses.isNotEmpty()) "" else
+            "Use modal=dialog to work inside an open modal dialog, or modal=unleashed to run anyway (no PSI guarantees). "
         throw ToolCallErrorException(
-            "modal=${modal.wire} requires a non-modal IDE, but $detail. " +
-                "Use modal=dialog to work inside an open modal dialog, or modal=unleashed to run anyway " +
-                "(no PSI guarantees). " +
+            "modal=${modal.wire} requires a non-modal IDE, but $detail. " + advice +
                 "See the screenshot + thread dump under execution '${executionId.executionId}'."
         )
+    }
+
+    /** The titles of the modal progresses that hold the IDE modal, such as "Configuring Node.js Coding Assistance". */
+    private suspend fun modalProgressTitles(): List<String> = try {
+        withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
+            LaterInvocator.getCurrentModalEntities()
+                .filterIsInstance<ProgressWindow>()
+                .mapNotNull { it.title?.takeIf { title -> title.isNotBlank() } }
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        emptyList()
     }
 
     private class OpenDialog(val modality: ModalityState, val title: String)
