@@ -25,9 +25,11 @@ object UiLocator {
             requireNotNull(xpathMatches) { "an xpath target needs the remote-driver model, which is not available here" }(xpath)
         }
         val nodes = roots.flatMap { it.walk().toList() }.distinctBy { it.component }
+        // An unnamed field answers to its caption, the label="..." a snapshot shows for it.
         fun matches(node: UiNode) =
-            (target.name == null || node.name == target.name) &&
-                (target.text == null || node.text.any { it.contains(target.text!!) } || node.name?.contains(target.text!!) == true) &&
+            (target.name == null || node.name == target.name || (node.name == null && node.label == target.name)) &&
+                (target.text == null || node.text.any { it.contains(target.text!!) } || node.name?.contains(target.text!!) == true ||
+                    node.label?.contains(target.text!!) == true) &&
                 (target.cls == null || classMatches(node.component, target.cls!!)) &&
                 (byXpath == null || node.component in byXpath)
         // The topmost window with a match is the one the user sees, so a "Cancel" in a non-modal dialog does not

@@ -46,8 +46,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         changed lines of the others. The first failing step stops the run and shows the topmost window, with
         the nearest matching controls.
 
-        A target is "ref":"e12", or any of "name" (exact accessible name), "text" (part of the text a
-        control shows), "class" (class or superclass simple name, such as JTextComponent), "xpath" (over the
+        A target is "ref":"e12", or any of "name" (exact accessible name, or an unnamed field's label),
+        "text" (part of the text a control shows or of its label), "class" (class or superclass simple name, such as JTextComponent), "xpath" (over the
         remote-driver model), plus "nth" (0-based) when several controls match. Each step waits up to
         "timeout_ms" (default 5000) for its target to show and be enabled. Only the topmost window with a
         match counts, and while a modal dialog shows, only that dialog and its popups are searched.
@@ -72,7 +72,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]
 
-        A click that opens a modal dialog returns while the dialog is up, and the report names it.
+        A click that opens a modal dialog returns while the dialog is up, and the report names it. A step
+        that runs an action or presses a button named with an ellipsis ("Settings…") waits up to 10 s for
+        its window; a window that opens later still is reported by the next step as "meanwhile opened".
         It compiles no code, so it answers in well under a second. Use it instead of a screenshot to find
         controls and read their state.
     """.trimIndent()

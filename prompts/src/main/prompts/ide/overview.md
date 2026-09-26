@@ -59,7 +59,7 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 
 | Resource | Operation | Description |
 |----------|-----------|-------------|
-| `mcp-steroid://ide/ui-driving` | Drive UI Controls | Snapshot the Swing UI, find controls with XPath, click, type and close dialogs in one call |
+| `mcp-steroid://ide/ui-driving` | Drive UI Controls | Snapshot windows with refs, then click, type, select rows and close dialogs with steroid_ui or script helpers |
 
 ## Usage
 

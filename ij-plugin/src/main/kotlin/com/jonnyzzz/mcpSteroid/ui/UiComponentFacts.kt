@@ -31,8 +31,14 @@ object UiComponentFacts {
 
     fun simpleClassName(c: Component): String {
         val type = if (c.javaClass.isAnonymousClass) c.javaClass.superclass else c.javaClass
-        return type.name.substringAfterLast('.').substringAfterLast('$')
+        return simpleName(type.name).ifEmpty { type.simpleName }
     }
+
+    /**
+     * The name a snapshot shows for a class or model name: without package and outer classes, and without the
+     * number the JVM gives a local class (`Outer$1MyTextField` is `MyTextField`).
+     */
+    fun simpleName(name: String): String = name.substringAfterLast('.').substringAfterLast('$').trimStart { it.isDigit() }
 
     fun interactive(c: Component): Boolean = when (c) {
         is AbstractButton, is JTextComponent, is JList<*>, is JTree, is JTable, is JComboBox<*>, is JSlider, is JSpinner -> true

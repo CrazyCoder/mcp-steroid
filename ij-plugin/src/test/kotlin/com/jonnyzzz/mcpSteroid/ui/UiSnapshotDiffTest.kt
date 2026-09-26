@@ -38,6 +38,27 @@ class UiSnapshotDiffTest {
     }
 
     @Test
+    fun `controls rebuilt under new refs are counted, not listed`() {
+        val after = before.replace("[ref=e1]", "[ref=e7]").replace("[ref=e2] [disabled]", "[ref=e8]")
+        assertEquals(
+            """
+            - JButton "Apply" [ref=e2] [disabled]
+            + JButton "Apply" [ref=e8]
+            ~ 1 control(s) rebuilt with new refs; take a snapshot for them
+            """.trimIndent(),
+            UiSnapshotDiff.diff(before, after),
+        )
+    }
+
+    @Test
+    fun `background tasks in the status bar are no change, with everything under them`() {
+        val bar = { task: String ->
+            "$before\n  - InlineProgressPanel \"Background process: $task\" [ref=e5]\n    - TextPanel [ref=e6] text=$task\n  - JLabel \"Ready\" [ref=e9]"
+        }
+        assertEquals("", UiSnapshotDiff.diff(bar("Indexing"), bar("Preparing new chat")))
+    }
+
+    @Test
     fun `a window that closed is one line`() {
         val after = "window w-9 \"uiprobe\" (frame) source=remote-driver\n- JPanel"
         assertEquals("- window w-1 \"Settings\" (dialog, modal) closed", UiSnapshotDiff.diff("$before\n\n$after", after))

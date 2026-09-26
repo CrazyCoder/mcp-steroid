@@ -77,12 +77,41 @@ dialog stays open.
 
 The helpers and the tool use the UI model of the **Performance Testing** plugin
 (`com.jetbrains.performancePlugin`), which JetBrains IDEs bundle for their own UI tests, and fall back to
-Swing names and labels when it is disabled. The next sections use that model directly.
+Swing names and labels when it is disabled.
 
-## Snapshot and find
+## Drive a dialog from a script
 
-`XpathDataModelCreator` turns the showing component tree into a DOM, one `<div>` per component. Each
-element has these attributes, and the live `Component` as user data under `"component"`:
+This example opens **Go to Line**, enters a line number, presses OK and checks the caret. `ui.open { }`
+returns while the modal dialog is up, and while it shows, the helpers search only that dialog. The dialog
+has two text fields, so the fill names its field by the caption beside it, which a snapshot shows as
+`label="..."`:
+
+```kotlin
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.application.EDT
+import com.intellij.openapi.fileEditor.FileEditorManager
+
+val editor = withContext(Dispatchers.EDT) { FileEditorManager.getInstance(project).selectedTextEditor }
+    ?: error("Open a file in the editor first")
+val dialog = ui.open {
+    val action = ActionManager.getInstance().getAction("GotoLine")
+    ActionManager.getInstance().tryToExecute(action, null, editor.contentComponent, null, true)
+}
+println("opened: " + (dialog as? java.awt.Dialog)?.title)
+println(ui.fill(ui.text("Line") and ui.cls("JTextComponent"), "3"))
+println(ui.click(ui.name("OK")))
+println("Caret line: " + withContext(Dispatchers.EDT) { editor.caretModel.logicalPosition.line + 1 })
+```
+
+A step that runs an action or presses a button whose name ends with an ellipsis, such as **Settings…**,
+waits up to 10 seconds for its window, because such a window can take over a second to prepare on the
+first open after the IDE starts. A window that still opens later is reported by the next step, as
+`meanwhile opened ...`. To wait for a particular window, use `ui.waitForWindow(title)` or the `wait` step
+with `"for":"window"`.
+
+## Find controls with XPath
+
+The model is a DOM of the showing components, one `<div>` per component, with these attributes:
 
 | Attribute | Content |
 |---|---|
@@ -91,190 +120,29 @@ element has these attributes, and the live `Component` as user data under `"comp
 | `classhierarchy` | Superclasses up to `JComponent`, joined with ` -> `, without the class itself: `contains(@classhierarchy,'javax.swing.JTree') or @javaclass='javax.swing.JTree'` |
 | `accessiblename` | Accessible name: button labels, tool window names, tree descriptions |
 | `tooltiptext` | Tooltip, often a full file path or the action name |
-| `visible_text` | Text the component paints: tree and list rows, tabs, editor text. Separate strings are joined with a double-pipe separator, which `uiSnapshot` below splits on |
+| `visible_text` | Text the component paints: tree and list rows, tabs, editor text, separate strings joined with a double pipe |
 
-Build the model and read the components on the EDT with `ModalityState.any()`, so it also works while a
-dialog is open:
-
-```kotlin
-import com.intellij.openapi.application.EDT
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.asContextElement
-import com.intellij.openapi.wm.WindowManager
-import com.jetbrains.performancePlugin.remotedriver.RemoteDriverDataModelExtension
-import com.jetbrains.performancePlugin.remotedriver.xpath.XpathDataModelCreator
-import java.awt.Component
-import javax.xml.xpath.XPathConstants
-import javax.xml.xpath.XPathFactory
-import org.w3c.dom.Document
-import org.w3c.dom.Element
-import org.w3c.dom.NodeList
-
-// RemoteDriverDataModelExtension, and in a Split Mode client the Remote Development extensions, call the JMX
-// test driver. A normal IDE has no driver, and building the model fails with "Invoker is not registered"
-// unless those extensions are dropped.
-fun uiModel(root: Component?): Document =
-    XpathDataModelCreator().apply {
-        elementProcessors.removeIf { it is RemoteDriverDataModelExtension || it.isRemDevExtension }
-    }.create(root)
-
-fun uiElements(root: Component?, xpath: String): List<Element> {
-    val nodes = XPathFactory.newInstance().newXPath().compile(xpath)
-        .evaluate(uiModel(root), XPathConstants.NODESET) as NodeList
-    return (0 until nodes.length).map { nodes.item(it) as Element }
-}
-
-fun uiFind(root: Component?, xpath: String): List<Component> =
-    uiElements(root, xpath).mapNotNull { it.getUserData("component") as? Component }
-
-// One line per named component, with the centre in screen coordinates: `steroid_input` accepts
-// them as `click:left@screen:<x>,<y>`. Unnamed wrappers with a single child are skipped.
-fun uiSnapshot(root: Component?): String = buildString {
-    fun walk(e: Element, depth: Int) {
-        val kids = (0 until e.childNodes.length).map { e.childNodes.item(it) }
-            .filterIsInstance<Element>().filter { it.tagName == "div" }
-        val name = e.getAttribute("accessiblename").trim()
-        val tip = e.getAttribute("tooltiptext").trim()
-        val texts = e.getAttribute("visible_text").split(" || ").map { it.trim() }.filter { it.isNotEmpty() }
-        val named = name.isNotEmpty() || tip.isNotEmpty() || texts.isNotEmpty()
-        if (!named && kids.size <= 1) {
-            kids.forEach { walk(it, depth) }
-            return
-        }
-        append("  ".repeat(depth)).append("- ").append(e.getAttribute("class"))
-        if (name.isNotEmpty()) append(" '").append(name.take(60)).append("'")
-        if (tip.isNotEmpty() && tip != name) append(" tip='").append(tip.take(60)).append("'")
-        if (texts.isNotEmpty() && texts.joinToString(" ") != name) {
-            append(" text=").append(texts.take(8).joinToString("|") { it.take(40) })
-            if (texts.size > 8) append("|+").append(texts.size - 8)
-        }
-        val component = e.getUserData("component") as? Component
-        if (named && component != null && component.isShowing) {
-            val p = component.locationOnScreen
-            append(" @").append(p.x + component.width / 2).append(",").append(p.y + component.height / 2)
-        }
-        appendLine()
-        kids.forEach { walk(it, depth + 1) }
-    }
-    val top = uiModel(root).documentElement
-    (0 until top.childNodes.length).map { top.childNodes.item(it) }
-        .filterIsInstance<Element>().filter { it.tagName == "div" }.forEach { walk(it, 0) }
-}
-
-val frame = WindowManager.getInstance().getFrame(project) ?: error("No frame for ${project.name}")
-withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-    println(uiSnapshot(frame))
-    val search = uiFind(frame, "//div[@class='ActionButton' and @accessiblename='Search Everywhere']")
-    println("Search Everywhere button: ${search.map { it.javaClass.name }}")
-}
-```
-
-Pass the smallest root that holds the target: a window, a tool window or a panel. The model paints every
-component to read its text, so a whole Settings window takes seconds and a small dialog takes milliseconds.
-
-## Drive a dialog in one call
-
-Open the window with `invokeLater` and return from the lambda, then wait for it in the script. Find the new
-window by its content, not by title or window class. Settings, for one, opens either as a modal
-`JDialog` or as a non-modal frame titled `Settings – <project>`, depending on a user preference and the
-current modality.
-
-Send input with `Component.dispatchEvent` on the EDT. It reaches the component directly, so it works while
-the IDE is in the background and never moves the user's mouse. Events posted to the event queue instead
-are dropped for keys when no component owns the focus.
-
-This example opens **Go to Line**, types a line number, presses OK and checks the caret:
+An `"xpath"` target in `steroid_ui`, or `ui.xpath(...)` in a script, selects over this model, for a query
+that a name, text or class cannot express:
 
 ```kotlin
-import com.intellij.openapi.actionSystem.ActionManager
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.EDT
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.asContextElement
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.jetbrains.performancePlugin.remotedriver.RemoteDriverDataModelExtension
-import com.jetbrains.performancePlugin.remotedriver.xpath.XpathDataModelCreator
-import java.awt.Component
-import java.awt.Window
-import java.awt.event.KeyEvent
-import java.awt.event.MouseEvent
-import javax.swing.text.JTextComponent
-import javax.xml.xpath.XPathConstants
-import javax.xml.xpath.XPathFactory
-import kotlinx.coroutines.delay
-import org.w3c.dom.Element
-import org.w3c.dom.NodeList
-
-fun uiFind(root: Component?, xpath: String): List<Component> {
-    val model = XpathDataModelCreator().apply {
-        elementProcessors.removeIf { it is RemoteDriverDataModelExtension || it.isRemDevExtension }
-    }.create(root)
-    val nodes = XPathFactory.newInstance().newXPath().compile(xpath).evaluate(model, XPathConstants.NODESET) as NodeList
-    return (0 until nodes.length).mapNotNull { (nodes.item(it) as Element).getUserData("component") as? Component }
-}
-
-val anyModality = Dispatchers.EDT + ModalityState.any().asContextElement()
-
-suspend fun click(target: Component) = withContext(anyModality) {
-    val x = target.width / 2
-    val y = target.height / 2
-    for (id in listOf(MouseEvent.MOUSE_PRESSED, MouseEvent.MOUSE_RELEASED, MouseEvent.MOUSE_CLICKED)) {
-        val mask = if (id == MouseEvent.MOUSE_PRESSED) MouseEvent.BUTTON1_DOWN_MASK else 0
-        target.dispatchEvent(MouseEvent(target, id, System.currentTimeMillis(), mask, x, y, 1, false, MouseEvent.BUTTON1))
-    }
-}
-
-suspend fun type(target: Component, text: String) = withContext(anyModality) {
-    for (ch in text) {
-        target.dispatchEvent(KeyEvent(target, KeyEvent.KEY_TYPED, System.currentTimeMillis(), 0, KeyEvent.VK_UNDEFINED, ch))
-    }
-}
-
-suspend fun <T : Any> waitFor(what: String, timeoutMs: Long = 10_000, probe: suspend () -> T?): T {
-    val deadline = System.currentTimeMillis() + timeoutMs
-    while (System.currentTimeMillis() < deadline) {
-        probe()?.let { return it }
-        delay(100)
-    }
-    error("Timed out after $timeoutMs ms waiting for $what")
-}
-
-val editor = withContext(Dispatchers.EDT) { FileEditorManager.getInstance(project).selectedTextEditor }
-    ?: error("Open a file in the editor first")
-val before = Window.getWindows().filter { it.isShowing }.toSet()
-
-allowModalDialog() // this script opens a modal dialog on purpose; run it with modal=unleashed
-ApplicationManager.getApplication().invokeLater({
-    val action = ActionManager.getInstance().getAction("GotoLine")
-    ActionManager.getInstance().tryToExecute(action, null, editor.contentComponent, null, true)
-}, ModalityState.nonModal())
-
-val dialog = waitFor("Go to Line dialog") {
-    withContext(anyModality) {
-        Window.getWindows().firstOrNull { w ->
-            w.isShowing && w !in before && uiFind(w, "//div[@class='JButton' and @accessiblename='OK']").isNotEmpty()
-        }
-    }
-}
-val field = withContext(anyModality) {
-    uiFind(dialog, "//div[contains(@classhierarchy,'javax.swing.text.JTextComponent')]").first() as JTextComponent
-}
-withContext(anyModality) { field.selectAll() }
-type(field, "3")
-click(withContext(anyModality) { uiFind(dialog, "//div[@class='JButton' and @accessiblename='OK']").single() })
-waitFor("dialog closed") { if (dialog.isShowing) null else true }
-println("Caret line: " + withContext(Dispatchers.EDT) { editor.caretModel.logicalPosition.line + 1 })
+val button = ui.find(ui.xpath("//div[@class='ActionButton' and @accessiblename='Search Everywhere']"))
+println("Search Everywhere button: ${button.javaClass.name}")
 ```
 
-Direct dispatch runs the component's own key bindings. It does not run IDE shortcuts, which the event queue
-handles: invoke the action by ID instead of pressing its shortcut.
+To read the model yourself, create `XpathDataModelCreator`, remove its `RemoteDriverDataModelExtension`
+processor and the ones whose `isRemDevExtension` is true, and call `create(root)`. Those processors call
+the JMX test driver, which a normal IDE does not run, so the build fails with "Invoker is not registered"
+while they stay. Painting every component to read its text is slow: a whole Settings window takes
+seconds, a small dialog milliseconds.
 
 ## Read tree, list and table rows
 
-A `steroid_ui` snapshot lists the rows in view, and `select` takes any row by text or index. Read rows
-from a script when you need all of them. The fixtures in the same plugin read rows through their cell
-renderers, so they return the text a row shows. Give them a read-only AssertJ robot: their click methods
-drive `java.awt.Robot`, which moves the user's real mouse.
+A `steroid_ui` snapshot lists the rows in view of each list, tree and table, and `select` takes any row
+by its text, its tree path or its index. Read the rows from a script when you need all of them. The
+fixtures of the same plugin read them through the cell renderers, so they return the text a row shows.
+Give them a read-only AssertJ robot: their click methods drive `java.awt.Robot`, which moves the user's
+real mouse.
 
 ```kotlin
 import com.intellij.ide.projectView.ProjectView
@@ -290,55 +158,22 @@ println("Selected: " + rows.collectSelectedPaths().map { it.path })
 ```
 
 `JListTextFixture(robot, list).contents()` and `JTableTextFixture(robot, table).contents()` return list and
-table rows the same way. To click
-a row, take its bounds from `tree.getRowBounds(row)` or `list.getCellBounds(i, i)` and dispatch the click to
-the tree or list at that point.
-
-A list or tree popup (`ListPopupImpl`, `TreePopupImpl`) picks its row on hover, not on the press: it ignores a
-press on any row but the selected one, and it ignores the first mouse move it sees. Before the click, dispatch
-two `MOUSE_MOVED` events to the list at different points, the second at the row. `steroid_input` clicks do
-this for you.
+table rows the same way.
 
 ## Close what you opened
 
-Escape does not close a popup when the event reaches the component directly: popups handle it through the
-event queue. Close popups and dialogs through their API, from any component inside them:
-
-```kotlin
-import com.intellij.openapi.application.EDT
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.asContextElement
-import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.popup.util.PopupUtil
-import com.intellij.openapi.wm.WindowManager
-import com.intellij.util.ui.UIUtil
-import java.awt.Window
-import javax.swing.JComponent
-import javax.swing.RootPaneContainer
-
-val frame = WindowManager.getInstance().getFrame(project)
-withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-    for (window in Window.getWindows().filter { it.isShowing && it !== frame && it is RootPaneContainer }) {
-        val inside = UIUtil.findComponentsOfType((window as RootPaneContainer).rootPane, JComponent::class.java)
-            .lastOrNull() ?: continue
-        val dialog = DialogWrapper.findInstance(inside)
-        val popup = PopupUtil.getPopupContainerFor(inside)
-        when {
-            dialog != null -> dialog.doCancelAction()
-            popup != null -> popup.cancel()
-        }
-        println("${window.javaClass.simpleName}: closed=${dialog != null || popup != null}")
-    }
-}
-```
+`ui.close()`, or the `close` step, closes the topmost dialog, popup or separate window such as Settings:
+it cancels a dialog or a popup, and closes a window as its close button does. Pass a target to close the
+window that holds it. Each call closes one window, so call it once per window you opened.
 
 ## Pitfalls
 
-- `IdeRobot` and its event-posting `InputEventsRobot` exist only in 2026.3 and later. Earlier builds
-  have `SmoothRobot` alone, which moves the real mouse. Keep to `dispatchEvent` for input.
-- Match on `accessiblename`, `visible_text` or `classhierarchy`, not on the position of a child. Layouts
-  change between versions; names change less often.
-- Tool windows that are hidden are not in the model. Show one with
+- Deliver input through `steroid_ui` or the `ui` helpers. The plugin's own robots either move the real
+  mouse (`SmoothRobot`) or exist only in 2026.3 and later (`IdeRobot`).
+- Match on accessible names, painted text or classes, not on the position of a child. Layouts change
+  between versions; names change less often.
+- A hidden tool window is not in the model. Click its stripe button, such as
+  `{"action":"click","name":"Project","class":"SquareStripeButton"}`, or call
   `ToolWindowManager.getInstance(project).getToolWindow(id)?.show()` first.
 - With `modal=smart_non_modal`, a dialog your script opens fails the call unless the script calls
   `allowModalDialog()` first. Open dialogs with `ui.open { }`, and run scripts that work inside an already

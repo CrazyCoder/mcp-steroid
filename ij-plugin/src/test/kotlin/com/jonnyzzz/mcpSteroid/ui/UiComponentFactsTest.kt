@@ -13,6 +13,13 @@ class UiComponentFactsTest {
     }
 
     @Test
+    fun `a local class is named without the number the JVM gives it`() {
+        assertEquals("MyTextField", UiComponentFacts.simpleName("com.intellij.ide.util.GotoLineNumberDialog$1MyTextField"))
+        assertEquals("MyTextField", UiComponentFacts.simpleName("1MyTextField"))
+        assertEquals("JBTextField", UiComponentFacts.simpleName("com.intellij.ui.components.JBTextField"))
+    }
+
+    @Test
     fun `an unknown reference stays as it is`() {
         assertEquals("&copy; &#xZZ;", UiComponentFacts.clean("&copy; &#xZZ;"))
     }

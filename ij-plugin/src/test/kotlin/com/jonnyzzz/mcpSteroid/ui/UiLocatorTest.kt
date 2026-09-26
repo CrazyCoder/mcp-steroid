@@ -80,6 +80,17 @@ class UiLocatorTest {
     }
 
     @Test
+    fun `an unnamed field answers to its caption by name and by text`() {
+        val line = JTextField("13:38")
+        val offset = JTextField("215")
+        val form = UiModel.labelled(FallbackUiWalker(onlyShowing = false).build(JPanel().apply {
+            add(JLabel("[Line] [:column]:")); add(line); add(JLabel("Offset:")); add(offset)
+        }))
+        assertEquals(offset, (UiLocator.find(listOf(form), UiTarget(name = "Offset:")) as UiMatch.One).node.component)
+        assertEquals(line, (UiLocator.find(listOf(form), UiTarget(text = "Line", cls = "JTextComponent")) as UiMatch.One).node.component)
+    }
+
+    @Test
     fun `a label that shares its field's name loses to the field`() {
         val label = JLabel("Zoom:")
         val combo = JTextField("100%").apply { accessibleContext.accessibleName = "Zoom:" }

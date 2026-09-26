@@ -109,9 +109,9 @@ closes it with Cancel, as in a regular IDE. Drive client dialogs with `side=fron
 drawn in the client from the backend's components, so the client lists it as one panel; call `steroid_ui`
 with `side=backend` to read and act on its controls.
 
-The recipe's UI model and `dispatchEvent` input work on both sides. Run the script on the side that owns
-the components: `side=frontend` for client windows and popups, the backend for its dialogs and host
-Settings pages. A `steroid_input` click at screen coordinates goes to the window on top at that point, as a
+The recipe's `ui` helpers work on both sides. Run the script on the side that owns the components:
+`side=frontend` for client windows and popups, the backend for its dialogs and host Settings pages. A
+`steroid_input` click at screen coordinates goes to the window on top at that point, as a
 real click does, so the snapshot's coordinates reach a popup over the window you name. A click at
 screenshot coordinates stays in the named window.
 

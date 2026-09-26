@@ -67,6 +67,12 @@ class UiSession(
 
     private class WindowModel(val window: Window, val model: UiModelResult)
 
+    /** The windows after the previous step, to report the ones that opened or closed between two steps. */
+    private var windowsAfterLastStep: Set<Window>? = null
+
+    /** Set by a click on a button whose text ends with an ellipsis, which by convention opens a dialog. */
+    private var clickOpensWindow = false
+
     suspend fun run(steps: List<UiStep>, mode: UiSnapshotMode): UiSessionResult {
         val before = if (mode == UiSnapshotMode.DIFF) render(withBounds = false) else null
         val reports = mutableListOf<UiStepReport>()
@@ -76,8 +82,9 @@ class UiSession(
             val label = "step ${i + 1} ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
             val stepStarted = runStarted.elapsedNow().inWholeMilliseconds
             val pictureBefore = tracePicture(i + 1, "before")
+            val meanwhile = meanwhile()
             val outcome = try {
-                Result.success(runStep(step))
+                Result.success(meanwhile + runStep(step))
             } catch (e: UiStepFailure) {
                 Result.failure(e)
             } catch (e: UiBarrierTimeout) {
@@ -97,6 +104,7 @@ class UiSession(
                 failure = "$label failed: $line"
                 break
             }
+            windowsAfterLastStep = UiSettle.showingWindows()
             reports += UiStepReport(i + 1, "$label: $line")
         }
         val snapshot = when {
@@ -108,6 +116,19 @@ class UiSession(
             else -> UiSnapshotDiff.diff(before.orEmpty(), render(withBounds = false)).ifEmpty { "(the snapshot did not change)" }
         }
         return UiSessionResult(reports, failure, snapshot)
+    }
+
+    /**
+     * The windows that opened or closed since the previous step ended, as a prefix of this step's report. A window
+     * that takes longer to open than the previous step waited, such as Settings on a cold start, shows up here.
+     */
+    private suspend fun meanwhile(): String {
+        val before = windowsAfterLastStep ?: return ""
+        val now = UiSettle.showingWindows()
+        if (now == before) return ""
+        return withContext(edtAny) {
+            (now - before).map { "opened ${describeWindow(it)}" } + (before - now).map { "closed ${describeWindow(it)}" }
+        }.joinToString("; ", prefix = "meanwhile ", postfix = "; ")
     }
 
     /** A picture of the topmost window for the trace, or null without a trace. */
@@ -152,6 +173,7 @@ class UiSession(
         return when (step.action) {
             UiAction.CLICK -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
+                clickOpensWindow = withContext(edtAny) { (node.component as? AbstractButton)?.text?.let(::opensWindow) == true }
                 val offset = if (step.offsetX != null || step.offsetY != null) {
                     Point(step.offsetX ?: (node.component.width / 2), step.offsetY ?: (node.component.height / 2))
                 } else null
@@ -318,9 +340,12 @@ class UiSession(
     /** Runs an input step and adds what it caused: IDE actions, windows opened or closed, the new focus owner. */
     private suspend fun withEffects(act: suspend () -> String): String {
         val actions = Collections.synchronizedList(mutableListOf<String>())
+        var actionOpensWindow = false
+        clickOpensWindow = false
         val connection = ApplicationManager.getApplication().messageBus.connect()
         connection.subscribe(AnActionListener.TOPIC, object : AnActionListener {
             override fun beforeActionPerformed(action: AnAction, event: AnActionEvent) {
+                if (event.presentation.text?.let(::opensWindow) == true) actionOpensWindow = true
                 // An action made on the fly, such as a tool window button's, has no id: its text says what it is.
                 actions += ActionManager.getInstance().getId(action)
                     ?: event.presentation.text?.takeIf { it.isNotBlank() }?.let { "\"$it\"" }
@@ -328,8 +353,14 @@ class UiSession(
             }
         })
         val windowsBefore = UiSettle.showingWindows()
+        var noWindow = false
         val line = try {
             val result = act()
+            // An action or button named with an ellipsis opens a dialog, which may take seconds to prepare: wait for
+            // it rather than report a step that seemingly did nothing.
+            if ((actionOpensWindow || clickOpensWindow) && UiSettle.showingWindows() == windowsBefore) {
+                noWindow = !UiSettle.awaitWindowChange(windowsBefore, OPENER_WAIT_MS)
+            }
             // An IDE action often opens its window a few hundred milliseconds later (Settings does), so wait longer
             // for the windows to settle after one ran.
             if (actions.isEmpty()) UiSettle.settle() else UiSettle.settle(quietMs = ACTION_QUIET_MS, maxMs = ACTION_SETTLE_MS)
@@ -342,6 +373,7 @@ class UiSession(
             buildList {
                 add(line)
                 if (actions.isNotEmpty()) add("IDE actions: ${actions.joinToString()}")
+                if (noWindow) add("no window opened within ${OPENER_WAIT_MS / 1000} s, although its name ends with an ellipsis")
                 // A hover popup comes and goes with the mouse, so it is not something the step opened.
                 (windowsAfter - windowsBefore).filterNot(UiWindows::isHoverPopup).forEach { add("opened ${describeWindow(it)}") }
                 (windowsBefore - windowsAfter).filterNot(UiWindows::isHoverPopup).forEach { add("closed ${describeWindow(it)}") }
@@ -518,5 +550,11 @@ class UiSession(
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L
         private const val FIRST_TEXT_MAX = 60
+
+        /** How long a step waits for the dialog of an action or button named with an ellipsis. */
+        private const val OPENER_WAIT_MS = 10_000L
+
+        /** IntelliJ names an action or button that opens a dialog with a trailing ellipsis: "Settings…", "Edit...". */
+        fun opensWindow(text: String): Boolean = text.trimEnd().let { it.endsWith("…") || it.endsWith("...") }
     }
 }

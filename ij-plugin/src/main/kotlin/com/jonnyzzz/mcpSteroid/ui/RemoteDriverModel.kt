@@ -97,7 +97,7 @@ object RemoteDriverModel {
             ?: error("a UI model element carries no component")
         return UiNode(
             component = component,
-            className = e.getAttribute("class").ifEmpty { UiComponentFacts.simpleClassName(component) },
+            className = UiComponentFacts.simpleName(e.getAttribute("class")).ifEmpty { UiComponentFacts.simpleClassName(component) },
             name = e.getAttribute("accessiblename").let(UiComponentFacts::clean).takeIf { it.isNotEmpty() },
             text = e.getAttribute("visible_text").split(SEPARATOR).map(UiComponentFacts::clean).filter { it.isNotEmpty() }.dropRepeats(),
             tooltip = e.getAttribute("tooltiptext").let(UiComponentFacts::clean).takeIf { it.isNotEmpty() },

@@ -75,7 +75,8 @@ class UiToolHandlerIJ : UiToolHandler {
     }
 
     companion object {
-        private const val STEP_ALLOWANCE_MS = 5_000L
+        // Delivery, settling, and up to 10 s for the dialog of an action named with an ellipsis.
+        private const val STEP_ALLOWANCE_MS = 15_000L
         private const val BASE_ALLOWANCE_MS = 30_000L
     }
 }
