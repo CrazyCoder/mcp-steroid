@@ -6,6 +6,7 @@ import com.intellij.codeInsight.intention.IntentionManager
 import com.intellij.codeInsight.intention.impl.ShowIntentionActionsHandler
 import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
+import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.codeInspection.QuickFix
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.LanguageImportStatements
@@ -22,6 +23,8 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.progress.EmptyProgressIndicator
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.blockingContextToIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
@@ -259,10 +262,14 @@ class RefactorEngine(private val project: Project) {
 
     /** What [tools] report on the target's file, by position, each with its inspection's short name. */
     private suspend fun inspect(target: Target, tools: List<LocalInspectionToolWrapper>): List<Pair<String, ProblemDescriptor>> = smartReadAction(project) {
-        InspectionEngine.inspectEx(
-            tools, target.psiFile, target.psiFile.textRange, target.psiFile.textRange, false, false, true,
-            EmptyProgressIndicator(), PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
-        ).flatMap { (tool, problems) -> problems.map { tool.shortName to it } }.sortedBy { problemOffset(it.second) }
+        // The read action's own indicator, which a pending write action cancels. A fresh indicator would never be
+        // cancelled: the inspections would hold the read lock to the end and freeze the EDT while it waits to write.
+        blockingContextToIndicator {
+            InspectionEngine.inspectEx(
+                tools, target.psiFile, target.psiFile.textRange, target.psiFile.textRange, false, false, true,
+                ProgressManager.getGlobalProgressIndicator() ?: EmptyProgressIndicator(), PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
+            )
+        }.flatMap { (tool, problems) -> problems.map { tool.shortName to it } }.sortedBy { problemOffset(it.second) }
     }
 
     private fun problemOffset(problem: ProblemDescriptor): Int =
@@ -272,7 +279,8 @@ class RefactorEngine(private val project: Project) {
     private fun problemLine(target: Target, problem: ProblemDescriptor, named: String?): String {
         val line = target.document.getLineNumber(problemOffset(problem).coerceIn(0, target.document.textLength)) + 1
         return "${CodeLocation.shortPath(project, target.file)}:$line: " + (named?.let { "[$it] " } ?: "") +
-            plainText(problem.descriptionTemplate.replace("#ref", "").replace("#loc", "")) +
+            // As the Problems view renders it: #ref becomes the reported code, #loc goes.
+            plainText(ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)) +
             (problem.fixes?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
     }
 
