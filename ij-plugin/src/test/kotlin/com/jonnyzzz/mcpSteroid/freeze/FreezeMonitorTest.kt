@@ -88,19 +88,50 @@ class FreezeMonitorTest {
     fun `the notice names the execution, its cancellation, and the running worker`() {
         val freeze = Freeze(1, detectedAtMs = 20_000, thresholdMs = 5_000, reportDir = Path.of("dumps"),
             analysis = FreezeAnalysis.of(freezeDump), cancelled = mapOf("eid-1" to 21_000))
-        val text = FreezeMonitor.render(freeze, nowMs = 32_000) { if (it == scriptClass) "eid-1" else null }
+        val text = FreezeMonitor.render(freeze, nowMs = 32_000, executionFor = { if (it == scriptClass) "eid-1" else null }, isRunning = { false })
         assertTrue(text, text.startsWith("IDE FREEZE: the IDE's UI has not responded for 17 s"))
         assertTrue(text, text.contains("waits for a write action on thread \"DefaultDispatcher-worker-3\""))
         assertTrue(text, text.contains("- steroid_execute_code execution eid-1 at input.kt:66, cancelled by Steroid at"))
-        assertTrue(text, text.contains("it has not stopped"))
+        assertTrue(text, text.contains("does not check for cancellation and still runs"))
         assertTrue(text, text.contains("- thread \"JobScheduler FJ pool 22/31\" (running): TypeScriptTypeEvaluator.evaluateExportAssignment"))
         assertTrue(text, text.contains("thread dumps of this freeze: dumps"))
 
         // The execution has ended by then, so only the id recorded during the freeze names it.
-        val ended = FreezeMonitor.render(freeze.copy(durationMs = 41_000, executions = mapOf(scriptClass to "eid-1")), nowMs = 90_000) { null }
+        val ended = FreezeMonitor.render(freeze.copy(durationMs = 41_000, executions = mapOf(scriptClass to "eid-1")), nowMs = 90_000,
+            executionFor = { null }, isRunning = { false })
         assertTrue(ended, ended.startsWith("IDE FREEZE (ended): the IDE's UI did not respond for 41 s"))
         assertTrue(ended, ended.contains("- steroid_execute_code execution eid-1 at input.kt:66, cancelled by Steroid at"))
-        assertFalse(ended, ended.contains("it has not stopped"))
+        assertFalse(ended, ended.contains("still runs"))
+    }
+
+    @Test
+    fun `a running execution not yet cancelled is named without a claim about its thread`() {
+        val freeze = Freeze(1, detectedAtMs = 20_000, thresholdMs = 5_000, reportDir = null, analysis = FreezeAnalysis.of(freezeDump))
+        val text = FreezeMonitor.render(freeze, nowMs = 25_000, executionFor = { "eid-1" }, isRunning = { true })
+        assertTrue(text, text.contains("- steroid_execute_code execution eid-1 at input.kt:66: InspectionEngine.inspectEx"))
+        assertFalse(text, text.contains("still runs"))
+    }
+
+    @Test
+    fun `a call cancelled inside the IDE is answered, not thrown`() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob())
+        try {
+            val result = FreezeMonitor(scope).guard(Any()) { throw kotlinx.coroutines.CancellationException("the UI froze") }
+            assertTrue(result.isError)
+            assertEquals("The call was cancelled inside the IDE: the UI froze", (result.content.single() as ContentItem.Text).text)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun `an ended execution stays known by its script class`() {
+        val id = "eid_20260926T230000-001-test-s-ended"
+        val job = kotlinx.coroutines.Job()
+        RunningExecutions.register(id, job)
+        job.cancel()
+        assertFalse(RunningExecutions.isRunning(id))
+        assertEquals(id, RunningExecutions.forScriptClass(RunningExecutions.scriptClassOf(id)))
     }
 
     @Test

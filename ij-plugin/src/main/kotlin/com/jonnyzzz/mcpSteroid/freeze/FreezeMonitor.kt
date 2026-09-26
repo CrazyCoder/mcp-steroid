@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
 import java.lang.management.ManagementFactory
 import java.nio.file.Path
@@ -128,7 +129,11 @@ class FreezeMonitor(private val scope: CoroutineScope) {
             return result.copy(content = listOf(ContentItem.Text(notice)) + result.content)
         } catch (e: CancellationException) {
             run.cancel(e)
-            throw e
+            // The caller's own cancellation propagates; a call cancelled inside the IDE, as a freeze
+            // cancels the execution that holds its lock, is answered.
+            currentCoroutineContext().ensureActive()
+            val text = (noticeFor(session) ?: "") + "The call was cancelled inside the IDE: ${e.message}"
+            return ToolCallResult(listOf(ContentItem.Text(text)), isError = true)
         }
     }
 
@@ -144,8 +149,16 @@ class FreezeMonitor(private val scope: CoroutineScope) {
 
         fun getInstanceOrNull(): FreezeMonitor? = ApplicationManager.getApplication()?.let { service<FreezeMonitor>() }
 
-        /** The freeze as agents read it; [executionFor] maps a script class in a dump to its execution id. */
-        fun render(freeze: Freeze, nowMs: Long, executionFor: (String) -> String?): String = buildString {
+        /**
+         * The freeze as agents read it. [executionFor] maps a script class in a dump to its execution id, and
+         * [isRunning] tells whether that execution's call is still running.
+         */
+        fun render(
+            freeze: Freeze,
+            nowMs: Long,
+            executionFor: (String) -> String? = RunningExecutions::forScriptClass,
+            isRunning: (String) -> Boolean = RunningExecutions::isRunning,
+        ): String = buildString {
             val since = TIME.format(Instant.ofEpochMilli(freeze.frozenSinceMs))
             val threshold = freeze.thresholdMs / 1000
             if (freeze.durationMs == null) {
@@ -169,9 +182,9 @@ class FreezeMonitor(private val scope: CoroutineScope) {
                 when {
                     executionId != null -> {
                         append("steroid_execute_code execution $executionId at ${holder.scriptLine}")
-                        if (cancelledAt != null) {
-                            append(", cancelled by Steroid at ${TIME.format(Instant.ofEpochMilli(cancelledAt))}")
-                            if (freeze.durationMs == null) append("; it has not stopped, so the code it runs does not check for cancellation")
+                        if (cancelledAt != null) append(", cancelled by Steroid at ${TIME.format(Instant.ofEpochMilli(cancelledAt))}")
+                        if (freeze.durationMs == null && (cancelledAt != null || !isRunning(executionId))) {
+                            append("; its call has ended, but the code on this thread does not check for cancellation and still runs")
                         }
                     }
                     holder.scriptClass != null -> append("a steroid_execute_code script at ${holder.scriptLine}")

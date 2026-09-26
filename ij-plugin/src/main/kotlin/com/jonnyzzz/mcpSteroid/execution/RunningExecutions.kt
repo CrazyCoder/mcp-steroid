@@ -5,19 +5,30 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import java.util.concurrent.ConcurrentHashMap
 
-/** The steroid_execute_code calls running in this IDE, by execution id, so a freeze can name and cancel one. */
+/**
+ * The steroid_execute_code calls running in this IDE, by execution id, so a freeze can name and cancel one.
+ *
+ * A cancelled execution's coroutine ends while its thread can still run code that ignores cancellation, so
+ * the ids of the last [RECENT] executions stay known after they end.
+ */
 object RunningExecutions {
+    private const val RECENT = 50
     private val jobs = ConcurrentHashMap<String, Job>()
+    private val recent = object : LinkedHashMap<String, Unit>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Unit>) = size > RECENT
+    }
 
     fun register(executionId: String, job: Job) {
         jobs[executionId] = job
+        synchronized(recent) { recent[executionId] = Unit }
         job.invokeOnCompletion { jobs.remove(executionId, job) }
     }
 
-    fun ids(): Set<String> = jobs.keys.toSet()
+    fun isRunning(executionId: String): Boolean = jobs.containsKey(executionId)
 
-    /** The execution whose compiled script class is [scriptClass], as a thread dump names it. */
-    fun forScriptClass(scriptClass: String): String? = jobs.keys.firstOrNull { scriptClassOf(it) == scriptClass }
+    /** The execution, running or recent, whose compiled script class is [scriptClass], as a thread dump names it. */
+    fun forScriptClass(scriptClass: String): String? =
+        synchronized(recent) { recent.keys.toList() }.lastOrNull { scriptClassOf(it) == scriptClass }
 
     /** Cancels [executionId]; false when it is not running. */
     fun cancel(executionId: String, reason: String): Boolean {
