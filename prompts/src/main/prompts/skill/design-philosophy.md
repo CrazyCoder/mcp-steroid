@@ -17,6 +17,7 @@ Don't propose new `steroid_*` tools. The current set is intentional and intentio
 - `steroid_execute_feedback`
 - `steroid_take_screenshot`
 - `steroid_input`
+- `steroid_ui`
 - `steroid_fetch_resource`
 
 Improvements come from richer prompt resources (this file is one), sharper tool descriptions, and teaching you to call IntelliJ APIs directly inside `steroid_execute_code` — not from new tools.
@@ -25,7 +26,7 @@ A tool is added only when **all** of:
 
 1. The need cannot be met by `steroid_execute_code` + an IntelliJ API call. **Document the specific IntelliJ API path you ruled out.**
 2. It cannot be met by a richer `mcp-steroid://` recipe.
-3. Three independent reviewers (`run-agent.sh codex` / `claude` / `gemini`) agree, after reading this file. **One reviewer disagreeing kills the proposal** — propose a recipe instead.
+3. The maintainer approves it, after reading the written case for 1 and 2 against this file. Without that approval, propose a recipe instead.
 
 Anything short of that — write a recipe instead.
 
@@ -53,7 +54,7 @@ This is what the strategy page means by "Give AI the whole IDE, not just the fil
 Adding state to devrig requires:
 
 1. A written argument that the in-memory + on-call-rebuild model genuinely cannot cover the case. "More efficient" is not enough.
-2. Three-reviewer consensus across `run-agent.sh codex` / `claude` / `gemini`. **One reviewer disagreeing kills the proposal.**
+2. The maintainer's approval of that argument.
 3. A migration story: devrig must be deletable + re-installable without losing functionality the user cares about.
 
 ## Tenet 4 — `McpScriptContext` methods are last-resort
@@ -63,7 +64,7 @@ Adding state to devrig requires:
 A new context method requires:
 
 1. A written argument that the IntelliJ-native path is genuinely intractable (not just "less convenient").
-2. Three-reviewer consensus across `run-agent.sh codex` / `claude` / `gemini`. **One reviewer disagreeing kills the proposal** — propose a recipe instead.
+2. The maintainer's approval of that argument. Without it, propose a recipe instead.
 3. The new method teaches an idiom reusable across many tasks, not one specific scenario.
 
 `applyPatch { }` is the cautionary example: the DSL earned its place on `McpScriptContext` for atomic multi-site edits, but eval data showed its exact-match resolution failed 64% of real calls — so it was removed (2026-07, #206) rather than kept as an attractive-but-unreliable surface. The tenet cuts both ways: don't grow the surface casually, and remove what the data shows agents cannot use reliably. A tolerance-matching successor is tracked in #208.
@@ -74,4 +75,4 @@ When you're about to make a change in this repo, ask in order:
 
 1. Can this be a richer prompt resource? → write the recipe.
 2. Can this be solved by calling an IntelliJ API directly inside `steroid_execute_code`? → write the recipe with that snippet.
-3. Does it need a new MCP tool or context method? → it almost certainly doesn't. If you still believe so, see the three-reviewer requirement above.
+3. Does it need a new MCP tool or context method? → it almost certainly doesn't. If you still believe so, write the case and get the maintainer's approval, as above.

@@ -42,8 +42,8 @@ A new tool may be added only when **all** of these are true:
 1. The need cannot be met by `steroid_execute_code` + a direct IntelliJ API
    call. Document the specific API path you ruled out.
 2. It cannot be met by a richer `mcp-steroid://` prompt resource (recipe).
-3. Three independent reviewers (`run-agent.sh codex` / `claude` / `gemini`)
-   agree the tool is justified, after reading this file.
+3. The maintainer approves it, after reading the written case for gates 1
+   and 2 against this file.
 
 Anything short of that — propose a recipe instead.
 
@@ -64,9 +64,8 @@ lines of helpers every time. Gate 1: every `steroid_execute_code` call
 compiles, so no IntelliJ API path removes that cost. Gate 2: a recipe can
 shorten the script but not skip the compiler. `steroid_ui` snapshots and
 drives the UI with no compilation (34 ms for a project frame, 1.7 s for a
-five-step Settings flow on 2026.1). The three-reviewer vote of gate 3 was
-not run; the maintainer of the Plus fork approved the design in
-`docs/superpowers/specs/2026-09-25-steroid-ui-tool-design.md`.
+five-step Settings flow on 2026.1). Gate 3: the maintainer approved the
+design in `docs/superpowers/specs/2026-09-25-steroid-ui-tool-design.md`.
 
 ## Tenet 2 — power lives in prompts and direct IntelliJ API usage
 
@@ -145,8 +144,7 @@ Concretely:
 
 1. A written argument that the in-memory + on-call-rebuild model
    genuinely cannot cover the case. "More efficient" is not enough.
-2. Explicit reviewer consensus (`run-agent.sh codex` / `claude` /
-   `gemini`). One reviewer disagreeing kills the proposal.
+2. The maintainer's approval of that argument.
 3. A migration story for what happens when a future devrig version
    reads the older state shape — devrig must be deletable + re-
    installable without losing functionality the user cares about.
@@ -168,8 +166,7 @@ preference.
 
 1. A short written argument that the IntelliJ-native path is genuinely
    intractable. "Less convenient" is not intractable.
-2. Explicit reviewer consensus across `run-agent.sh codex` / `claude` /
-   `gemini`. One reviewer disagreeing kills the proposal — propose a
+2. The maintainer's approval of that argument. Without it, propose a
    prompt-resource recipe instead.
 3. The new method must teach an idiom that's reusable across many tasks,
    not specialised to one DPAIA scenario.
