@@ -19,9 +19,8 @@ import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -37,8 +36,13 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.move.moveFilesOrDirectories.MoveFilesOrDirectoriesProcessor
-import com.intellij.refactoring.rename.RenameProcessor
+import com.intellij.refactoring.rename.RenamePsiElementProcessor
+import com.intellij.refactoring.rename.RenameUtil
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessor
+import com.intellij.refactoring.safeDelete.SafeDeleteProcessorDelegate
+import com.intellij.refactoring.safeDelete.usageInfo.SafeDeleteReferenceUsageInfo
+import com.intellij.usageView.UsageInfo
+import com.intellij.util.containers.MultiMap
 import com.intellij.util.PairProcessor
 import com.jonnyzzz.mcpSteroid.server.RefactorOp
 import com.jonnyzzz.mcpSteroid.server.RefactorParams
@@ -140,18 +144,62 @@ class RefactorEngine(private val project: Project) {
 
     private suspend fun rename(params: RefactorParams): String {
         val newName = params.newName?.takeIf { it.isNotBlank() } ?: throw RefactorFailure("rename needs new_name")
-        val named = named(target(params))
-        if (!params.apply) return "dry run: rename ${named.description} to $newName\n" + usages(named)
-        val processor = readAction { RenameProcessor(project, named.element, newName, false, false).apply { setPreviewUsages(false) } }
-        return applier.apply("Rename") { processor.run() }.let { "renamed ${named.description} to $newName\n$it" }
+        val target = target(params)
+        val named = named(target)
+        readAction {
+            if ((named.element as? PsiNamedElement)?.name == newName) throw RefactorFailure("${named.description} is already named $newName")
+            if (!RenameUtil.isValidName(project, named.element, newName)) throw RefactorFailure("$newName is not a valid name for ${named.description}")
+        }
+        if (!params.apply) return "dry run: rename ${named.description} to $newName\n" + conflictLines(renameConflicts(named.element, newName)) + usages(named)
+        val pathBefore = target.file.path
+        val processor = readAction {
+            if (!named.element.isValid) throw RefactorFailure("the code changed since the target was found; nothing was changed, try again")
+            QuietRenameProcessor(project, named.element, newName)
+        }
+        val report = applier.apply("Rename to $newName") { processor.run() }
+        if (processor.conflicts.isNotEmpty()) throw RefactorFailure("rename to $newName has conflicts; nothing was changed\n" + conflictLines(processor.conflicts).trimEnd())
+        if (!processor.applied) throw RefactorFailure("the rename did not reach its write step; nothing was changed")
+        // A class rename also renames its file, whose old path no longer resolves.
+        val moved = if (target.file.isValid && target.file.path != pathBefore) "\nrenamed the file to ${CodeLocation.shortPath(project, target.file)}" else ""
+        return "renamed ${named.description} to $newName$moved\n$report"
     }
 
     private suspend fun safeDelete(params: RefactorParams): String {
         val named = named(target(params))
-        if (!params.apply) return "dry run: safe delete ${named.description}\n" + usages(named)
+        val blocking = blockingUsages(named.element)
+        if (!params.apply) return "dry run: safe delete ${named.description}\n" + conflictLines(blocking) + usages(named)
+        if (blocking.isNotEmpty()) throw RefactorFailure("${named.description} is still used; nothing was changed\n" + conflictLines(blocking).trimEnd())
         val processor = readAction { SafeDeleteProcessor.createInstance(project, null, arrayOf(named.element), false, false) }
         return applier.apply("Safe Delete") { processor.run() }.let { "deleted ${named.description}\n$it" }
     }
+
+    /** The conflicts a rename would show in its dialog, found the way RenameProcessor finds them, with no dialog. */
+    private suspend fun renameConflicts(element: PsiElement, newName: String): List<String> = smartReadAction(project) {
+        val conflicts = MultiMap<PsiElement, String>()
+        val renames = linkedMapOf(element to newName)
+        val found = RenameUtil.findUsages(element, newName, false, false, renames)
+        RenamePsiElementProcessor.forElement(element).findExistingNameConflicts(element, newName, conflicts, renames)
+        RenameUtil.addConflictDescriptions(found, conflicts)
+        conflicts.values().map { plain(it) }.distinct()
+    }
+
+    /** The usages that would stop a safe delete, from the language's safe-delete delegate, with no dialog. */
+    private suspend fun blockingUsages(element: PsiElement): List<String> = smartReadAction(project) {
+        val found = mutableListOf<UsageInfo>()
+        SafeDeleteProcessorDelegate.EP_NAME.extensionList.firstOrNull { it.handlesElement(element) }?.findUsages(element, arrayOf(element), found)
+        found.filter { it is SafeDeleteReferenceUsageInfo && !it.isSafeDelete }.mapNotNull { usage ->
+            val file = usage.virtualFile ?: return@mapNotNull null
+            val document = FileDocumentManager.getInstance().getDocument(file) ?: return@mapNotNull null
+            val line = document.getLineNumber(usage.navigationOffset.coerceIn(0, document.textLength))
+            val text = document.getText(com.intellij.openapi.util.TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line))).trim()
+            "used at ${CodeLocation.shortPath(project, file)}:${line + 1}: ${text.take(120)}"
+        }.distinct()
+    }
+
+    private fun conflictLines(conflicts: List<String>): String =
+        if (conflicts.isEmpty()) "" else "conflicts:\n" + conflicts.joinToString("") { "- $it\n" }
+
+    private fun plain(html: String): String = html.replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").replace(Regex("\\s+"), " ").trim()
 
     private suspend fun move(params: RefactorParams): String {
         val target = target(params)
@@ -191,7 +239,7 @@ class RefactorEngine(private val project: Project) {
         if (!params.apply) return "dry run: $shortName reports ${found.size} problem(s)" + listing.joinToString("") { "\n$it" }
         if (params.all) {
             var applied = 0
-            val report = applier.collectChanges {
+            val report = applier.collectChanges("fixes for $shortName") {
                 // Stops when no fixable problem is left, or when a fix leaves as many problems as before.
                 var remaining = Int.MAX_VALUE
                 repeat(MAX_FIXES) {
@@ -208,7 +256,7 @@ class RefactorEngine(private val project: Project) {
         val chosen = found.firstOrNull { p -> !p.fixes.isNullOrEmpty() && (!target.located || readAction { target.document.getLineNumber(problemOffset(p)) } == line) }
             ?: throw RefactorFailure("no $shortName problem with a fix" + if (target.located) " on line ${line + 1}" else "")
         val fix = chosen.fixes!!.first()
-        return applier.collectChanges { applyFix(chosen, fix) }.let { "applied \"${fix.name}\"\n$it" }
+        return applier.collectChanges(fix.name) { applyFix(chosen, fix) }.let { "applied \"${fix.name}\"\n$it" }
     }
 
     /** The editor's way: on the EDT, in one command, in a write action only when the fix asks for one. */
@@ -219,29 +267,33 @@ class RefactorEngine(private val project: Project) {
             CommandProcessor.getInstance().executeCommand(project, {
                 if (typed.startInWriteAction()) ApplicationManager.getApplication().runWriteAction { typed.applyFix(project, problem) }
                 else typed.applyFix(project, problem)
-            }, typed.name, null)
+            }, "${RefactorApplier.UNDO_PREFIX}${typed.name}", null)
         }
     }
 
     private suspend fun intention(params: RefactorParams): String {
         val target = target(params)
         if (!target.located) throw RefactorFailure("give the target's symbol, or its line and column")
+        // A hidden editor, released at the end: no tab opens and the user's caret stays where it was.
         val editor = withContext(Dispatchers.EDT) {
-            FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, target.file, target.offset), false)
-                ?: throw RefactorFailure("${params.file} did not open in a text editor")
+            EditorFactory.getInstance().createEditor(target.document, project, target.file, false).also { it.caretModel.moveToOffset(target.offset) }
         }
-        val available = readAction { availableIntentions(target.psiFile, editor, target.offset) }
-        if (!params.apply || params.name == null) {
-            return "intentions at ${where(target.document, target.file, target.offset)}: " + available.joinToString("; ") { it.text } +
-                if (params.apply) "\nintention needs name" else ""
+        try {
+            val available = readAction { availableIntentions(target.psiFile, editor, target.offset) }
+            if (!params.apply || params.name == null) {
+                return "intentions at ${where(target.document, target.file, target.offset)}: " + available.joinToString("; ") { it.text } +
+                    if (params.apply) "\nintention needs name" else ""
+            }
+            val wanted = params.name!!
+            val action = available.firstOrNull { it.text == wanted } ?: available.firstOrNull { it.text.startsWith(wanted, ignoreCase = true) }
+                ?: throw RefactorFailure("no intention \"$wanted\" at the target; available: " + available.joinToString("; ") { it.text })
+            val text = action.text
+            return applier.apply(text) {
+                ShowIntentionActionsHandler.chooseActionAndInvoke(target.psiFile, editor, action, text)
+            }.let { "applied \"$text\"\n$it" }
+        } finally {
+            withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { EditorFactory.getInstance().releaseEditor(editor) }
         }
-        val wanted = params.name!!
-        val action = available.firstOrNull { it.text == wanted } ?: available.firstOrNull { it.text.startsWith(wanted, ignoreCase = true) }
-            ?: throw RefactorFailure("no intention \"$wanted\" at the target; available: " + available.joinToString("; ") { it.text })
-        val text = action.text
-        return applier.apply(text) {
-            ShowIntentionActionsHandler.chooseActionAndInvoke(target.psiFile, editor, action, text)
-        }.let { "applied \"$text\"\n$it" }
     }
 
     private fun availableIntentions(file: PsiFile, editor: Editor, offset: Int): List<IntentionAction> =
@@ -267,10 +319,10 @@ class RefactorEngine(private val project: Project) {
         val target = known ?: target(params)
         val path = CodeLocation.shortPath(project, target.file)
         if (!params.apply) return "dry run: ${title.lowercase()} $path; pass apply to change it"
-        return applier.collectChanges {
+        return applier.collectChanges(title) {
             withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) {
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
-                WriteCommandAction.runWriteCommandAction(project, title, null, { edit(target) })
+                WriteCommandAction.runWriteCommandAction(project, RefactorApplier.UNDO_PREFIX + title, null, { edit(target) })
             }
         }.let { "${title.lowercase()}: $path\n$it" }
     }

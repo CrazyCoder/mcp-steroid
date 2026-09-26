@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.ui
 
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
+import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import java.nio.file.Path
@@ -13,11 +14,16 @@ import java.nio.file.Path
  * text is a Document's, whose lines always end with `\n`.
  */
 object CodeLocation {
-    /** The file at [path], absolute or relative to the project's base directory. Refreshes the VFS; call off the EDT. */
+    /**
+     * The file at [path], absolute or relative to the project's base directory, refreshed from disk: an agent often
+     * edits a file outside the IDE and then asks about it. Call off the EDT and outside a read action.
+     */
     fun findFile(project: Project, path: String): VirtualFile? {
         val base = project.basePath
         val absolute = Path.of(path).let { if (it.isAbsolute || base == null) it else Path.of(base).resolve(it) }
-        return LocalFileSystem.getInstance().refreshAndFindFileByNioFile(absolute.normalize())
+        val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(absolute.normalize()) ?: return null
+        VfsUtil.markDirtyAndRefresh(false, false, false, file)
+        return file
     }
 
     /** [file]'s path relative to the project's base directory, or its full path outside it. */

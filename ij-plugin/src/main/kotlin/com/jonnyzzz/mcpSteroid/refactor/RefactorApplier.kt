@@ -6,6 +6,7 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.WriteIntentReadAction
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.event.DocumentEvent
@@ -35,12 +36,13 @@ import kotlin.time.TimeSource
 internal class RefactorApplier(private val project: Project) {
 
     /** Runs [block] on the EDT under write intent, as a refactoring processor expects, watching for dialogs. */
-    suspend fun apply(title: String, block: () -> Unit): String = collectChanges {
+    suspend fun apply(title: String, block: () -> Unit): String = collectChanges(title) {
         val before = UiSettle.showingWindows()
         val done = CompletableDeferred<Throwable?>()
         ApplicationManager.getApplication().invokeLater({
             try {
-                WriteIntentReadAction.run { block() }
+                // One command with our name, so the user's Edit > Undo says whose change it takes back.
+                WriteIntentReadAction.run { CommandProcessor.getInstance().executeCommand(project, block, UNDO_PREFIX + title, null) }
                 done.complete(null)
             } catch (e: Throwable) {
                 done.complete(e)
@@ -62,8 +64,8 @@ internal class RefactorApplier(private val project: Project) {
         done.await()?.let { throw it }
     }
 
-    /** Runs [block] and lists the documents it changed, then saves them. */
-    suspend fun collectChanges(block: suspend () -> Unit): String {
+    /** Runs [block], the change named [title], and lists the documents it changed, then saves those and no others. */
+    suspend fun collectChanges(title: String, block: suspend () -> Unit): String {
         val originals = LinkedHashMap<Document, String>()
         val disposable = Disposer.newDisposable("steroid_refactor changes")
         try {
@@ -77,19 +79,23 @@ internal class RefactorApplier(private val project: Project) {
             Disposer.dispose(disposable)
         }
         return withContext(Dispatchers.EDT) {
+            val changed = mutableListOf<Document>()
             val lines = originals.mapNotNull { (document, before) ->
                 // Not the in-memory copies a ModCommand fix edits before it applies to the real file.
                 val file = FileDocumentManager.getInstance().getFile(document)?.takeIf { it.isInLocalFileSystem } ?: return@mapNotNull null
                 val after = document.text
                 if (after == before) return@mapNotNull null
+                changed += document
                 var added = 0
                 var removed = 0
                 val changes = runCatching { Diff.buildChanges(before, after) }.getOrNull()
                 generateSequence(changes) { it.link }.forEach { added += it.inserted; removed += it.deleted }
                 "${CodeLocation.shortPath(project, file)} +$added -$removed"
             }
-            FileDocumentManager.getInstance().saveAllDocuments()
-            if (lines.isEmpty()) "no file changed" else "changed ${lines.size} file(s), saved; Edit > Undo takes it back:\n" + lines.joinToString("\n")
+            // Only what the change touched: the user's own unsaved edits elsewhere stay unsaved.
+            changed.forEach { FileDocumentManager.getInstance().saveDocument(it) }
+            if (lines.isEmpty()) "no file changed"
+            else "changed ${lines.size} file(s), saved; Edit > Undo \"$UNDO_PREFIX$title\" takes it back:\n" + lines.joinToString("\n")
         }
     }
 
@@ -117,12 +123,14 @@ internal class RefactorApplier(private val project: Project) {
         return ("\"$title\": " + texts.joinToString(" | ")).take(MAX_TEXT)
     }
 
-    private companion object {
-        const val POLL_MS = 50L
-        const val TIMEOUT_MS = 60_000L
-        const val MAX_TEXT = 2_000
-        val GROUPING_ROW = Regex("\\d+ results?$")
-        val CHROME = setOf("Application icon", "Frame Header", "Action Toolbar")
+    companion object {
+        /** Starts the name of every change steroid_refactor makes, as Edit > Undo shows it. */
+        const val UNDO_PREFIX = "MCP Steroid: "
+        private const val POLL_MS = 50L
+        private const val TIMEOUT_MS = 60_000L
+        private const val MAX_TEXT = 2_000
+        private val GROUPING_ROW = Regex("\\d+ results?$")
+        private val CHROME = setOf("Application icon", "Frame Header", "Action Toolbar")
     }
 }
 
