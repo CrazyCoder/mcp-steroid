@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ui
 
+import com.intellij.codeInsight.template.TemplateManager
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -10,6 +11,7 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.service
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.popup.util.PopupUtil
@@ -35,6 +37,7 @@ import java.awt.Window
 import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.AbstractButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
@@ -84,7 +87,7 @@ class UiSession(
             val pictureBefore = tracePicture(i + 1, "before")
             val meanwhile = meanwhile()
             val outcome = try {
-                Result.success(meanwhile + runStep(step))
+                Result.success(runStep(step))
             } catch (e: UiStepFailure) {
                 Result.failure(e)
             } catch (e: UiBarrierTimeout) {
@@ -94,7 +97,7 @@ class UiSession(
             } catch (e: IllegalStateException) {
                 Result.failure(e)
             }
-            val line = outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
+            val line = meanwhile + outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
             trace?.let { t ->
                 val pictureAfter = tracePicture(i + 1, "after")
                 t.record(i + 1, label, line, outcome.isFailure, render(withBounds = true), pictureBefore, pictureAfter,
@@ -340,12 +343,12 @@ class UiSession(
     /** Runs an input step and adds what it caused: IDE actions, windows opened or closed, the new focus owner. */
     private suspend fun withEffects(act: suspend () -> String): String {
         val actions = Collections.synchronizedList(mutableListOf<String>())
-        var actionOpensWindow = false
+        val actionOpensWindow = AtomicBoolean(false)
         clickOpensWindow = false
         val connection = ApplicationManager.getApplication().messageBus.connect()
         connection.subscribe(AnActionListener.TOPIC, object : AnActionListener {
             override fun beforeActionPerformed(action: AnAction, event: AnActionEvent) {
-                if (event.presentation.text?.let(::opensWindow) == true) actionOpensWindow = true
+                if (event.presentation.text?.let(::opensWindow) == true) actionOpensWindow.set(true)
                 // An action made on the fly, such as a tool window button's, has no id: its text says what it is.
                 actions += ActionManager.getInstance().getId(action)
                     ?: event.presentation.text?.takeIf { it.isNotBlank() }?.let { "\"$it\"" }
@@ -358,8 +361,8 @@ class UiSession(
             val result = act()
             // An action or button named with an ellipsis opens a dialog, which may take seconds to prepare: wait for
             // it rather than report a step that seemingly did nothing.
-            if ((actionOpensWindow || clickOpensWindow) && UiSettle.showingWindows() == windowsBefore) {
-                noWindow = !UiSettle.awaitWindowChange(windowsBefore, OPENER_WAIT_MS)
+            if ((actionOpensWindow.get() || clickOpensWindow) && UiSettle.showingWindows() == windowsBefore) {
+                noWindow = !UiSettle.awaitWindowChange(windowsBefore, OPENER_WAIT_MS, stopWhen = ::inplaceActive)
             }
             // An IDE action often opens its window a few hundred milliseconds later (Settings does), so wait longer
             // for the windows to settle after one ran.
@@ -380,6 +383,15 @@ class UiSession(
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner?.let { add("focus: ${describeComponent(it)}") }
             }.joinToString("; ")
         }
+    }
+
+    /**
+     * Whether the selected editor runs a template, as an in-place refactoring such as **Rename…** does: its action
+     * is named with an ellipsis and opens no window.
+     */
+    private suspend fun inplaceActive(): Boolean = withContext(edtAny) {
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return@withContext false
+        TemplateManager.getInstance(project).getActiveTemplate(editor) != null
     }
 
     /** Finds [target], waiting up to [timeoutMs] for one showing (and, when asked, enabled) match. */

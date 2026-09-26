@@ -47,8 +47,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         the nearest matching controls.
 
         A target is "ref":"e12", or any of "name" (exact accessible name, or an unnamed field's label),
-        "text" (part of the text a control shows or of its label), "class" (class or superclass simple name, such as JTextComponent), "xpath" (over the
-        remote-driver model), plus "nth" (0-based) when several controls match. Each step waits up to
+        "text" (part of the text a control shows or of its label), "class" (class or superclass simple name,
+        such as JTextComponent), "xpath" (over the remote-driver model), plus "nth" (0-based) when several
+        controls match. Each step waits up to
         "timeout_ms" (default 5000) for its target to show and be enabled. Only the topmost window with a
         match counts, and while a modal dialog shows, only that dialog and its popups are searched.
 

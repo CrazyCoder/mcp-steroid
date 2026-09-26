@@ -60,14 +60,15 @@ object UiSettle {
     }
 
     /**
-     * Waits up to [maxMs] for a window to open or close compared to [before], and returns whether one did. An action
-     * that opens a dialog may prepare it on a background thread first, with an idle event thread meanwhile: Settings
-     * takes over a second on the first open after the IDE starts.
+     * Waits up to [maxMs] for a window to open or close compared to [before], and returns whether one did, or whether
+     * [stopWhen] says the wait is over without one. An action that opens a dialog may prepare it on a background
+     * thread first, with an idle event thread meanwhile: Settings takes over a second on the first open after the
+     * IDE starts.
      */
-    suspend fun awaitWindowChange(before: Set<Window>, maxMs: Long): Boolean {
+    suspend fun awaitWindowChange(before: Set<Window>, maxMs: Long, stopWhen: suspend () -> Boolean = { false }): Boolean {
         val started = TimeSource.Monotonic.markNow()
         while (started.elapsedNow().inWholeMilliseconds < maxMs) {
-            if (showingWindows() != before) return true
+            if (showingWindows() != before || stopWhen()) return true
             delay(50)
         }
         return false
