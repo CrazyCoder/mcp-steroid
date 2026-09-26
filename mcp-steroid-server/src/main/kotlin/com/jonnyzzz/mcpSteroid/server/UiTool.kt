@@ -74,7 +74,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           UI Inspector finds it: its class and plugin, the action behind it, its tool window, dialog class,
           model and renderer, and "created:" with the code that built it. For a list, tree or table, the facts
           of the named or selected row: its value and user object classes, the action behind a popup item,
-          the intention or quick fix behind an Alt+Enter item. The first inspect starts recording where
+          the intention or quick fix behind an Alt+Enter item, a Settings tree row's configurable class and
+          ID. The first inspect starts recording where
           controls are created, until the IDE restarts; a window opened after it names its creator. Use it to
           find the class, plugin or code behind a piece of UI
         - {"action":"goto", "file":"src/A.kt", and one of "line":N (with "column":N), "symbol":"name" or

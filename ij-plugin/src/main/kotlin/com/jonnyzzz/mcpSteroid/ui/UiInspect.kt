@@ -36,10 +36,10 @@ import javax.swing.JTree
 import javax.swing.SwingUtilities
 
 /**
- * Where a control comes from, as the platform's UI Inspector (Ctrl+Alt+Click in internal mode) finds it, but in one
- * line an agent reads: its class and plugin, the action behind it, the tool window and dialog it sits in, its model
- * and renderer, and the code that created it. The inspector's own collector lists every Swing property, about 3 KB a
- * control, and fails on some zero-size components, so this reads only what locates the code. Call on the EDT.
+ * Where a control comes from, as the platform's UI Inspector (Ctrl+Alt+Click in internal mode) finds it, but in two
+ * lines an agent reads: its class and plugin, the action behind it, the tool window and dialog it sits in, its model
+ * and renderer, then the code that created it. The inspector's own collector lists every Swing property, about 3 KB a
+ * control, and in 2026.2 throws on some zero-size components, so this reads only what locates the code. Call on the EDT.
  */
 object UiInspect {
     private const val MAX_CONTEXT = 12
@@ -64,7 +64,7 @@ object UiInspect {
         return true
     }
 
-    /** The facts of [c] as `key=value` pairs on one line, then the creator frames on a second line when recorded. */
+    /** The facts of [c] as `key=value` pairs on one line, then a `created:` line: the creator frames, or "not recorded". */
     fun describe(c: Component, project: Project?): String {
         val facts = linkedMapOf<String, String>()
         facts["class"] = className(c.javaClass)
