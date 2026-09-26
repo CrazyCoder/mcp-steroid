@@ -38,6 +38,32 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         Pass window_id (from steroid_list_windows) to snapshot one window, and snapshot=full to add each
         control's screen bounds, which steroid_input accepts as click:Left@screen:<x>,<y>.
 
+        Steps (a JSON array in `steps`) act on controls in order and report what each one caused: where the
+        press landed, whether a button's action ran, IDE actions, windows opened or closed, the new focus. The
+        response then shows what changed in the snapshot. The first failing step stops the run and says what
+        the IDE showed instead, with the nearest matching controls.
+
+        A target is "ref":"e12", or any of "name" (exact accessible name), "text" (part of the text a
+        control shows), "class" (class or superclass simple name, such as JTextComponent), "xpath" (over the
+        remote-driver model), plus "nth" (0-based) when several controls match. Each step waits up to
+        "timeout_ms" (default 5000) for its target to show and be enabled. While a modal dialog shows, only
+        that dialog and its popups are searched.
+
+        - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}
+        - {"action":"hover", target}
+        - {"action":"type", "text":"...", optional target}: types into the target, or the focused control
+        - {"action":"fill", target, "text":"..."}: replaces a text field's text
+        - {"action":"press", "keys":"ENTER" or "ctrl+shift+A", optional target}: keymap shortcuts run
+        - {"action":"check"|"uncheck", target}: clicks a checkbox only when its state differs
+        - {"action":"select", target, "row":"text" or "index":N}: a list, tree or table row, or a combo item
+        - {"action":"close", optional target}: cancels the dialog or popup (the topmost one without a target)
+        - {"action":"wait", "for":"visible|hidden|enabled", target} or {"for":"window","title":"..."} or {"for":"idle"}
+        - {"action":"snapshot", optional target}: adds a snapshot of the target's subtree or of all windows
+
+        Example: [{"action":"select","name":"Settings categories","row":"Editor"},
+                  {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]
+
+        A click that opens a modal dialog returns while the dialog is up, and the report names it.
         It compiles no code, so it answers in well under a second. Use it instead of a screenshot to find
         controls and read their state.
     """.trimIndent()

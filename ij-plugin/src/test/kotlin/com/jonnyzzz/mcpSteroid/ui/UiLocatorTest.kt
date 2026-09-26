@@ -7,6 +7,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import javax.swing.JButton
 import javax.swing.JCheckBox
+import javax.swing.JComboBox
+import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JTextField
 
@@ -59,6 +61,41 @@ class UiLocatorTest {
         val none = UiLocator.find(listOf(root), UiTarget(name = "Cancle")) as UiMatch.None
         assertEquals(cancel, none.candidates.first().component)
         assertTrue(none.candidates.size <= UiLocator.MAX_CANDIDATES)
+    }
+
+    @Test
+    fun `a label that shares its field's name loses to the field`() {
+        val label = JLabel("Zoom:")
+        val combo = JTextField("100%").apply { accessibleContext.accessibleName = "Zoom:" }
+        val tree = FallbackUiWalker(onlyShowing = false).build(JPanel().apply { add(label); add(combo) })
+        assertEquals(combo, (UiLocator.find(listOf(tree), UiTarget(name = "Zoom:")) as UiMatch.One).node.component)
+    }
+
+    @Test
+    fun `a match inside another match is dropped`() {
+        val outer = JPanel().apply { accessibleContext.accessibleName = "Zoom:" }
+        val inner = JTextField().apply { accessibleContext.accessibleName = "Zoom:" }
+        outer.add(inner)
+        val tree = FallbackUiWalker(onlyShowing = false).build(JPanel().apply { add(outer) })
+        val found = UiLocator.find(listOf(tree), UiTarget(name = "Zoom:"))
+        assertEquals(inner, (found as UiMatch.One).node.component)
+    }
+
+    @Test
+    fun `an editable combo box wins over its own editor field`() {
+        val combo = JComboBox(arrayOf("100%", "110%")).apply {
+            isEditable = true
+            accessibleContext.accessibleName = "Zoom:"
+            editor.editorComponent.accessibleContext.accessibleName = "Zoom:"
+        }
+        val tree = FallbackUiWalker(onlyShowing = false).build(JPanel().apply { add(combo) })
+        assertEquals(combo, (UiLocator.find(listOf(tree), UiTarget(name = "Zoom:")) as UiMatch.One).node.component)
+    }
+
+    @Test
+    fun `the same component listed under two roots is one match`() {
+        val found = UiLocator.find(listOf(root, root), UiTarget(name = "Cancel"))
+        assertEquals(cancel, (found as UiMatch.One).node.component)
     }
 
     @Test

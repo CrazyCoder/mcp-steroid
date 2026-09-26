@@ -5,9 +5,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.awt.Component
+import javax.swing.DefaultListCellRenderer
 import javax.swing.JButton
 import javax.swing.JCheckBox
+import javax.swing.JComboBox
 import javax.swing.JLabel
+import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JTextField
 
@@ -39,5 +43,21 @@ class FallbackUiWalkerTest {
         panel.getComponent(0).isVisible = false
         assertEquals(4, FallbackUiWalker(onlyShowing = false).build(panel).children.size)
         assertEquals(3, FallbackUiWalker(onlyShowing = false, skipInvisible = true).build(panel).children.size)
+    }
+
+    @Test
+    fun `a combo box value is the selected item as its renderer shows it`() {
+        val combo = JComboBox(arrayOf(Item("a"), Item("b"))).apply {
+            renderer = object : DefaultListCellRenderer() {
+                override fun getListCellRendererComponent(list: JList<*>?, value: Any?, index: Int, selected: Boolean, focus: Boolean): Component =
+                    super.getListCellRendererComponent(list, "Shown ${(value as Item).id}", index, selected, focus)
+            }
+            selectedIndex = 1
+        }
+        assertEquals("Shown b", FallbackUiWalker(onlyShowing = false).build(combo).value)
+    }
+
+    private class Item(val id: String) {
+        override fun toString() = "Item@$id"
     }
 }

@@ -8,6 +8,7 @@ import org.w3c.dom.Document
 import org.w3c.dom.Element
 import org.w3c.dom.NodeList
 import java.awt.Component
+import java.awt.Window
 import javax.xml.xpath.XPathConstants
 import javax.xml.xpath.XPathExpressionException
 import javax.xml.xpath.XPathFactory
@@ -104,7 +105,11 @@ object RemoteDriverModel {
             value = UiComponentFacts.value(component),
             states = UiComponentFacts.states(component),
             interactive = UiComponentFacts.interactive(component),
-            children = e.childElements().filter { it.tagName == "div" }.map(::toNode).toList(),
+            // The model's hierarchy lists a window's owned windows as its children. A snapshot lists each window on
+            // its own, so an owned dialog or popup inside its owner's tree would appear twice.
+            children = e.childElements()
+                .filter { it.tagName == "div" && it.getUserData("component") !is Window }
+                .map(::toNode).toList(),
         )
     }
 

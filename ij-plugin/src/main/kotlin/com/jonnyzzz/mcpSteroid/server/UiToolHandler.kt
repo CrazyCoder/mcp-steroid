@@ -1,32 +1,18 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
-import com.intellij.openapi.application.EDT
-import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.service
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.wm.WindowManager
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
-import com.jonnyzzz.mcpSteroid.ui.UiModel
-import com.jonnyzzz.mcpSteroid.ui.UiRefs
-import com.jonnyzzz.mcpSteroid.ui.UiSnapshotFormatter
-import com.jonnyzzz.mcpSteroid.ui.UiWindowHeader
-import com.jonnyzzz.mcpSteroid.ui.UiWindows
-import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
-import com.jonnyzzz.mcpSteroid.vision.findComponentByWindowId
+import com.jonnyzzz.mcpSteroid.ui.UiSession
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
-import java.awt.Dialog
-import java.awt.Frame
-import java.awt.Window
-import javax.swing.SwingUtilities
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
 class UiToolHandlerIJ : UiToolHandler {
@@ -42,23 +28,36 @@ class UiToolHandlerIJ : UiToolHandler {
         )
         project.executionStorage.writeCodeExecutionData(executionId, "reason.txt", params.reason)
         val builder = ToolCallResult.builder()
-        val steps = params.steps?.trim()
-        if (!steps.isNullOrEmpty() && steps != "[]") {
-            return builder
-                .addTextContent("ERROR: this build of steroid_ui takes no steps yet. Call it without steps for a snapshot.")
-                .markAsError()
-                .build()
+        val steps = try {
+            params.steps?.trim()?.takeIf { it.isNotEmpty() }?.let(UiSteps::parse).orEmpty()
+        } catch (e: IllegalArgumentException) {
+            return builder.addTextContent("ERROR: ${e.message}").markAsError().build()
         }
+        val mode = params.snapshot ?: if (steps.isEmpty()) UiSnapshotMode.FULL else UiSnapshotMode.DIFF
+        val session = UiSession(project, params.windowId, params.maxNodes)
+        // The steps' own waits bound the call, plus an allowance for delivery and settling per step.
+        val budgetMs = steps.sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
         return try {
             val started = TimeSource.Monotonic.markNow()
-            val withBounds = params.snapshot == UiSnapshotMode.FULL
-            // ModalityState.any(): reading components is pure UI work, and it must also run while a modal
-            // dialog is open, which is when an agent most needs the snapshot.
-            val text = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) {
-                snapshotText(project, params.windowId, params.maxNodes, withBounds)
+            val result = withTimeout(budgetMs.milliseconds) { session.run(steps, mode) }
+            val text = buildString {
+                append("execution_id: ").append(executionId.executionId)
+                append(" (").append(started.elapsedNow().inWholeMilliseconds).append(" ms)")
+                result.reports.forEach { append('\n').append(it.line) }
+                result.failure?.let { append('\n').append("FAILED ").append(it) }
+                if (result.snapshot.isNotEmpty()) {
+                    val title = if (result.failure == null && mode == UiSnapshotMode.DIFF) "changes" else "snapshot"
+                    append("\n\n").append(title).append(":\n").append(result.snapshot)
+                }
             }
-            project.executionStorage.writeCodeExecutionData(executionId, "snapshot.txt", text)
-            builder.addTextContent("execution_id: ${executionId.executionId} (${started.elapsedNow().inWholeMilliseconds} ms)\n$text").build()
+            project.executionStorage.writeCodeExecutionData(executionId, "ui.txt", text)
+            builder.addTextContent(text)
+            if (result.failure != null) builder.markAsError()
+            builder.build()
+        } catch (e: TimeoutCancellationException) {
+            val message = "steroid_ui did not finish within $budgetMs ms"
+            project.executionStorage.writeCodeErrorEvent(executionId, message)
+            builder.addTextContent("ERROR: $message").markAsError().build()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -68,43 +67,8 @@ class UiToolHandlerIJ : UiToolHandler {
         }
     }
 
-    private fun snapshotText(project: Project, windowId: String?, maxNodes: Int, withBounds: Boolean): String {
-        val windows = if (windowId != null) {
-            val component = findComponentByWindowId(windowId)
-                ?: error("No IDE window found for window_id: $windowId")
-            listOf(component as? Window ?: SwingUtilities.getWindowAncestor(component)
-                ?: error("window_id $windowId is not in a window"))
-        } else {
-            val frame = WindowManager.getInstance().getFrame(project)
-                ?: error("Project ${project.name} has no frame")
-            UiWindows.projectWindows(frame)
-        }
-        val registry = service<UiRefs>().registry
-        var budget = maxNodes
-        return windows.joinToString("\n\n") { window ->
-            val model = UiModel.build(window)
-            val text = UiSnapshotFormatter.format(
-                header(window, model.source, model.note),
-                model.root,
-                { registry.refFor(it.component) },
-                budget.coerceAtLeast(1),
-                withBounds,
-            )
-            budget -= text.listedCount
-            text.text
-        }
+    companion object {
+        private const val STEP_ALLOWANCE_MS = 5_000L
+        private const val BASE_ALLOWANCE_MS = 30_000L
     }
-
-    private fun header(window: Window, source: String, note: String?) = UiWindowHeader(
-        windowId = WindowIdUtil.compute(window, window),
-        title = (window as? Frame)?.title ?: (window as? Dialog)?.title,
-        kind = when (window) {
-            is Frame -> "frame"
-            is Dialog -> "dialog"
-            else -> "popup"
-        },
-        modal = (window as? Dialog)?.isModal == true,
-        source = source,
-        note = note,
-    )
 }

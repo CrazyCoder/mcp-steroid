@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.ui
 
 import com.jonnyzzz.mcpSteroid.server.UiTarget
 import java.awt.Component
+import javax.swing.SwingUtilities
 
 sealed interface UiMatch {
     data class One(val node: UiNode) : UiMatch
@@ -22,19 +23,32 @@ object UiLocator {
         val byXpath = target.xpath?.let { xpath ->
             requireNotNull(xpathMatches) { "an xpath target needs the remote-driver model, which is not available here" }(xpath)
         }
-        val nodes = roots.flatMap { it.walk().toList() }
-        val matches = nodes.filter { node ->
+        val nodes = roots.flatMap { it.walk().toList() }.distinctBy { System.identityHashCode(it.component) to it.component }
+        val matches = narrow(nodes.filter { node ->
             (target.name == null || node.name == target.name) &&
                 (target.text == null || node.text.any { it.contains(target.text!!) } || node.name?.contains(target.text!!) == true) &&
                 (target.cls == null || classMatches(node.component, target.cls!!)) &&
                 (byXpath == null || node.component in byXpath)
-        }
+        })
         val nth = target.nth
         return when {
             matches.isEmpty() -> UiMatch.None(candidates(nodes, target))
             nth != null -> matches.getOrNull(nth)?.let { UiMatch.One(it) } ?: UiMatch.None(matches.take(MAX_CANDIDATES))
             matches.size == 1 -> UiMatch.One(matches.single())
             else -> UiMatch.Many(matches)
+        }
+    }
+
+    /**
+     * Keeps the matches a user would mean. A label shares its field's accessible name (`labelFor`), so when some
+     * matches are interactive the others go. A match inside another match, such as an editable combo box's editor
+     * field, gives way to the outer one: the combo box is what a user selects from.
+     */
+    private fun narrow(matches: List<UiNode>): List<UiNode> {
+        val interactive = matches.filter { it.interactive }
+        val kept = interactive.ifEmpty { matches }
+        return kept.filter { inner ->
+            kept.none { outer -> outer !== inner && SwingUtilities.isDescendingFrom(inner.component, outer.component) }
         }
     }
 
