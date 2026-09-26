@@ -187,3 +187,10 @@ spec are updated when it does.
   The dialog reader is the fallback for questions the checks do not foresee.
 - The target file is refreshed from disk first, because an agent often edits it
   outside the IDE.
+- Inspections run under the read action's own progress indicator, so a pending
+  write cancels them. A fresh indicator held the read lock through a whole
+  all-inspections run and froze the EDT behind the waiting write.
+- After a start or a sync the IDE runs background tasks (a Cargo reload, name
+  resolution data) that smart mode does not cover, and references come back
+  partial. The tool waits up to 30 s for them, once per long task, and names
+  any that still run.

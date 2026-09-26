@@ -7,12 +7,11 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.application.impl.LaterInvocator
-import com.intellij.openapi.progress.util.ProgressWindow
-import com.jonnyzzz.mcpSteroid.server.IdeBackgroundActivity
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.util.ProgressWindow
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.util.registry.Registry
@@ -24,6 +23,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.intellij.diagnostic.ThreadDumper
 import com.intellij.diagnostic.dumpCoroutines
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
+import com.jonnyzzz.mcpSteroid.server.IdeBackgroundActivity
 import com.jonnyzzz.mcpSteroid.server.ModalMode
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage

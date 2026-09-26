@@ -29,12 +29,6 @@ import java.awt.Window
 import java.awt.event.WindowEvent
 import kotlin.time.TimeSource
 
-/**
- * Applies a change and reports it: the files it changed with lines added and removed, saved to disk. The engine
- * finds conflicts before it starts, so a refactoring should open no dialog; one that still does, because it asks
- * something the checks did not foresee, is read, cancelled, and returned as the failure, so the call never waits
- * on a dialog nobody answers.
- */
 /** The lines added and removed between two texts. */
 internal fun lineCounts(before: String, after: String): Pair<Int, Int> {
     var added = 0
@@ -44,6 +38,12 @@ internal fun lineCounts(before: String, after: String): Pair<Int, Int> {
     return added to removed
 }
 
+/**
+ * Applies a change and reports it: the files it changed with lines added and removed, saved to disk. The engine
+ * finds conflicts before it starts, so a refactoring should open no dialog; one that still does, because it asks
+ * something the checks did not foresee, is read, cancelled, and returned as the failure, so the call never waits
+ * on a dialog nobody answers.
+ */
 internal class RefactorApplier(private val project: Project) {
 
     /** Runs [block] on the EDT under write intent, as a refactoring processor expects, watching for dialogs. */
