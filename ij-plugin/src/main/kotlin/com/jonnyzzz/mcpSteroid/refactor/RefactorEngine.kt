@@ -36,13 +36,11 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.refactoring.move.moveFilesOrDirectories.MoveFilesOrDirectoriesProcessor
-import com.intellij.refactoring.rename.RenamePsiElementProcessor
 import com.intellij.refactoring.rename.RenameUtil
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessor
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessorDelegate
 import com.intellij.refactoring.safeDelete.usageInfo.SafeDeleteReferenceUsageInfo
 import com.intellij.usageView.UsageInfo
-import com.intellij.util.containers.MultiMap
 import com.intellij.util.PairProcessor
 import com.jonnyzzz.mcpSteroid.server.RefactorOp
 import com.jonnyzzz.mcpSteroid.server.RefactorParams
@@ -55,9 +53,10 @@ import kotlinx.coroutines.withContext
 class RefactorFailure(message: String) : RuntimeException(message)
 
 /**
- * Runs steroid_refactor operations. Targets resolve in a smart read action; changes run on the EDT the way the IDE
- * runs them, never inside a write action of ours, and a dialog that a refactoring opens is read and cancelled by
- * [RefactorApplier] instead of blocking the call.
+ * Runs steroid_refactor operations. Targets resolve in a smart read action. Changes run on the EDT the way the IDE
+ * runs them: a refactoring processor under write intent and never inside a write action of ours, a quick fix or a
+ * file edit in one write command. Conflicts are found before anything changes, so no dialog opens in the user's
+ * IDE; [RefactorApplier] reads and cancels one that still does.
  */
 class RefactorEngine(private val project: Project) {
     private val applier = RefactorApplier(project)
@@ -136,7 +135,7 @@ class RefactorEngine(private val project: Project) {
     private suspend fun usages(named: Named): String {
         val lines = usageLines(named)
         return buildString {
-            append(named.description).append(": ").append(lines.size).append(" usage(s)")
+            append(named.description).append(": used on ").append(lines.size).append(" line(s)")
             lines.take(MAX_LINES).forEach { append('\n').append(it) }
             if (lines.size > MAX_LINES) append("\n… ").append(lines.size - MAX_LINES).append(" more")
         }
@@ -150,7 +149,7 @@ class RefactorEngine(private val project: Project) {
             if ((named.element as? PsiNamedElement)?.name == newName) throw RefactorFailure("${named.description} is already named $newName")
             if (!RenameUtil.isValidName(project, named.element, newName)) throw RefactorFailure("$newName is not a valid name for ${named.description}")
         }
-        if (!params.apply) return "dry run: rename ${named.description} to $newName\n" + conflictLines(renameConflicts(named.element, newName)) + usages(named)
+        if (!params.apply) return "dry run: rename ${named.description} to $newName\n" + conflictLines(dryRunRenameConflicts(named.element, newName)) + usages(named)
         val pathBefore = target.file.path
         val processor = readAction {
             if (!named.element.isValid) throw RefactorFailure("the code changed since the target was found; nothing was changed, try again")
@@ -173,14 +172,10 @@ class RefactorEngine(private val project: Project) {
         return applier.apply("Safe Delete") { processor.run() }.let { "deleted ${named.description}\n$it" }
     }
 
-    /** The conflicts a rename would show in its dialog, found the way RenameProcessor finds them, with no dialog. */
-    private suspend fun renameConflicts(element: PsiElement, newName: String): List<String> = smartReadAction(project) {
-        val conflicts = MultiMap<PsiElement, String>()
+    /** The conflicts a rename would show in its dialog, found the way QuietRenameProcessor finds them, for a dry run. */
+    private suspend fun dryRunRenameConflicts(element: PsiElement, newName: String): List<String> = smartReadAction(project) {
         val renames = linkedMapOf(element to newName)
-        val found = RenameUtil.findUsages(element, newName, false, false, renames)
-        RenamePsiElementProcessor.forElement(element).findExistingNameConflicts(element, newName, conflicts, renames)
-        RenameUtil.addConflictDescriptions(found, conflicts)
-        conflicts.values().map { plain(it) }.distinct()
+        renameConflicts(element, newName, RenameUtil.findUsages(element, newName, false, false, renames), renames)
     }
 
     /** The usages that would stop a safe delete, from the language's safe-delete delegate, with no dialog. */
@@ -198,8 +193,6 @@ class RefactorEngine(private val project: Project) {
 
     private fun conflictLines(conflicts: List<String>): String =
         if (conflicts.isEmpty()) "" else "conflicts:\n" + conflicts.joinToString("") { "- $it\n" }
-
-    private fun plain(html: String): String = html.replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").replace(Regex("\\s+"), " ").trim()
 
     private suspend fun move(params: RefactorParams): String {
         val target = target(params)
@@ -232,14 +225,14 @@ class RefactorEngine(private val project: Project) {
         val listing = readAction {
             found.map { p ->
                 val line = target.document.getLineNumber(problemOffset(p).coerceIn(0, target.document.textLength)) + 1
-                "${CodeLocation.shortPath(project, target.file)}:$line: ${p.descriptionTemplate.replace(Regex("<[^>]+>|#ref|#loc"), "").trim()}" +
+                "${CodeLocation.shortPath(project, target.file)}:$line: ${plainText(p.descriptionTemplate.replace("#ref", "").replace("#loc", ""))}" +
                     (p.fixes?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
             }
         }
         if (!params.apply) return "dry run: $shortName reports ${found.size} problem(s)" + listing.joinToString("") { "\n$it" }
         if (params.all) {
             var applied = 0
-            val report = applier.collectChanges("fixes for $shortName") {
+            val report = applier.collectChanges("fixes for $shortName", "each fix is one Edit > Undo step") {
                 // Stops when no fixable problem is left, or when a fix leaves as many problems as before.
                 var remaining = Int.MAX_VALUE
                 repeat(MAX_FIXES) {
@@ -280,13 +273,11 @@ class RefactorEngine(private val project: Project) {
         }
         try {
             val available = readAction { availableIntentions(target.psiFile, editor, target.offset) }
-            if (!params.apply || params.name == null) {
-                return "intentions at ${where(target.document, target.file, target.offset)}: " + available.joinToString("; ") { it.text } +
-                    if (params.apply) "\nintention needs name" else ""
-            }
-            val wanted = params.name!!
+            val listing = available.joinToString("; ") { it.text }
+            if (!params.apply) return "intentions at ${where(target.document, target.file, target.offset)}: $listing"
+            val wanted = params.name ?: throw RefactorFailure("intention needs name: one of $listing")
             val action = available.firstOrNull { it.text == wanted } ?: available.firstOrNull { it.text.startsWith(wanted, ignoreCase = true) }
-                ?: throw RefactorFailure("no intention \"$wanted\" at the target; available: " + available.joinToString("; ") { it.text })
+                ?: throw RefactorFailure("no intention \"$wanted\" at the target; available: $listing")
             val text = action.text
             return applier.apply(text) {
                 ShowIntentionActionsHandler.chooseActionAndInvoke(target.psiFile, editor, action, text)

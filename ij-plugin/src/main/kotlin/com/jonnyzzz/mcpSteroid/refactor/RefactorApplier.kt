@@ -29,9 +29,10 @@ import java.awt.event.WindowEvent
 import kotlin.time.TimeSource
 
 /**
- * Applies a change and reports it: the files it changed with lines added and removed, saved to disk. A dialog that
- * opens meanwhile, such as a refactoring's conflicts or "usages detected" dialog, is read, cancelled, and returned
- * as the failure, so the call never waits on a dialog nobody answers.
+ * Applies a change and reports it: the files it changed with lines added and removed, saved to disk. The engine
+ * finds conflicts before it starts, so a refactoring should open no dialog; one that still does, because it asks
+ * something the checks did not foresee, is read, cancelled, and returned as the failure, so the call never waits
+ * on a dialog nobody answers.
  */
 internal class RefactorApplier(private val project: Project) {
 
@@ -49,23 +50,30 @@ internal class RefactorApplier(private val project: Project) {
             }
         }, ModalityState.nonModal())
         val started = TimeSource.Monotonic.markNow()
+        // Every dialog is read and cancelled, not only the first: cancelling one can make the refactoring ask again.
+        val dialogs = mutableListOf<String>()
         while (!done.isCompleted) {
             val dialog = (UiSettle.showingWindows() - before).firstOrNull { it is Dialog && it.isModal }
             if (dialog != null) {
                 // A conflicts dialog fills its tree and status line after it shows.
                 UiSettle.settle(quietMs = 300, maxMs = 3_000)
-                val text = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { cancel(dialog) }
-                done.await()
-                throw RefactorFailure("$title stopped at a dialog, which was cancelled; nothing was changed:\n$text")
+                if (dialog.isShowing) dialogs += withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { cancel(dialog) }
             }
-            if (started.elapsedNow().inWholeMilliseconds > TIMEOUT_MS) throw RefactorFailure("$title did not finish within ${TIMEOUT_MS / 1000} s")
+            if (started.elapsedNow().inWholeMilliseconds > TIMEOUT_MS) {
+                throw RefactorFailure("$title did not finish within ${TIMEOUT_MS / 1000} s; it may still change files, so read them again")
+            }
             delay(POLL_MS)
         }
         done.await()?.let { throw it }
+        if (dialogs.isNotEmpty()) throw RefactorFailure("$title stopped at a dialog, which was cancelled:\n" + dialogs.joinToString("\n"))
     }
 
-    /** Runs [block], the change named [title], and lists the documents it changed, then saves those and no others. */
-    suspend fun collectChanges(title: String, block: suspend () -> Unit): String {
+    /**
+     * Runs [block], the change named [title], and lists the documents it changed, then saves those and no others.
+     * [undo] tells how Edit > Undo takes the change back. A [RefactorFailure] from [block] comes back with what it
+     * changed before it stopped, left unsaved, or with "nothing was changed".
+     */
+    suspend fun collectChanges(title: String, undo: String = "Edit > Undo \"$UNDO_PREFIX$title\" takes it back", block: suspend () -> Unit): String {
         val originals = LinkedHashMap<Document, String>()
         val disposable = Disposer.newDisposable("steroid_refactor changes")
         try {
@@ -75,29 +83,38 @@ internal class RefactorApplier(private val project: Project) {
                 }
             }, disposable)
             block()
+        } catch (e: RefactorFailure) {
+            val partial = withContext(Dispatchers.EDT) { changeLines(originals) }
+            throw RefactorFailure(
+                e.message + if (partial.isEmpty()) "\nnothing was changed"
+                else "\nit changed these files before it stopped, left unsaved; $undo:\n" + partial.joinToString("\n") { it.second }
+            )
         } finally {
             Disposer.dispose(disposable)
         }
         return withContext(Dispatchers.EDT) {
-            val changed = mutableListOf<Document>()
-            val lines = originals.mapNotNull { (document, before) ->
-                // Not the in-memory copies a ModCommand fix edits before it applies to the real file.
-                val file = FileDocumentManager.getInstance().getFile(document)?.takeIf { it.isInLocalFileSystem } ?: return@mapNotNull null
-                val after = document.text
-                if (after == before) return@mapNotNull null
-                changed += document
-                var added = 0
-                var removed = 0
-                val changes = runCatching { Diff.buildChanges(before, after) }.getOrNull()
-                generateSequence(changes) { it.link }.forEach { added += it.inserted; removed += it.deleted }
-                "${CodeLocation.shortPath(project, file)} +$added -$removed"
-            }
+            val lines = changeLines(originals)
             // Only what the change touched: the user's own unsaved edits elsewhere stay unsaved.
-            changed.forEach { FileDocumentManager.getInstance().saveDocument(it) }
+            lines.forEach { FileDocumentManager.getInstance().saveDocument(it.first) }
             if (lines.isEmpty()) "no file changed"
-            else "changed ${lines.size} file(s), saved; Edit > Undo \"$UNDO_PREFIX$title\" takes it back:\n" + lines.joinToString("\n")
+            else "changed ${lines.size} file(s), saved; $undo:\n" + lines.joinToString("\n") { it.second }
         }
     }
+
+    /** The local files among [originals] whose text differs now, with the lines added and removed in each. EDT. */
+    private fun changeLines(originals: Map<Document, String>): List<Pair<Document, String>> =
+        originals.mapNotNull { (document, before) ->
+            // Not the in-memory copies a ModCommand fix edits before it applies to the real file.
+            val file = FileDocumentManager.getInstance().getFile(document)?.takeIf { it.isInLocalFileSystem } ?: return@mapNotNull null
+            val after = document.text
+            if (after == before) return@mapNotNull null
+            var added = 0
+            var removed = 0
+            val changes = runCatching { Diff.buildChanges(before, after) }.getOrNull()
+            generateSequence(changes) { it.link }.forEach { added += it.inserted; removed += it.deleted }
+            document to "${CodeLocation.shortPath(project, file)} +$added -$removed"
+        }
+
 
     /**
      * The dialog's messages, then its Cancel. Reads the UI model the steroid_ui snapshot shows: labels, and the rows
@@ -113,7 +130,7 @@ internal class RefactorApplier(private val project: Project) {
                 node.interactive || "Editor" in node.className || "Gutter" in node.className -> emptySequence()
                 else -> (node.text + listOfNotNull(node.name)).asSequence()
             }
-        }.map { it.replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim() }
+        }.map { plainText(it) }
             .filter { it.isNotEmpty() && it != title && it !in CHROME }.distinct().toList()
             // A conflict is often both a tree row and the pieces of a coloured label: keep the whole message.
             .let { all -> all.filter { text -> all.none { other -> other != text && text in other } } }

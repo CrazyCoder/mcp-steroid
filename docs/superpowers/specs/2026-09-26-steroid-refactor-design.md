@@ -177,3 +177,12 @@ spec are updated when it does.
   edits in-memory copies (`/dummy.kt`) before it applies to the real file.
 - Split Mode routes `steroid_refactor` to the backend, where the project model
   lives.
+- The tool stays out of a person's way in the same IDE: rename runs a
+  `RenameProcessor` subclass with every dialog answered in advance (after the
+  IDE MCP server's legacy rename; `HeadlessRenameProcessor` exists only from
+  2026.3), safe delete finds blocking usages through the language's
+  `SafeDeleteProcessorDelegate` first, intentions run in a hidden editor, only
+  the changed files are saved, and every undo step is named "MCP Steroid: …".
+  The dialog reader is the fallback for questions the checks do not foresee.
+- The target file is refreshed from disk first, because an agent often edits it
+  outside the IDE.

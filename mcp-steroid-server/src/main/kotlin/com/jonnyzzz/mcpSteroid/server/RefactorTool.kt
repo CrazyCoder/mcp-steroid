@@ -48,8 +48,8 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
 
         By default it is a dry run that changes nothing: it returns the element and its usages as
         path:line: text, the problems and their fixes for fix, or the intentions available for intention.
-        Pass "apply": true to change the code; the response lists the changed files, and Edit > Undo takes
-        the whole change back as one step. A refactoring that finds conflicts, such as a rename to a name
+        Pass "apply": true to change the code; the response lists the changed files and how Edit > Undo takes
+        the change back: one step named "MCP Steroid: ..." (fix with all: one step per fix). A refactoring that finds conflicts, such as a rename to a name
         already in use, returns them and changes nothing.
 
         - rename: "new_name"
@@ -57,7 +57,7 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         - move: moves "file" into the directory "to", updating references and, where the language has them,
           package statements
         - fix: "inspection" is the inspection's short name (such as SimplifiableCallChain); "all": true
-          fixes every problem it reports in the file, else the one at the target
+          fixes every problem it reports in the file, else the one on the target's line (the first, without a target)
         - intention: "name" is the intention's text, such as "Convert to expression body"
         - optimize_imports, reformat: act on "file"
 

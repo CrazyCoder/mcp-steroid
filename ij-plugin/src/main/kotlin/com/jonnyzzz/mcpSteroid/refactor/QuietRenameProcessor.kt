@@ -33,10 +33,7 @@ internal class QuietRenameProcessor(project: Project, private val target: PsiEle
     override fun showAutomaticRenamingDialog(automaticVariableRenamer: AutomaticRenamer?): Boolean = false
 
     override fun preprocessUsages(refUsages: Ref<Array<UsageInfo>>): Boolean {
-        val found = MultiMap<PsiElement, String>()
-        RenameUtil.addConflictDescriptions(refUsages.get(), found)
-        RenamePsiElementProcessor.forElement(target).findExistingNameConflicts(target, newName, found, myAllRenames)
-        conflicts += found.values().map { it.replace(Regex("<[^>]+>"), "").replace(Regex("\\s+"), " ").trim() }.distinct()
+        conflicts += renameConflicts(target, newName, refUsages.get(), myAllRenames)
         return conflicts.isEmpty()
     }
 
@@ -45,3 +42,16 @@ internal class QuietRenameProcessor(project: Project, private val target: PsiEle
         applied = true
     }
 }
+
+/** The conflicts the rename dialog would show for [usages]: name clashes and the usages' own conflicts, as plain text. */
+internal fun renameConflicts(target: PsiElement, newName: String, usages: Array<UsageInfo>, allRenames: Map<PsiElement, String>): List<String> {
+    val found = MultiMap<PsiElement, String>()
+    RenameUtil.addConflictDescriptions(usages, found)
+    RenamePsiElementProcessor.forElement(target).findExistingNameConflicts(target, newName, found, allRenames)
+    return found.values().map { plainText(it) }.distinct()
+}
+
+/** [html] as plain text: tags and entities dropped, whitespace folded, as refactoring messages carry markup. */
+internal fun plainText(html: String): String =
+    html.replace(Regex("(?i)<(br|p|/p|li|tr)\\b[^>]*>"), " ").replace(Regex("<[^>]+>"), "").replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+        .replace(Regex("\\s+"), " ").trim()
