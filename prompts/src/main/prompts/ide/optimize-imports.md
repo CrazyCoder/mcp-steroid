@@ -2,6 +2,10 @@ IDE: Optimize Imports
 
 Remove unused imports and sort the remaining ones via the language-agnostic ImportOptimizer extension point — the same recipe works in every JetBrains IDE.
 
+Prefer the `steroid_refactor` tool, which needs no script: `{"op":"optimize_imports","file":"src/App.tsx"}`
+reports the lines it would add and remove, and `"apply": true` changes the file. Adapt the script below
+to optimize several files in one call.
+
 Import optimization is platform-level: the `Code | Optimize Imports` action dispatches through
 the `com.intellij.lang.importOptimizer` extension point, which the Java, Kotlin, Python, Go,
 JavaScript/TypeScript, and Ruby plugins all implement. Resolve the optimizers for a file via

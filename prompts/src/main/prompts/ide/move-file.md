@@ -2,6 +2,10 @@ IDE: Move File
 
 This example moves a file to another directory,
 
+Prefer the `steroid_refactor` tool, which needs no script:
+`{"op":"move","file":"src/Util.kt","to":"src/util"}` lists the references to the file, and
+`"apply": true` moves it and updates them. Adapt the script below to move several files in one processor.
+
 ```kotlin
 import com.intellij.refactoring.move.moveFilesOrDirectories.MoveFilesOrDirectoriesProcessor
 

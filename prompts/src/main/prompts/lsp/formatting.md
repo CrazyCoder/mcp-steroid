@@ -2,6 +2,10 @@ LSP: textDocument/formatting - Format Document
 
 This example demonstrates how to format an entire document
 
+Prefer the `steroid_refactor` tool, which needs no script: `{"op":"reformat","file":"src/Util.kt"}`
+reports the lines it would add and remove, and `"apply": true` reformats the file. Adapt the script below
+for what the tool does not do, such as formatting a range with `CodeStyleManager.reformatRange`.
+
 ```kotlin
 import com.intellij.psi.codeStyle.CodeStyleManager
 

@@ -51,6 +51,7 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 | Resource | Operation | Description |
 |----------|-----------|-------------|
 | `mcp-steroid://ide/project-dependencies` | Project Dependencies | Summarize module dependencies |
+| `mcp-steroid://ide/project-structure` | Project Structure | Add a module with content, source and excluded roots |
 | `mcp-steroid://ide/project-search` | Project Search (Index) | Search files by name or file type |
 | `mcp-steroid://ide/run-configuration` | Run Configuration | List and execute run configs |
 | `mcp-steroid://ide/demo-debug-test` | Demo Debug Test | End-to-end debug run with test results |
@@ -86,7 +87,7 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 - Refactorings: `extract-method`, `introduce-variable`, `inline-method`, `change-signature`, `move-file`, `safe-delete`, `pull-up-members`, `push-down-members`, `extract-interface`, `move-class`
 - Code Hygiene: `verify-after-edit`, `jps-build-errors`, `module-inspection-sweep`, `optimize-imports`, `inspect-and-fix`, `inspection-summary`, `find-duplicates`
 - Navigation & Generation: `generate-override`, `hierarchy-search`, `call-hierarchy`, `generate-constructor`
-- Project Intelligence: `project-dependencies`, `project-search`, `run-configuration`
+- Project Intelligence: `project-dependencies`, `project-structure`, `project-search`, `run-configuration`
 - IDE UI: `ui-driving`
 
 See `mcp-steroid://ide/<id>` for specific examples (e.g., `mcp-steroid://ide/extract-method`)

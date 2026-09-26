@@ -2,6 +2,10 @@ LSP: textDocument/references - Find All References
 
 This example demonstrates how to find all references to a symbol,
 
+Prefer the `steroid_refactor` tool, which needs no script:
+`{"op":"usages","file":"src/Util.kt","symbol":"parse"}` returns every reference as `path:line: text`.
+Use the script below to post-process the references.
+
 ```kotlin
 import com.intellij.psi.search.searches.ReferencesSearch
 import com.intellij.psi.util.PsiTreeUtil
