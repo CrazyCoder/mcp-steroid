@@ -29,10 +29,10 @@ class VisionScreenshotToolSpec(val handler: () -> VisionScreenshotToolHandler) :
         labelled with its steroid_ui ref, such as e12, and every row of a list, tree or table and every tab
         in view with its row ref, such as e12#3, at the row's right end. Then act on it with steroid_ui by
         that ref: {"action":"click","ref":"e12"}, {"action":"select","ref":"e12#3"}, or fill, check, inspect.
-        Controls scrolled out of view are not marked: a scroll step brings them in. Prefer this to clicking at pixel
-        coordinates: a ref needs no scale arithmetic, still finds the control after a resize or scroll, and the
-        step reports what it caused. Use coordinates with steroid_input only for what has no ref, such as a web
-        view (JCEF), a canvas, or a drag.
+        Controls scrolled out of view are not marked: a steroid_ui scroll step brings them in. Prefer this to
+        clicking at pixel coordinates: a ref needs no scale arithmetic, still finds the control after a resize
+        or scroll, and the step reports what it caused. Use coordinates with steroid_input only for what has
+        no ref, such as a web view (JCEF), a canvas, or a drag.
 
         Use steroid_list_windows when multiple IDE windows are open and pass window_id to target a specific window.
 

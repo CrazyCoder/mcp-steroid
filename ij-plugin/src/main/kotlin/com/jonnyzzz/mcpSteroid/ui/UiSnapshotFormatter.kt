@@ -62,7 +62,7 @@ object UiSnapshotFormatter {
                 val above = hidden.filter { it.offscreen == UiOffscreen.ABOVE }.sumOf { kid -> kid.walk().count { it.listed } }
                 val sides = listOfNotNull(above.takeIf { it > 0 }?.let { "$it above" }, (hiddenListed - above).takeIf { it > 0 }?.let { "$it below" })
                 out.append('\n').append("  ".repeat(depth + 1)).append("- … ").append(sides.joinToString(" and "))
-                    .append(" scrolled out of view: a scroll step lists them, and steps find them by name or text")
+                    .append(" scrolled out of view: a scroll step with \"pages\" lists them, and steps find them by name or text")
             }
         }
 

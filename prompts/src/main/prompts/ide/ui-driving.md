@@ -26,8 +26,8 @@ indented by tree depth and marked `[expanded]`, `[collapsed]` or `[selected]`. R
 is the row ref `e91#9`, which `select`, `click`, `hover`, `scroll` and `inspect` take as their `ref`.
 
 A long scroll pane, such as the installed plugins list, lists the controls in view and counts the rest on
-one line, such as `… 1283 below scrolled out of view`. Steps still find those controls by name or text and
-scroll them into view themselves.
+one line, such as `… 1283 below scrolled out of view`. A `scroll` step with `pages` lists the next part.
+Steps still find those controls by name or text and scroll them into view themselves.
 
 Steps act by ref or by what a control shows, and each one reports what it caused: where the press landed,
 whether a button's action ran, the IDE actions, windows opened or closed. A click that opens a modal dialog
