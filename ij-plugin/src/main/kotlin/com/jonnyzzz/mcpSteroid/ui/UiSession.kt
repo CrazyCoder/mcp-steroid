@@ -70,8 +70,6 @@ class UiSession(
     private val input = UiInput()
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
-    private class WindowModel(val window: Window, val model: UiModelResult)
-
     /** The windows after the previous step, to report the ones that opened or closed between two steps. */
     private var windowsAfterLastStep: Set<Window>? = null
 
@@ -237,8 +235,7 @@ class UiSession(
         (c as? JTextComponent)?.let { return it }
         (c as? JComboBox<*>)?.takeIf { it.isEditable }?.let { return it.editor?.editorComponent as? JTextComponent }
         return UIUtil.findComponentsOfType(c as? JComponent ?: return null, JTextComponent::class.java)
-            .filter { it.isShowing && it.isEditable }
-            .singleOrNull()
+            .singleOrNull { it.isShowing && it.isEditable }
     }
 
     /**
@@ -440,10 +437,10 @@ class UiSession(
             }
         }
         return withContext(edtAny) {
-            val models = windowModels(scopeOnly = true)
-            val xpaths = models.mapNotNull { it.model.xpath }
+            val models = scopeModels()
+            val xpaths = models.mapNotNull { it.xpath }
             val xpath: ((String) -> Set<Component>)? = if (xpaths.isEmpty()) null else { x -> xpaths.flatMap { it(x) }.toSet() }
-            UiLocator.find(models.map { it.model.root }, target, xpath)
+            UiLocator.find(models.map { it.root }, target, xpath)
         }
     }
 
@@ -485,8 +482,7 @@ class UiSession(
             ?: throw UiStepFailure("no control has the keyboard focus in the project's windows; give the step a target")
     }
 
-    private fun windowModels(scopeOnly: Boolean): List<WindowModel> =
-        (if (scopeOnly) scopeWindows() else listedWindows()).map { WindowModel(it, UiModel.build(it)) }
+    private fun scopeModels(): List<UiModelResult> = scopeWindows().map { UiModel.build(it) }
 
     private fun describeClick(node: UiNode, click: ClickReport): String = buildList {
         add(

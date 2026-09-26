@@ -31,9 +31,7 @@ data class UiNode(
 enum class UiState(val label: String) {
     DISABLED("disabled"),
     CHECKED("checked"),
-    SELECTED("selected"),
     FOCUSED("focused"),
-    EXPANDED("expanded"),
     EDITABLE("editable"),
     DEFAULT("default"),
 }
