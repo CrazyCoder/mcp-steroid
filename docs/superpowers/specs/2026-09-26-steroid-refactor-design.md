@@ -44,8 +44,10 @@ Exactly one of `line`, `symbol` or `text` is given. `column` defaults to 1.
 need no index.
 
 Report: `caret at <file>:<line>:<column>` or
-`selected "<snippet, clipped>" at <file>:<line>:<column>`, and the name of the
-PSI element at the caret when it has one.
+`selected "<snippet, clipped>" at <file>:<line>:<column>`, computed from the
+document: a freshly opened editor mapped an offset to a stale line in the live
+test. No PSI element name: resolving it on the EDT is a slow operation, and the
+locator already names the symbol.
 
 Failures: file not found; line out of range; `symbol` or `text` not found, or
 fewer than `nth + 1` occurrences, with the count found.
@@ -69,6 +71,13 @@ The step reports one of:
   given one, ignoring case.
 - `started an in-place template: type the value, then press ENTER` when the
   action starts a template in the editor, as in-place Rename does.
+
+The action runs through `ActionManager.tryToExecute`, which updates it with a
+data context prepared off the EDT. A synchronous update with a plain context
+floods the log with SlowOperations errors, because refactoring actions resolve
+PSI while they update. Unknown-id suggestions put ids that start with the given
+text first, then shorter ids. A failed `goto` or `run` returns no window
+snapshot: the error says what went wrong, and the snapshot was about 7k tokens.
 
 An action whose presentation text ends with an ellipsis opens a window, so the
 step waits for the window as a click on such a button does, and stops early

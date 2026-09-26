@@ -53,6 +53,26 @@ ref. While a modal dialog shows, only that dialog and its popups are searched. A
 each step for a reproduction, and pass `marks=true` to `steroid_take_screenshot` to see the refs on the
 image.
 
+## Run an IDE action at a code location
+
+A `goto` step opens a file in the editor and puts the caret on a symbol, a line and column, or selects an
+exact snippet. A `run` step then runs any IDE action by id there, and the next steps drive the dialog,
+popup or in-place template it opens. This covers every refactoring with a dialog, in any language, with
+no script. Change Signature on a Kotlin function:
+
+- `{"action":"goto","file":"src/main/kotlin/Util.kt","symbol":"parse"}`
+- `{"action":"run","id":"ChangeSignature"}`: opens the "Change Signature" dialog; the response lists its
+  fields, parameter table and buttons
+- `{"action":"fill","name":"Name:","text":"parseAll"}`, then `{"action":"click","name":"Refactor"}`
+
+`symbol` matches whole words; add `"nth":1` for the second occurrence. `"text":"a + b"` selects the
+snippet, which the extract refactorings need. Action ids differ by language: Kotlin extracts with
+`ExtractFunction`, Java with `ExtractMethod`. A `run` step reports an action that is disabled at the caret,
+an unknown id with similar ids, and an in-place template (Kotlin Introduce Variable, in-place Rename):
+type the value, then press ENTER, or press ESCAPE to keep the suggested one. Other useful ids:
+`RenameElement`, `SafeDelete`, `Inline`, `Move`, `IntroduceVariable`, `IntroduceParameter`, `GotoLine`,
+`ShowSettings`, `$Undo`.
+
 ## Drive UI from a script with ui helpers
 
 The `ui` helpers of the script context run the same engine, with the same refs. Each action returns the
