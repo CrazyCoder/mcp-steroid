@@ -126,6 +126,15 @@ is available as context methods you can call from any mode.
 | `smart_non_modal` *(default)* | Close leftover modal dialogs (deepest-first), wait out **dialog-less modal progress** if the IDE is mid freeze-protection/indexing (bounded ~120s; progress notifications are emitted while it settles), require a non-modal IDE (the call **fails with a screenshot + thread dump** if a dialog survives or the wait expires), commit + save documents, refresh the VFS, wait for indexing (point-in-time — index-dependent reads still need `smartReadAction { }`) — then run, with a monitor that **closes any modal dialog that appears mid-run and fails the call** (thread dump + screenshot captured). If your script opens a dialog **on purpose**, call `allowModalDialog()` first so the monitor leaves it alone. Also re-syncs documents post-flight (when still non-modal). | PSI / code-editing / build / test scripts — **and read-only navigation** — the safe default. |
 | `non_modal` | Require a non-modal IDE **at the start** (fail with a screenshot if modal); do **nothing** else — no sweep, no commit, no indexing wait, and **no during-run monitor** (modals appearing later are ignored unless you call `monitorAndCloseModalDialogs()`). **Not sufficient for PSI/editing** unless you call `syncDocuments()` / `waitForSmartMode()` yourself. | A non-PSI read that only needs a stable non-modal start — e.g. reading run-configuration or VCS-status state — where the default's commit + smart-mode wait would be wasted work. |
 | `unleashed` | No sweep, no checks, no validation — run against whatever IDE state exists, modal dialogs included. | **Intentional modal-dialog workflows** (open / inspect / screenshot / close a dialog yourself) and trivial / hardcoded IDE actions. NOT for PSI or code-editing flows (no consistency guarantees). |
+| `dialog` | Run under the open modal dialog's modality: `withContext(Dispatchers.EDT)` and `writeAction { }` run while the dialog stays open instead of waiting for it to close. Fails when no modal dialog is open. No sweep, no commit, no VFS refresh. | Reading or changing a dialog that is already open, with IntelliJ APIs (`mcp-steroid://ide/ui-driving`). |
+
+**Saving.** `smart_non_modal` saves every unsaved document before and after the script, the way the IDE
+itself saves all files before a build, a VCS operation or when its window loses focus. Your edits reach disk,
+and so do the unsaved edits of a person working in the same IDE. That is the IDE's normal behavior, not data
+loss, but do not report it as your change. When their unsaved edits must stay unsaved — they are mid-edit,
+or you reproduce a bug that depends on an unsaved file — run with `non_modal`, and read documents through
+`FileDocumentManager` rather than from disk, because disk has the saved version. The `steroid_refactor` tool
+saves only the files it changed.
 
 Context methods (callable from any mode — the profiles above are just sugar over these):
 

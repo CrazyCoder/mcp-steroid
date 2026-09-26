@@ -161,13 +161,15 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
                 "'smart_non_modal': close leftover modal dialogs, wait out dialog-less modal progress " +
                 "(IDE freeze-protection/indexing; bounded 120s with progress notifications), require " +
                 "non-modal (fail with a screenshot + thread dump if a dialog survives or the wait expires), " +
-                "commit+save documents, refresh VFS, wait for indexing " +
+                "commit+save documents (all of them, as the IDE saves on a build or when it loses focus: a " +
+                "person's unsaved edits in the same IDE are written to disk too), refresh VFS, wait for indexing " +
                 "(point-in-time — index reads still need smartReadAction { }), then run while watching for " +
                 "modals — a modal that appears mid-run is closed and the run FAILS with a screenshot + thread " +
                 "dump (if your script opens a dialog on purpose, call allowModalDialog() from the script " +
                 "first). The safe choice for any PSI / code-editing / build / test work. " +
                 "'non_modal': only assert a non-modal IDE at the START (fail with a screenshot if modal) and " +
-                "do NOTHING else — no dialog sweep, no commit, no indexing wait, no during-run monitor (later " +
+                "do NOTHING else — no dialog sweep, no commit or save (a person's unsaved edits stay unsaved), " +
+                "no indexing wait, no during-run monitor (later " +
                 "modals are ignored unless the script calls monitorAndCloseModalDialogs()). Do document/index " +
                 "prep yourself via context methods (syncDocuments, waitForSmartMode); to close an " +
                 "already-open modal, use 'unleashed' + closeModalDialogs(). " +
