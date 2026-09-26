@@ -46,8 +46,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         A target is "ref":"e12", or any of "name" (exact accessible name), "text" (part of the text a
         control shows), "class" (class or superclass simple name, such as JTextComponent), "xpath" (over the
         remote-driver model), plus "nth" (0-based) when several controls match. Each step waits up to
-        "timeout_ms" (default 5000) for its target to show and be enabled. While a modal dialog shows, only
-        that dialog and its popups are searched.
+        "timeout_ms" (default 5000) for its target to show and be enabled. Only the topmost window with a
+        match counts, and while a modal dialog shows, only that dialog and its popups are searched.
 
         - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}
         - {"action":"hover", target}

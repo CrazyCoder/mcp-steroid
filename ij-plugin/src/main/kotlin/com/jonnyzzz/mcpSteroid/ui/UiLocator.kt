@@ -12,8 +12,9 @@ sealed interface UiMatch {
 }
 
 /**
- * Finds the component a step addresses by name, painted text, class or XPath. Matching is strict: several
- * matches are an error unless the target picks one with `nth`. Refs are resolved by [UiRefRegistry], not here.
+ * Finds the component a step addresses by name, painted text, class or XPath. Only the topmost window with a
+ * match counts, and within it matching is strict: several matches are an error unless the target picks one with
+ * `nth`. Refs are resolved by [UiRefRegistry], not here.
  */
 object UiLocator {
     const val MAX_CANDIDATES = 5
@@ -24,12 +25,17 @@ object UiLocator {
             requireNotNull(xpathMatches) { "an xpath target needs the remote-driver model, which is not available here" }(xpath)
         }
         val nodes = roots.flatMap { it.walk().toList() }.distinctBy { it.component }
-        val matches = narrow(nodes.filter { node ->
+        fun matches(node: UiNode) =
             (target.name == null || node.name == target.name) &&
                 (target.text == null || node.text.any { it.contains(target.text!!) } || node.name?.contains(target.text!!) == true) &&
                 (target.cls == null || classMatches(node.component, target.cls!!)) &&
                 (byXpath == null || node.component in byXpath)
-        })
+        // The topmost window with a match is the one the user sees, so a "Cancel" in a non-modal dialog does not
+        // compete with one in the frame behind it.
+        val matches = roots.asSequence()
+            .map { root -> narrow(root.walk().filter(::matches).distinctBy { it.component }.toList()) }
+            .firstOrNull { it.isNotEmpty() }
+            .orEmpty()
         val nth = target.nth
         return when {
             matches.isEmpty() -> UiMatch.None(candidates(nodes, target))

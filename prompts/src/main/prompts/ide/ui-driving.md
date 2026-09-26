@@ -36,8 +36,8 @@ For example, these steps open Settings, change two options on the Appearance pag
 Pass them as one JSON array in `steps`.
 
 Several controls often share a name, because a label carries its field's name. Matching prefers the
-interactive control, and when two remain, add `nth`, a `class` or the ref. While a modal dialog shows,
-only that dialog and its popups are searched. Add `"trace": true` to record a picture before and after
+interactive control in the topmost window that has one, and when two remain, add `nth`, a `class` or the
+ref. While a modal dialog shows, only that dialog and its popups are searched. Add `"trace": true` to record a picture before and after
 each step for a reproduction, and pass `marks=true` to `steroid_take_screenshot` to see the refs on the
 image.
 

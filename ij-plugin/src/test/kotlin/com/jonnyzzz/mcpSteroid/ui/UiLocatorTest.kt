@@ -51,6 +51,16 @@ class UiLocatorTest {
     }
 
     @Test
+    fun `matches in the topmost window win over the windows behind it`() {
+        val dialogCancel = JButton("Cancel")
+        val dialog = FallbackUiWalker(onlyShowing = false).build(JPanel().apply { add(dialogCancel) })
+        val found = UiLocator.find(listOf(dialog, root), UiTarget(name = "Cancel"))
+        assertEquals(dialogCancel, (found as UiMatch.One).node.component)
+        // A window with no match does not hide the matches behind it.
+        assertEquals(apply, (UiLocator.find(listOf(dialog, root), UiTarget(name = "Apply", nth = 0)) as UiMatch.One).node.component)
+    }
+
+    @Test
     fun `combined fields must all match`() {
         assertEquals(cancel, one(UiTarget(name = "Cancel", cls = "JButton")))
         assertTrue(UiLocator.find(listOf(root), UiTarget(name = "Cancel", cls = "JCheckBox")) is UiMatch.None)
