@@ -58,8 +58,6 @@ val processor = MoveFilesOrDirectoriesProcessor(
 )
 
 writeIntentReadAction { processor.run() }
-
-writeAction { PsiDocumentManager.getInstance(project).commitAllDocuments() }
 println("Moved file: ${moveData.fileName}")
 ```
 

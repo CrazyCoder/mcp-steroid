@@ -61,8 +61,6 @@ val processor = SafeDeleteProcessor.createInstance(
 )
 
 writeIntentReadAction { processor.run() }
-
-writeAction { PsiDocumentManager.getInstance(project).commitAllDocuments() }
 println("Safely deleted: $targetName")
 ```
 

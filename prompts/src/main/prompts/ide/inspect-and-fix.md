@@ -19,6 +19,7 @@ import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.codeInspection.QuickFix
 import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
+import com.intellij.openapi.command.CommandProcessor
 import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.util.PairProcessor
@@ -98,9 +99,17 @@ if (dryRun) {
     return println("Set dryRun=false to apply changes.")
 }
 
-writeAction {
-    fix.applyFix(project, problemInfo.problem)
-    PsiDocumentManager.getInstance(project).commitAllDocuments()
+// Apply it the way the editor does: on the EDT, inside one undoable command. A fix that
+// reports startInWriteAction() = false (a ModCommand fix, as most Kotlin fixes are) takes
+// its own write action and fails inside one.
+withContext(Dispatchers.EDT) {
+    CommandProcessor.getInstance().executeCommand(project, {
+        if (fix.startInWriteAction()) {
+            ApplicationManager.getApplication().runWriteAction { fix.applyFix(project, problemInfo.problem) }
+        } else {
+            fix.applyFix(project, problemInfo.problem)
+        }
+    }, fixName, null)
 }
 
 println("Applied quick fix: $fixName")
@@ -195,7 +204,7 @@ readAction {
 ```
 
 Applying a quick fix in the other project works exactly like the main recipe — substitute
-`target` for `project` in the `writeAction { fix.applyFix(target, problem) }` step.
+`target` for `project` in the `executeCommand` and `applyFix` calls.
 
 # See also
 

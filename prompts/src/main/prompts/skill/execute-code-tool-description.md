@@ -33,6 +33,9 @@ println("edited: " + resolved.joinToString { it.first.path })
 
 The pre-check loop validates every match before any write lands; `VfsUtil.saveText` keeps
 VFS + PSI consistent; native `Edit` chains bypass the VFS and cost one tool call per site.
+The content is the file's raw text, so a file checked out with CRLF (Git on Windows) has
+`\r\n` between lines: an anchor that spans lines with `\n` occurs 0 times there. Keep
+anchors on one line, or build them with the file's separator.
 
 Escape hatch for COMPLEX changes only (an existing unified diff, or drifted files where
 literal anchors keep failing): the IDE's tolerance-matching patch engine — fetch

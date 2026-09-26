@@ -194,7 +194,7 @@ The rest of this article is for **search and replace** workloads.
 import com.intellij.ide.highlighter.JavaFileType
 import com.intellij.openapi.application.readAction
 import com.intellij.openapi.application.writeAction
-import com.intellij.openapi.command.CommandProcessor
+import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.fileTypes.LanguageFileType
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.search.GlobalSearchScope
@@ -262,15 +262,13 @@ if (replaceOptions != null) {
             if (vf == null || !vf.isWritable) { skipped++; null } else replacer.buildReplacement(m)
         }
     }
-    writeAction {
-        CommandProcessor.getInstance().executeCommand(project, {
-            infos.forEach { info ->
-                try { replacer.replace(info); replaced++ }
-                catch (e: Exception) { skipped++ }
-            }
-            PsiDocumentManager.getInstance(project).commitAllDocuments()
-        }, "SSR Replace", null)
-    }
+    // One undoable command on the EDT, the way the IDE's own Replace runs.
+    WriteCommandAction.runWriteCommandAction(project, "SSR Replace", null, {
+        infos.forEach { info ->
+            try { replacer.replace(info); replaced++ }
+            catch (e: Exception) { skipped++ }
+        }
+    })
     println("replaced=$replaced skipped=$skipped (of ${sink.matches.size} matches)")
 }
 ```
@@ -304,9 +302,9 @@ If `expressionTypes` contains `<.*>` and `nameOfExprType` is empty, you forgot `
 
 `replaceAll` enters `runWriteActionWithCancellableProgressInDispatchThread` — it is designed for the modal SSR dialog and will deadlock the EDT when invoked from `mcpScript`. The singular `replace(info)` is what `SSBasedInspection`'s quick-fix uses and what the Kotlin K2 replace tests use.
 
-### 4. One `CommandProcessor.executeCommand` block
+### 4. One `WriteCommandAction` block
 
-Wrap the whole batch of `replacer.replace(info)` calls in a single `CommandProcessor.getInstance(project).executeCommand(project, { ... }, "SSR Replace", null)`. That gives the user a single Ctrl+Z that undoes the entire batch.
+Wrap the whole batch of `replacer.replace(info)` calls in a single `WriteCommandAction.runWriteCommandAction(project, "SSR Replace", null, { ... })`. It runs on the EDT, inside one command and one write action, so the user gets a single Ctrl+Z that undoes the entire batch. Do not put `CommandProcessor.executeCommand` inside `writeAction { }`: a command must wrap the write, not the other way round.
 
 ### 5. `searchInjectedCode = false` for bulk edits
 

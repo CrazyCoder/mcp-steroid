@@ -107,7 +107,6 @@ if (dryRun) {
 // processors perform their own read/write action management internally, matching
 // the pattern used by safe-delete / move-class / change-signature recipes.
 writeIntentReadAction { renamePlan.processor.run() }
-writeAction { PsiDocumentManager.getInstance(project).commitAllDocuments() }
 
 println(renamePlan.analysis)
 println()
