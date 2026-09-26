@@ -47,7 +47,9 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         "nth" for a later occurrence) or "line" and "column" (1-based).
 
         By default it is a dry run that changes nothing: it returns the element and its usages as
-        path:line: text, the problems and their fixes for fix, or the intentions available for intention.
+        path:line: text (for rename, the lines it would change and the references it leaves alone), the
+        problems and their fixes for fix, the intentions available for intention, or the lines
+        optimize_imports and reformat would add and remove.
         Pass "apply": true to change the code; the response lists the changed files and how Edit > Undo takes
         the change back: one step named "MCP Steroid: ..." (fix with all: one step per fix). A refactoring
         that finds conflicts, such as a rename to a name already in use, returns them and changes nothing.
@@ -57,7 +59,9 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         - move: moves "file" into the directory "to", updating references and, where the language has them,
           package statements
         - fix: "inspection" is the inspection's short name (such as SimplifiableCallChain); "all": true
-          fixes every problem it reports in the file, else the one on the target's line (the first, without a target)
+          fixes every problem it reports in the file, else the one on the target's line (the first, without a
+          target). A dry run without "inspection" lists what every enabled inspection reports in the file,
+          with short names; compiler and annotator errors are not inspections and are not listed
         - intention: "name" is the intention's text, such as "Convert to expression body"
         - optimize_imports, reformat: act on "file"
 
@@ -93,7 +97,7 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
     val nth = intParam("nth", "Which occurrence of symbol, from 0.")
     val newName = stringParam("new_name", "rename: the new name.")
     val to = stringParam("to", "move: the target directory, absolute or relative to the project.")
-    val inspection = stringParam("inspection", "fix: the inspection's short name.")
+    val inspection = stringParam("inspection", "fix: the inspection's short name; omit it in a dry run to list problems.")
     val intentionName = stringParam("name", "intention: the intention's text.")
 
     val all = InputSchemaElement.param("all")

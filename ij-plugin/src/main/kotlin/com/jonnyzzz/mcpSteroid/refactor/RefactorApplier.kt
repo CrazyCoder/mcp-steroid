@@ -35,6 +35,15 @@ import kotlin.time.TimeSource
  * something the checks did not foresee, is read, cancelled, and returned as the failure, so the call never waits
  * on a dialog nobody answers.
  */
+/** The lines added and removed between two texts. */
+internal fun lineCounts(before: String, after: String): Pair<Int, Int> {
+    var added = 0
+    var removed = 0
+    val changes = runCatching { Diff.buildChanges(before, after) }.getOrNull()
+    generateSequence(changes) { it.link }.forEach { added += it.inserted; removed += it.deleted }
+    return added to removed
+}
+
 internal class RefactorApplier(private val project: Project) {
 
     /** Runs [block] on the EDT under write intent, as a refactoring processor expects, watching for dialogs. */
@@ -113,10 +122,7 @@ internal class RefactorApplier(private val project: Project) {
             val file = FileDocumentManager.getInstance().getFile(document)?.takeIf { it.isInLocalFileSystem } ?: return@mapNotNull null
             val after = document.text
             if (after == before) return@mapNotNull null
-            var added = 0
-            var removed = 0
-            val changes = runCatching { Diff.buildChanges(before, after) }.getOrNull()
-            generateSequence(changes) { it.link }.forEach { added += it.inserted; removed += it.deleted }
+            val (added, removed) = lineCounts(before, after)
             document to "${CodeLocation.shortPath(project, file)} +$added -$removed"
         }
 

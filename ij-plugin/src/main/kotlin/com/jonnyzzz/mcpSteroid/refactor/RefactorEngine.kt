@@ -47,6 +47,7 @@ import com.jonnyzzz.mcpSteroid.server.RefactorOp
 import com.jonnyzzz.mcpSteroid.server.RefactorParams
 import com.jonnyzzz.mcpSteroid.ui.CodeLocation
 import com.jonnyzzz.mcpSteroid.ui.UiStepFailure
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -70,7 +71,7 @@ class RefactorEngine(private val project: Project) {
         RefactorOp.FIX -> fix(params)
         RefactorOp.INTENTION -> intention(params)
         RefactorOp.OPTIMIZE_IMPORTS -> optimizeImports(params)
-        RefactorOp.REFORMAT -> fileEdit(params, "Reformat") { CodeStyleManager.getInstance(project).reformat(it.psiFile) }
+        RefactorOp.REFORMAT -> fileEdit(params, "Reformat") { file -> Runnable { CodeStyleManager.getInstance(project).reformat(file) } }
     }
 
     private class Target(val file: VirtualFile, val psiFile: PsiFile, val document: Document, val offset: Int, val located: Boolean)
@@ -121,15 +122,21 @@ class RefactorEngine(private val project: Project) {
         return "${CodeLocation.shortPath(project, file)}:${line + 1}"
     }
 
-    /** `path:line: text` for the line of [file] that holds [offset], as usages and blocking usages print. Read action. */
-    private fun lineAt(file: VirtualFile, offset: Int): String? {
+    /** A line of code that uses the target, printed as `path:line: text`, sorted by path, then line. */
+    private data class UsageLine(val path: String, val line: Int, val text: String) : Comparable<UsageLine> {
+        override fun compareTo(other: UsageLine) = compareValuesBy(this, other, { it.path }, { it.line })
+        override fun toString() = "$path:$line: $text"
+    }
+
+    /** The line of [file] that holds [offset]. Read action. */
+    private fun lineAt(file: VirtualFile, offset: Int): UsageLine? {
         val document = FileDocumentManager.getInstance().getDocument(file) ?: return null
         val line = document.getLineNumber(offset.coerceIn(0, document.textLength))
         val text = document.getText(TextRange(document.getLineStartOffset(line), document.getLineEndOffset(line))).trim()
-        return "${CodeLocation.shortPath(project, file)}:${line + 1}: ${text.take(120)}"
+        return UsageLine(CodeLocation.shortPath(project, file), line + 1, text.take(120))
     }
 
-    private suspend fun usageLines(named: Named): List<String> = smartReadAction(project) {
+    private suspend fun usageLines(named: Named): List<UsageLine> = smartReadAction(project) {
         ReferencesSearch.search(named.element, GlobalSearchScope.projectScope(project)).findAll().mapNotNull { ref ->
             val element = ref.element
             val file = element.containingFile?.virtualFile ?: return@mapNotNull null
@@ -137,13 +144,13 @@ class RefactorEngine(private val project: Project) {
         }.distinct().sorted()
     }
 
-    private suspend fun usages(named: Named): String {
-        val lines = usageLines(named)
-        return buildString {
-            append(named.description).append(": used on ").append(lines.size).append(" line(s)")
-            lines.take(MAX_LINES).forEach { append('\n').append(it) }
-            if (lines.size > MAX_LINES) append("\n… ").append(lines.size - MAX_LINES).append(" more")
-        }
+    private suspend fun usages(named: Named): String = named.description + listing("used on", usageLines(named))
+
+    /** ": [verb] N line(s)" and the first lines, one per row. */
+    private fun listing(verb: String, lines: List<UsageLine>): String = buildString {
+        append(": ").append(verb).append(' ').append(lines.size).append(" line(s)")
+        lines.take(MAX_LINES).forEach { append('\n').append(it) }
+        if (lines.size > MAX_LINES) append("\n… ").append(lines.size - MAX_LINES).append(" more")
     }
 
     private suspend fun rename(params: RefactorParams): String {
@@ -154,7 +161,7 @@ class RefactorEngine(private val project: Project) {
             if ((named.element as? PsiNamedElement)?.name == newName) throw RefactorFailure("${named.description} is already named $newName")
             if (!RenameUtil.isValidName(project, named.element, newName)) throw RefactorFailure("$newName is not a valid name for ${named.description}")
         }
-        if (!params.apply) return "dry run: rename ${named.description} to $newName\n" + conflictLines(dryRunRenameConflicts(named.element, newName)) + usages(named)
+        if (!params.apply) return renameDryRun(named, newName)
         val pathBefore = target.file.path
         val processor = readAction {
             if (!named.element.isValid) throw RefactorFailure("the code changed since the target was found; nothing was changed, try again")
@@ -177,10 +184,32 @@ class RefactorEngine(private val project: Project) {
         return applier.apply("Safe Delete") { processor.run() }.let { "deleted ${named.description}\n$it" }
     }
 
-    /** The conflicts a rename would show in its dialog, found the way QuietRenameProcessor finds them, for a dry run. */
-    private suspend fun dryRunRenameConflicts(element: PsiElement, newName: String): List<String> = smartReadAction(project) {
-        val renames = linkedMapOf(element to newName)
-        renameConflicts(element, newName, RenameUtil.findUsages(element, newName, false, false, renames), renames)
+    /**
+     * What the rename would do, found the way QuietRenameProcessor finds it: its conflicts, the lines it would change,
+     * the references it leaves alone (such as a Markdown code span naming the symbol), and declarations of the new
+     * name next to the target, which a language without a clash check (Rust) does not report.
+     */
+    private suspend fun renameDryRun(named: Named, newName: String): String {
+        val element = named.element
+        val (conflicts, changed, sameName) = smartReadAction(project) {
+            val renames = linkedMapOf(element to newName)
+            val usages = RenameUtil.findUsages(element, newName, false, false, renames)
+            val lines = usages.mapNotNull { usage -> usage.virtualFile?.let { lineAt(it, usage.navigationOffset) } }.distinct().sorted()
+            val siblings = element.parent?.children.orEmpty().filter {
+                it !== element && it.javaClass == element.javaClass && (it as? PsiNamedElement)?.name == newName
+            }.map { describe(it) }
+            Triple(renameConflicts(element, newName, usages, renames), lines, siblings)
+        }
+        val untouched = usageLines(named) - changed.toSet()
+        return buildString {
+            append("dry run: rename ${named.description} to $newName\n").append(conflictLines(conflicts))
+            if (conflicts.isEmpty() && sameName.isNotEmpty()) {
+                append("same name in the same scope, a clash unless the language allows overloads:\n")
+                sameName.forEach { append("- ").append(it).append('\n') }
+            }
+            append(named.description).append(listing("would change", changed))
+            if (untouched.isNotEmpty()) append("\nleaves alone").append(listing("the references on", untouched).removePrefix(":"))
+        }
     }
 
     /** The usages that would stop a safe delete, from the language's safe-delete delegate, with no dialog. */
@@ -208,29 +237,57 @@ class RefactorEngine(private val project: Project) {
         return applier.apply("Move") { processor.run() }.let { "moved $describe\n$it" }
     }
 
-    private suspend fun problems(target: Target, shortName: String): List<ProblemDescriptor> = smartReadAction(project) {
-        val wrapper = InspectionProjectProfileManager.getInstance(project).currentProfile.getInspectionTool(shortName, target.psiFile)
-            as? LocalInspectionToolWrapper ?: throw RefactorFailure("no local inspection with the short name $shortName")
+    private suspend fun problems(target: Target, shortName: String): List<ProblemDescriptor> =
+        inspect(target, listOf(inspectionTool(target, shortName))).map { it.second }
+
+    /** The inspection [shortName] of the current profile; an unknown name fails with the similar names it has. */
+    private suspend fun inspectionTool(target: Target, shortName: String): LocalInspectionToolWrapper = readAction {
+        val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
+        profile.getInspectionTool(shortName, target.psiFile) as? LocalInspectionToolWrapper ?: run {
+            val similar = profile.allTools.map { it.tool.shortName }.distinct().filter { it.contains(shortName, ignoreCase = true) || shortName.contains(it, ignoreCase = true) }
+                .sortedWith(compareBy({ !it.startsWith(shortName, ignoreCase = true) }, { it.length })).take(8)
+            throw RefactorFailure("no local inspection with the short name $shortName" + if (similar.isEmpty()) "; a dry run without inspection lists the file's problems" else "; similar: ${similar.joinToString()}")
+        }
+    }
+
+    /** The local inspections the current profile enables for the target's file, in its language. */
+    private suspend fun enabledInspections(target: Target): List<LocalInspectionToolWrapper> = readAction {
+        InspectionProjectProfileManager.getInstance(project).currentProfile.getAllEnabledInspectionTools(project)
+            .mapNotNull { it.getEnabledTool(target.psiFile) as? LocalInspectionToolWrapper }
+            .filter { it.isApplicable(target.psiFile.language) }
+    }
+
+    /** What [tools] report on the target's file, by position, each with its inspection's short name. */
+    private suspend fun inspect(target: Target, tools: List<LocalInspectionToolWrapper>): List<Pair<String, ProblemDescriptor>> = smartReadAction(project) {
         InspectionEngine.inspectEx(
-            listOf(wrapper), target.psiFile, target.psiFile.textRange, target.psiFile.textRange, false, false, true,
+            tools, target.psiFile, target.psiFile.textRange, target.psiFile.textRange, false, false, true,
             EmptyProgressIndicator(), PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
-        ).values.flatten().sortedBy { it.textRangeInElement?.startOffset?.plus(it.psiElement?.textRange?.startOffset ?: 0) ?: it.psiElement?.textOffset ?: 0 }
+        ).flatMap { (tool, problems) -> problems.map { tool.shortName to it } }.sortedBy { problemOffset(it.second) }
     }
 
     private fun problemOffset(problem: ProblemDescriptor): Int =
         (problem.psiElement?.textRange?.startOffset ?: 0) + (problem.textRangeInElement?.startOffset ?: 0)
 
+    /** `path:line: description [fix: ...]`, with the inspection's short name when [named]. Read action. */
+    private fun problemLine(target: Target, problem: ProblemDescriptor, named: String?): String {
+        val line = target.document.getLineNumber(problemOffset(problem).coerceIn(0, target.document.textLength)) + 1
+        return "${CodeLocation.shortPath(project, target.file)}:$line: " + (named?.let { "[$it] " } ?: "") +
+            plainText(problem.descriptionTemplate.replace("#ref", "").replace("#loc", "")) +
+            (problem.fixes?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
+    }
+
     private suspend fun fix(params: RefactorParams): String {
-        val shortName = params.inspection ?: throw RefactorFailure("fix needs inspection: the inspection's short name")
         val target = target(params)
-        val found = problems(target, shortName)
-        val listing = readAction {
-            found.map { p ->
-                val line = target.document.getLineNumber(problemOffset(p).coerceIn(0, target.document.textLength)) + 1
-                "${CodeLocation.shortPath(project, target.file)}:$line: ${plainText(p.descriptionTemplate.replace("#ref", "").replace("#loc", ""))}" +
-                    (p.fixes?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
-            }
+        val shortName = params.inspection ?: run {
+            if (params.apply) throw RefactorFailure("fix needs inspection: the short name in brackets that a dry run without it lists")
+            val found = inspect(target, enabledInspections(target))
+            // An inspection can report one problem twice, as a warning and as an editor-only hint.
+            val lines = readAction { found.map { (name, p) -> problemLine(target, p, name) }.distinct() }
+            return "dry run: the enabled inspections report ${lines.size} problem(s); compiler and annotator errors are not listed" +
+                lines.joinToString("") { "\n$it" }
         }
+        val found = problems(target, shortName)
+        val listing = readAction { found.map { problemLine(target, it, null) } }
         if (!params.apply) return "dry run: $shortName reports ${found.size} problem(s)" + listing.joinToString("") { "\n$it" }
         if (params.all) {
             var applied = 0
@@ -276,7 +333,7 @@ class RefactorEngine(private val project: Project) {
         try {
             val available = readAction { availableIntentions(target.psiFile, editor, target.offset) }
             val listing = available.joinToString("; ") { it.text }
-            if (!params.apply) return "dry run: intentions at${where(target.document, target.file, target.offset)}: $listing"
+            if (!params.apply) return "dry run: intentions at ${where(target.document, target.file, target.offset)}: $listing"
             val wanted = params.name ?: throw RefactorFailure("intention needs name: one of $listing")
             val action = available.firstOrNull { it.text == wanted } ?: available.firstOrNull { it.text.startsWith(wanted, ignoreCase = true) }
                 ?: throw RefactorFailure("no intention \"$wanted\" at the target; available: $listing")
@@ -302,22 +359,44 @@ class RefactorEngine(private val project: Project) {
         val target = target(params)
         val optimizers = readAction { LanguageImportStatements.INSTANCE.forFile(target.psiFile).filter { it.supports(target.psiFile) } }
         if (optimizers.isEmpty()) throw RefactorFailure("${CodeLocation.shortPath(project, target.file)}: its language has no import optimizer")
-        if (!params.apply) return "dry run: optimize imports in ${CodeLocation.shortPath(project, target.file)}; pass apply to change it"
-        val changes = smartReadAction(project) { optimizers.map { it.processFile(target.psiFile) } }
-        return fileEdit(params, "Optimize Imports", target) { changes.forEach { it.run() } }
+        return fileEdit(params, "Optimize Imports", target) { file ->
+            val changes = optimizers.map { it.processFile(file) }
+            Runnable { changes.forEach { it.run() } }
+        }
     }
 
-    /** A synchronous edit of the target's file, on the EDT in one write command. */
-    private suspend fun fileEdit(params: RefactorParams, title: String, known: Target? = null, edit: (Target) -> Unit): String {
+    /**
+     * A synchronous edit of the target's file: [prepare] runs in a smart read action and returns the change, which runs
+     * on the EDT in one write command. A dry run makes the change on a copy of the file and reports how many lines it
+     * would add and remove.
+     */
+    private suspend fun fileEdit(params: RefactorParams, title: String, known: Target? = null, prepare: (PsiFile) -> Runnable): String {
         val target = known ?: target(params)
         val path = CodeLocation.shortPath(project, target.file)
-        if (!params.apply) return "dry run: ${title.lowercase()} $path; pass apply to change it"
+        if (!params.apply) return "dry run: ${title.lowercase()} $path: " + preview(target, prepare)
         return applier.collectChanges(title) {
             withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) {
                 PsiDocumentManager.getInstance(project).commitAllDocuments()
-                WriteCommandAction.runWriteCommandAction(project, RefactorApplier.UNDO_PREFIX + title, null, { edit(target) })
+            }
+            val change = smartReadAction(project) { prepare(target.psiFile) }
+            withContext(Dispatchers.EDT + ModalityState.nonModal().asContextElement()) {
+                WriteCommandAction.runWriteCommandAction(project, RefactorApplier.UNDO_PREFIX + title, null, change)
             }
         }.let { "${title.lowercase()}: $path\n$it" }
+    }
+
+    /** The lines [prepare]'s change would add and remove, made on a copy of the file that nobody sees. */
+    private suspend fun preview(target: Target, prepare: (PsiFile) -> Runnable): String = try {
+        val (before, copy) = smartReadAction(project) { target.psiFile.text to target.psiFile.copy() as PsiFile }
+        val change = smartReadAction(project) { prepare(copy) }
+        withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { ApplicationManager.getApplication().runWriteAction(change) }
+        val after = readAction { copy.text }
+        if (after == before) "no change"
+        else lineCounts(before, after).let { (added, removed) -> "would change the file +$added -$removed; pass apply to change it" }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        "the change cannot be previewed (${e.javaClass.simpleName}); pass apply to change it"
     }
 
     private companion object {

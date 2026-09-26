@@ -107,13 +107,13 @@ default, where the editor and the actions live.
 
 | op | Implementation | Dry run returns |
 | -- | -- | -- |
-| `rename` | `RenameProcessor`, previews off | Element, usages |
+| `rename` | `RenameProcessor`, previews off | Element, conflicts, the lines it would change, the references it leaves alone (a Markdown code span), and same-name declarations next to the target |
 | `safe_delete` | `SafeDeleteProcessor` | Element, usages that block the delete |
 | `move` | `MoveFilesOrDirectoriesProcessor` on the target file; the language updates package statements (Kotlin does) | References to the file |
-| `fix` | Inspection by short name from the current profile; fix applied on the EDT in one command, in a write action only when `startInWriteAction()` | Problems with their fixes |
+| `fix` | Inspection by short name from the current profile; fix applied on the EDT in one command, in a write action only when `startInWriteAction()` | Problems with their fixes; without `inspection`, every enabled local inspection's problems with short names |
 | `intention` | `IntentionManager` actions available at the caret, applied the way the editor applies them | Intentions available at the target |
-| `optimize_imports` | The language's `ImportOptimizer`s: `processFile` in a read action, the result applied in one write command. `OptimizeImportsProcessor` returned before it did anything in the live test | Nothing to preview; the dry run says so |
-| `reformat` | `CodeStyleManager.reformat` in one write command, which is synchronous | Same |
+| `optimize_imports` | The language's `ImportOptimizer`s: `processFile` in a read action, the result applied in one write command. `OptimizeImportsProcessor` returned before it did anything in the live test | The lines it would add and remove, made on a copy of the file, or "no change" |
+| `reformat` | `CodeStyleManager.reformat` in one write command, which is synchronous | Same, on a copy |
 | `usages` | `ReferencesSearch` in the project scope | Usages, always read-only |
 
 Usages print as `path:line: <line text>`, the first 30, then a count. Paths are
