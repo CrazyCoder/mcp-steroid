@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Prints release.json for a built plugin zip: make-release-json.sh <zip> <version>
+# Its "zip" field is the zip's file name, the release asset that clients download.
 set -euo pipefail
 zip="$1"
 version="$2"
@@ -22,7 +23,7 @@ size="$(wc -c < "$zip" | tr -d ' ')"
 [ -n "$since" ] || { echo "no since-build in plugin.xml" >&2; exit 4; }
 
 jq -n --arg version "$version" --arg pluginId "$plugin_id" --arg since "$since" \
-  --arg until "$until_build" --arg sha "$sha" --argjson size "$size" \
+  --arg until "$until_build" --arg sha "$sha" --argjson size "$size" --arg zip "$(basename "$zip")" \
   '{version:$version, pluginId:$pluginId, sinceBuild:$since,
     untilBuild:(if $until == "" then null else $until end),
-    sha256:$sha, size:$size, zip:"mcp-steroid-plugin.zip"}'
+    sha256:$sha, size:$size, zip:$zip}'
