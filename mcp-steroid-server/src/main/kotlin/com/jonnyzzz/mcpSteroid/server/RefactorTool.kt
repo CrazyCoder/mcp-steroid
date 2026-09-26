@@ -61,8 +61,14 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         - intention: "name" is the intention's text, such as "Convert to expression body"
         - optimize_imports, reformat: act on "file"
 
-        Refactorings that need a dialog or the editor, such as Change Signature, Extract and Inline, run
-        through steroid_ui: a goto step to the symbol, then a run step with the action id.
+        It stays out of the way of a person working in the IDE: no dialog, no editor tab, no caret or focus
+        change, and it saves only the files it changed, so their unsaved edits elsewhere stay unsaved. Use
+        it to change code.
+
+        To do what a user does instead, as a reproduction needs (the refactoring's dialog, its preview, an
+        in-place rename, a customer's exact steps), use steroid_ui: a goto step to the symbol, then a run
+        step with the action id. That is also the way for refactorings this tool does not cover, such as
+        Change Signature, Extract and Inline.
     """.trimIndent()
     override val cliSynopsis = "rename, delete, move, fix or reformat code through the IDE"
 

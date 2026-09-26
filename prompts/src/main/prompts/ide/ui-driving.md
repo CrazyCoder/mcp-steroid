@@ -55,6 +55,15 @@ image.
 
 ## Run an IDE action at a code location
 
+Two ways to refactor, for two jobs:
+
+- **Change code**: the `steroid_refactor` tool (rename, safe delete, move, quick fix, intention, imports,
+  formatting). It opens no dialog, tab or caret change, so a person working in the same IDE is not
+  interrupted.
+- **Do what a user does**: the steps below. They open the file, move the caret and show the dialog, the
+  preview or the in-place template, which is what a reproduction of a user's report needs, and they
+  reach refactorings the tool does not cover.
+
 A `goto` step opens a file in the editor and puts the caret on a symbol, a line and column, or selects an
 exact snippet. A `run` step then runs any IDE action by id there, and the next steps drive the dialog,
 popup or in-place template it opens. This covers every refactoring with a dialog, in any language, with

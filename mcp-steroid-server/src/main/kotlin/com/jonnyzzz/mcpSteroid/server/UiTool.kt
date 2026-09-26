@@ -79,6 +79,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]
         Refactoring example: [{"action":"goto","file":"src/Util.kt","symbol":"parse"},
                   {"action":"run","id":"ChangeSignature"}], then fill and click in the dialog it opens.
+        goto and run work the way a user does: they open files, move the caret and show dialogs, which a
+        reproduction needs. To only change code, and leave the user's windows alone, use steroid_refactor.
 
         A click that opens a modal dialog returns while the dialog is up, and the report names it. A step
         that runs an action or presses a button named with an ellipsis ("Settings…") waits up to 10 s for
