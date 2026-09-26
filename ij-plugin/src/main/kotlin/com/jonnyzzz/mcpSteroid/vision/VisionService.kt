@@ -18,6 +18,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.util.ui.ImageUtil
+import com.jonnyzzz.mcpSteroid.ui.UiInput
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import kotlinx.coroutines.CoroutineName
@@ -615,8 +616,11 @@ class VisionService(
             val focus = focusOwner(component)
             ensureFocus(focus)
             focus.requestFocusInWindow()
+            // Pressed, typed and released per character, as a keyboard sends it: a component may ignore a typed
+            // event whose press it never saw (the terminal does).
             step.text.forEach { ch ->
-                dispatchKey(focus, KeyEvent.KEY_TYPED, KeyEvent.VK_UNDEFINED, ch, currentModifiers())
+                UiInput.typedCharEvents(focus, ch, currentModifiers(), System.currentTimeMillis())
+                    .forEach(IdeEventQueue.getInstance()::dispatchEvent)
             }
         }
 

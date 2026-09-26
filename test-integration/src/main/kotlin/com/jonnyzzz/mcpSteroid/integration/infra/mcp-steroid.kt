@@ -35,6 +35,7 @@ enum class ModalMode(val wire: String) {
     SMART_NON_MODAL("smart_non_modal"),
     NON_MODAL("non_modal"),
     UNLEASHED("unleashed"),
+    DIALOG("dialog"),
     ;
 
     companion object {
@@ -692,6 +693,46 @@ try {
                     put("reason", reason)
                     put("window_id", windowId)
                     put("sequence", sequence)
+                }
+            }
+            put("method", "tools/call")
+        }.toString()
+
+        val run = executeMcpRequest(sessionId, toolCallRequest, timeoutSeconds = timeoutSeconds)
+        return ProcessResultValue(
+            exitCode = if (parseMcpToolResultIsError(run)) 1 else 0,
+            stdout = parseMcpToolResultBody(run),
+            stderr = "",
+        )
+    }
+
+    /**
+     * Snapshot or drive the IDE UI via the `steroid_ui` tool. [steps] is the JSON array the tool takes, or null
+     * for a snapshot only. Direct MCP call (no AI agent).
+     */
+    fun mcpUi(
+        steps: String? = null,
+        snapshot: String? = null,
+        windowId: String? = null,
+        taskId: String = "integration-test-ui",
+        reason: String = "Integration test UI steps",
+        projectName: String = resolveProjectName(),
+        timeoutSeconds: Long = 90,
+    ): ProcessResult {
+        val sessionId = mcpInitialize()
+
+        val toolCallRequest = buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", 2)
+            putJsonObject("params") {
+                put("name", "steroid_ui")
+                putJsonObject("arguments") {
+                    put("project_name", projectName)
+                    put("task_id", taskId)
+                    put("reason", reason)
+                    steps?.let { put("steps", it) }
+                    snapshot?.let { put("snapshot", it) }
+                    windowId?.let { put("window_id", it) }
                 }
             }
             put("method", "tools/call")
