@@ -87,6 +87,7 @@ object UiSnapshotFormatter {
         node.name?.let { append(" \"").append(cut(it, MAX_TEXT)).append('"') }
         node.label?.let { append(" label=\"").append(cut(it, MAX_TEXT)).append('"') }
         if (node.listed) append(" [ref=").append(refOf(node)).append(']')
+        node.action?.let { append(" action=").append(it) }
         node.states.sortedBy { it.ordinal }.forEach { append(" [").append(it.label).append(']') }
         node.value?.let { append(" value=\"").append(cut(it, MAX_TEXT)).append('"') }
         // The rows are listed under the line, so the painted text would only repeat them.

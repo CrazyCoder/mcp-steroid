@@ -18,6 +18,8 @@ data class UiNode(
     val rows: UiRowsView? = null,
     /** The text of the label or checkbox just before an unnamed field, which a user reads as its caption. */
     val label: String? = null,
+    /** The id of the IDE action behind a toolbar button or menu item, which a run step takes. */
+    val action: String? = null,
 ) {
     /** Listed in a snapshot: it shows something, or an agent can act on it. */
     val listed: Boolean get() = interactive || !name.isNullOrBlank() || text.isNotEmpty() || !tooltip.isNullOrBlank()

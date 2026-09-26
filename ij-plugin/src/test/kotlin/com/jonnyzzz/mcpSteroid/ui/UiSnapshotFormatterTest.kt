@@ -20,7 +20,20 @@ class UiSnapshotFormatterTest {
         kids: List<UiNode> = emptyList(),
         rows: UiRowsView? = null,
         label: String? = null,
-    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids, rows, label)
+        action: String? = null,
+    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids, rows, label, action)
+
+    @Test
+    fun `an action button shows its action id after the ref`() {
+        val tree = node("JPanel", kids = listOf(
+            node("ActionButton", name = "Run", interactive = true, action = "Run"),
+            node("ActionButton", name = "Debug", interactive = true),
+        ))
+        var n = 0
+        val out = UiSnapshotFormatter.format(header, tree, { "e${++n}" }, maxNodes = 400, withBounds = false)
+        assertTrue(out.text, out.text.contains("- ActionButton \"Run\" [ref=e1] action=Run\n"))
+        assertTrue(out.text, out.text.endsWith("- ActionButton \"Debug\" [ref=e2]"))
+    }
 
     @Test
     fun `listed components get a line with ref and states, wrappers with one child are skipped`() {

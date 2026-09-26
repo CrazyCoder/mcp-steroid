@@ -19,7 +19,8 @@ helpers do not cover.
 `steroid_ui` without steps lists the project's showing windows, topmost first, including separate
 windows such as Settings. Each line is one control: class, accessible name, `label="..."` for the caption
 before an unnamed field, `[ref=e12]`, states such as `[disabled]` or `[checked]`, `value="..."` for text
-fields and combo boxes, `text=...` for the text it paints (tabs, editor text), and `tip="..."`. A list,
+fields and combo boxes, `text=...` for the text it paints (tabs, editor text), `tip="..."`, and
+`action=<id>` for the IDE action behind a toolbar button or menu item, which a `run` step takes. A list,
 tree or table lists its rows in view under it, one per line, as `#index text`, indented by tree depth and
 marked `[expanded]`, `[collapsed]` or `[selected]`.
 
@@ -52,6 +53,25 @@ interactive control in the topmost window that has one, and when two remain, add
 ref. While a modal dialog shows, only that dialog and its popups are searched. Add `"trace": true` to record a picture before and after
 each step for a reproduction, and pass `marks=true` to `steroid_take_screenshot` to see the refs on the
 image.
+
+## Find the code and plugin behind a control
+
+An `inspect` step tells where a control comes from, as the IDE's UI Inspector (Ctrl+Alt+Click in internal
+mode) finds it, in two lines: its class and plugin, the action behind it with its class and plugin, the
+tool window it sits in or opens with its factory, its `DialogWrapper` class, model, renderer and empty
+text, and `created:` with the first frames of the code that built it. For a list, tree or table it adds the
+row that `row` or `index` names, else the selected one: the row's value and user object classes, the
+action behind a popup or Search Everywhere item, the intention or quick fix behind an Alt+Enter item, and
+a Settings tree row's `Configurable class` and `Configurable ID`.
+
+- `{"action":"inspect","name":"Run external linter on the fly"}` on a Settings page names the
+  configurable that built it under `created:`, such as `RsExternalLinterConfigurable.createPanelInner`
+- `{"action":"inspect","name":"Settings categories"}` gives the selected page's configurable class and ID
+- `{"action":"inspect","class":"JList","index":1}` in the Alt+Enter popup names the intention class
+
+The first `inspect` starts recording where controls are created, which the IDE keeps doing until it
+restarts. A control that was showing before has `created: not recorded`: close and reopen its window,
+then inspect it again.
 
 ## Run an IDE action at a code location
 

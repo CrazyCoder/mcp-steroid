@@ -33,7 +33,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         dialogs, separate windows such as Settings, then the project frame. Each line is one control: its
         class, accessible name in quotes, label="..." for the caption before an unnamed field, a ref such
         as [ref=e12], states such as [disabled] or [checked], value="..." for text fields and combo boxes,
-        text=... for text it paints (tabs, editor text), and tip="..." for its tooltip. Under a list, tree
+        text=... for text it paints (tabs, editor text), tip="..." for its tooltip, and action=<id> for the
+        IDE action behind a toolbar button or menu item, which a run step takes. Under a list, tree
         or table come its rows in view, one per line: #index, the row text indented by tree depth, and
         [expanded], [collapsed] or [selected]. A ref stays valid while its control is showing.
 
@@ -69,6 +70,13 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           as Settings (the topmost one without a target)
         - {"action":"wait", "for":"visible|hidden|enabled", target} or {"for":"window","title":"..."} or {"for":"idle"}
         - {"action":"snapshot", optional target}: adds a snapshot of the target's subtree or of all windows
+        - {"action":"inspect", target, optional "row" or "index"}: where the control comes from, as the IDE's
+          UI Inspector finds it: its class and plugin, the action behind it, its tool window, dialog class,
+          model and renderer, and "created:" with the code that built it. For a list, tree or table, the facts
+          of the named or selected row: its value and user object classes, the action behind a popup item,
+          the intention or quick fix behind an Alt+Enter item. The first inspect starts recording where
+          controls are created, until the IDE restarts; a window opened after it names its creator. Use it to
+          find the class, plugin or code behind a piece of UI
         - {"action":"goto", "file":"src/A.kt", and one of "line":N (with "column":N), "symbol":"name" or
           "text":"exact snippet", plus "nth" for a later occurrence}: opens the file in the editor, focuses it,
           and puts the caret there, or selects the snippet. The file is absolute or relative to the project

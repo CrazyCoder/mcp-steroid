@@ -23,6 +23,7 @@ enum class UiAction(val wire: String) {
     SNAPSHOT("snapshot"),
     GOTO("goto"),
     RUN("run"),
+    INSPECT("inspect"),
 }
 
 enum class UiWaitCondition(val wire: String) {
@@ -93,7 +94,7 @@ object UiSteps {
     private val BUTTONS = setOf("left", "right", "middle")
     /** Actions whose "text" is what they enter or look for in the editor, not a target. */
     private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO)
-    private val NEEDS_TARGET = setOf(UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT)
+    private val NEEDS_TARGET = setOf(UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT, UiAction.INSPECT)
 
     fun parse(json: String): List<UiStep> {
         val root = try {

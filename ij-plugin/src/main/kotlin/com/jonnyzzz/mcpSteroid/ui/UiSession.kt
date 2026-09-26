@@ -174,6 +174,7 @@ class UiSession(
     private suspend fun runStep(step: UiStep): String = when (step.action) {
         UiAction.WAIT -> waitStep(step)
         UiAction.SNAPSHOT -> snapshotStep(step)
+        UiAction.INSPECT -> inspectStep(step)
         // Checked once the windows settled: an in-place refactoring shows its name lookup before its template is up.
         UiAction.RUN -> withEffects { actStep(step) }.let {
             if (inplaceActive()) "$it; started an in-place template: type the value, then press ENTER" else it
@@ -234,7 +235,7 @@ class UiSession(
             UiAction.CLOSE -> closeStep(step)
             UiAction.GOTO -> editorSteps.goto(step)
             UiAction.RUN -> editorSteps.run(step, actionComponent(), ::inplaceActive)
-            UiAction.WAIT, UiAction.SNAPSHOT -> error("not an action step")
+            UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT -> error("not an action step")
         }
     }
 
@@ -347,6 +348,33 @@ class UiSession(
                 header(window, UiModelResult(node, "subtree", null)),
                 wrapper, { registry.refFor(it.component) }, maxNodes, withBounds = false,
             ).text
+        }
+    }
+
+    /**
+     * Where the target comes from, as the UI Inspector finds it, and for a list, tree or table the facts of one row:
+     * the one "row" or "index" names, else the selected one. The first inspect starts recording where components are
+     * created, so a window opened after it names its creator.
+     */
+    private suspend fun inspectStep(step: UiStep): String {
+        val started = UiInspect.startRecording()
+        val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
+        return withContext(edtAny) {
+            val c = node.component
+            val out = StringBuilder(describe(node)).append('\n').append(UiInspect.describe(c, project))
+            if (UiInspect.creator(c) == null) {
+                out.append(if (started) "; recording starts now: open the window again, then inspect it" else "; it was showing before the recording started")
+            }
+            val rows = UiRows.rows(c)
+            if (rows != null && c !is JComboBox<*>) {
+                val index = step.index ?: step.row?.let { UiRows.find(c, rows, it) } ?: rows.indices.firstOrNull { UiRows.isSelected(c, it) }
+                when (index) {
+                    null -> out.append("\nrows: none selected; pass \"row\" or \"index\" to inspect one")
+                    !in rows.indices -> throw UiStepFailure("no row ${step.row?.let { "\"$it\"" } ?: "#$index"} in ${describe(node)}")
+                    else -> out.append("\nrow #").append(index).append(" \"").append(rows[index].take(80)).append("\": ").append(UiInspect.describeRow(c, index))
+                }
+            }
+            out.toString()
         }
     }
 

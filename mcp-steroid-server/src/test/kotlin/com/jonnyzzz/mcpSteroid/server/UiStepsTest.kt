@@ -26,6 +26,15 @@ class UiStepsTest {
     }
 
     @Test
+    fun `inspect takes a target and an optional row`() {
+        val step = UiSteps.parse("""[{"action":"inspect","ref":"e4","row":"Editor"}]""").single()
+        assertEquals(UiAction.INSPECT, step.action)
+        assertEquals(UiTarget(ref = "e4"), step.target)
+        assertEquals("Editor", step.row)
+        assertTrue(fails("""[{"action":"inspect"}]""").contains("inspect needs a target"))
+    }
+
+    @Test
     fun `a ref target is kept as a ref`() {
         assertEquals(UiTarget(ref = "e12"), UiSteps.parse("""[{"action":"hover","ref":"e12"}]""").single().target)
     }
