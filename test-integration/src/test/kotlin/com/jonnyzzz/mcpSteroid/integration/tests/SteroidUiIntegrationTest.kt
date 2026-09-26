@@ -155,12 +155,18 @@ class SteroidUiIntegrationTest {
     @Timeout(value = 10, unit = TimeUnit.MINUTES)
     fun `a click that opens a modal dialog returns and names it`() {
         openDialog()
+        val checkbox = Regex("""JCheckBox "Enable feature" \[ref=(e\d+)]""").find(session.mcpSteroid.mcpUi().stdout)!!.groupValues[1]
         val started = System.nanoTime()
         val run = session.mcpSteroid.mcpUi(steps = """[{"action":"click","name":"Ask"}]""", snapshot = "none")
         val ms = (System.nanoTime() - started) / 1_000_000
         run.assertExitCode(0)
         run.assertContains("opened modal dialog")
         Assertions.assertTrue(ms < 15_000, "the click took $ms ms")
+
+        // The question blocks the test dialog, so a ref into the test dialog is not clicked.
+        val blocked = session.mcpSteroid.mcpUi(steps = """[{"action":"click","ref":"$checkbox","timeout_ms":300}]""", snapshot = "none")
+        Assertions.assertEquals(1, blocked.exitCode, blocked.stdout)
+        blocked.assertContains("only the modal dialog")
         session.mcpSteroid.mcpUi(steps = """[{"action":"click","name":"OK"}]""", snapshot = "none").assertExitCode(0)
     }
 
@@ -231,6 +237,8 @@ class SteroidUiIntegrationTest {
                 println("opened modal=" + ((question as? java.awt.Dialog)?.isModal == true))
                 println(ui.click(ui.name("OK") and ui.cls("JButton")))
                 println(ui.click(ui.name("OK")))
+                val failed = runCatching { ui.open(timeoutMs = 5_000) { error("no dialog today") } }.exceptionOrNull()
+                println("open failure: " + failed?.message)
             """.trimIndent(),
             taskId = "ui-helpers",
             reason = "Drive the test dialog through the ui helpers",
@@ -238,6 +246,7 @@ class SteroidUiIntegrationTest {
         )
         run.assertExitCode(0)
         run.assertContains("opened modal=true")
+        run.assertContains("open failure: the block failed before a window opened: java.lang.IllegalStateException: no dialog today")
         Assertions.assertEquals("script|true|null|Red", result())
     }
 

@@ -53,6 +53,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"hover", target}
         - {"action":"type", "text":"...", optional target}: types into the target, or the focused control
         - {"action":"fill", target, "text":"..."}: replaces a text field's text
+          (in type and fill, "text" is the text to enter, so target the field by ref, name or class)
         - {"action":"press", "keys":"ENTER" or "ctrl+shift+A", optional target}: keymap shortcuts run
         - {"action":"check"|"uncheck", target}: clicks a checkbox only when its state differs
         - {"action":"select", target, "row":"text" or "index":N}: a list, tree or table row, or a combo item

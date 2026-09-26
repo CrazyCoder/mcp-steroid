@@ -17,6 +17,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.awt.Component
 import java.awt.Window
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.TimeSource
 
 /**
@@ -59,10 +60,18 @@ class UiScriptApi(private val project: Project) : McpUi {
         val before = UiSettle.showingWindows()
         // The modality of the topmost open dialog, or non-modal: the block may open a dialog on top of one.
         val modality = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { ModalityState.current() }
-        ApplicationManager.getApplication().invokeLater(block, modality)
+        val thrown = AtomicReference<Throwable>()
+        ApplicationManager.getApplication().invokeLater({
+            try {
+                block()
+            } catch (t: Throwable) {
+                thrown.set(t)
+            }
+        }, modality)
         val started = TimeSource.Monotonic.markNow()
         while (started.elapsedNow().inWholeMilliseconds < timeoutMs) {
             delay(POLL_MS)
+            thrown.get()?.let { throw UiStepFailure("the block failed before a window opened: $it").apply { initCause(it) } }
             val opened = UiSettle.showingWindows() - before
             if (opened.isNotEmpty()) {
                 UiSettle.settle()

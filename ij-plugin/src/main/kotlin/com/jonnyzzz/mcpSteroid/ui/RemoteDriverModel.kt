@@ -18,9 +18,8 @@ import javax.xml.xpath.XPathFactory
  * paints (tree and list rows, tabs, editor text) to what Swing reports.
  *
  * Its module has `visibility="internal"`, so Steroid cannot declare a dependency on it. The class is
- * loaded by name from the plugin's own class loaders: the main one (2026.1, where it is in
- * `performanceTesting.jar`) or a content module's (2026.2 and later). Three reflective calls: the
- * constructor, `getElementProcessors()` and `create(Component, Boolean, Component?)`.
+ * loaded by name from the plugin's own class loaders, its content modules' first and then the main one.
+ * Three reflective calls: the constructor, `getElementProcessors()` and `create(Component, Boolean, Component?)`.
  */
 object RemoteDriverModel {
     private const val PLUGIN_ID = "com.jetbrains.performancePlugin"

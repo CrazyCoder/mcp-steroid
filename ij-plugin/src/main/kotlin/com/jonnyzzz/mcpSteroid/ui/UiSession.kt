@@ -351,7 +351,7 @@ class UiSession(
             last = match(target)
             when (val m = last) {
                 is UiMatch.One -> {
-                    if (!requireEnabled || m.node.component.isEnabled) return m.node
+                    if (!requireEnabled || withContext(edtAny) { m.node.component.isEnabled }) return m.node
                 }
                 is UiMatch.Many -> throw UiStepFailure(
                     "${m.matches.size} controls match; add nth, a class or a ref: " +
@@ -375,7 +375,12 @@ class UiSession(
     private suspend fun match(target: UiTarget): UiMatch {
         target.ref?.let { ref ->
             return when (val r = registry.resolve(ref)) {
-                is UiRefResolution.Live -> withContext(edtAny) { UiMatch.One(FallbackUiWalker().build(r.component).copy(children = emptyList())) }
+                // A modal dialog blocks input to the other windows, so a ref into one of them waits like a miss.
+                is UiRefResolution.Live -> withContext(edtAny) {
+                    val window = r.component as? Window ?: SwingUtilities.getWindowAncestor(r.component)
+                    if (window != null && window !in scopeWindows()) UiMatch.None(emptyList())
+                    else UiMatch.One(FallbackUiWalker().build(r.component).copy(children = emptyList()))
+                }
                 is UiRefResolution.Stale -> throw UiStepFailure("ref $ref is stale: its control is no longer showing. Call steroid_ui without steps for fresh refs")
                 is UiRefResolution.Unknown -> throw UiStepFailure("unknown ref $ref. Refs come from a steroid_ui snapshot")
             }

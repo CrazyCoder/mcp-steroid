@@ -614,6 +614,7 @@ interface McpUi {
     /**
      * Runs [block], which opens a window such as a dialog, in its own EDT task and returns the window it opened.
      * The script keeps running while a modal dialog is up, instead of waiting inside the dialog's event loop.
+     * Throws when [block] throws, or when no window opens within [timeoutMs].
      */
     suspend fun open(timeoutMs: Long = 10_000, block: () -> Unit): java.awt.Window
 }

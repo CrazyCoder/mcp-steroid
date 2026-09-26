@@ -23,7 +23,7 @@ object UiLocator {
         val byXpath = target.xpath?.let { xpath ->
             requireNotNull(xpathMatches) { "an xpath target needs the remote-driver model, which is not available here" }(xpath)
         }
-        val nodes = roots.flatMap { it.walk().toList() }.distinctBy { System.identityHashCode(it.component) to it.component }
+        val nodes = roots.flatMap { it.walk().toList() }.distinctBy { it.component }
         val matches = narrow(nodes.filter { node ->
             (target.name == null || node.name == target.name) &&
                 (target.text == null || node.text.any { it.contains(target.text!!) } || node.name?.contains(target.text!!) == true) &&
