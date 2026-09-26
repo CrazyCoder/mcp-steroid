@@ -690,7 +690,7 @@ class DevrigRemoteDevelopmentKeycloakTypeHierarchyTest {
                 fi
                 failed_invariant="MCP Steroid logs no unexpected warning or error"
                 grep -n -E ' (WARN|ERROR|SEVERE) - #com\.jonnyzzz\.mcpSteroid\.' "$idea_log" | \
-                  grep -v -F '#com.jonnyzzz.mcpSteroid.execution.VcsConfirmationSilencer - [mcp-vcs-silencer]' \
+                  grep -v -F '#com.jonnyzzz.mcpSteroid.split.backend.VcsConfirmationSilencer - [mcp-vcs-silencer]' \
                   > /tmp/unexpected-ide-diagnostics.txt || true
                 if test -s /tmp/unexpected-ide-diagnostics.txt; then
                   cat /tmp/unexpected-ide-diagnostics.txt >&2

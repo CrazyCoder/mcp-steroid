@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Timeout
 import java.util.concurrent.TimeUnit
 
 /**
- * Validates that MCP Steroid's [com.jonnyzzz.mcpSteroid.execution.VcsConfirmationSilencer]
+ * Validates that MCP Steroid's [com.jonnyzzz.mcpSteroid.split.backend.VcsConfirmationSilencer]
  * keeps the IDE responsive when an agent creates new unversioned files in a
  * Git-tracked project.
  *

@@ -8,5 +8,10 @@
     <extensions defaultExtensionNs="com.intellij">
         <platform.rpc.backend.remoteApiProvider
             implementation="com.jonnyzzz.mcpSteroid.split.backend.SteroidBridgeApiProvider"/>
+
+        <!-- Silence the VCS Add/Remove confirmation dialogs that block agent flow. VCS runs on the backend
+             (and in a regular IDE); the JetBrains Client has no VCS classes. See the KDoc for side effects. -->
+        <postStartupActivity
+                implementation="com.jonnyzzz.mcpSteroid.split.backend.VcsConfirmationSilencer"/>
     </extensions>
 </idea-plugin>
