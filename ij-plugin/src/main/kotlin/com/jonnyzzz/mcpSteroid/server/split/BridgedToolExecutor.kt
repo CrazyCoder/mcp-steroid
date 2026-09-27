@@ -28,7 +28,7 @@ private val bridgeSessions = Collections.synchronizedMap(WeakHashMap<McpServerCo
  * ended or the errors the IDE logged since the last call, is not repeated on every forwarded call.
  */
 fun executeBridgedTool(core: McpServerCore, params: ToolCallParams): Flow<BridgedOutcome> = channelFlow {
-    val session = bridgeSessions.getOrPut(core) { core.sessionManager.createSession() }
+    val session = synchronized(bridgeSessions) { bridgeSessions.getOrPut(core) { core.sessionManager.createSession() } }
     val progress = object : McpProgressReporter {
         override fun report(message: String) {
             trySend(BridgedOutcome.Progress(message))
