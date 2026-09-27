@@ -57,18 +57,21 @@ class RoutedToolTest {
 
     private fun text(r: ToolCallResult) = (r.content.single() as ContentItem.Text).text
 
-    // Errors other tests logged into the shared test application would lead every result here.
+    // Errors other tests logged, or editors they left open, in the shared test application would lead every result here.
     private val monitor = FreezeMonitor.getInstanceOrNull()
     private val ideErrors = monitor?.ideErrors
+    private val ideBanners = monitor?.ideBanners
 
     @Before
     fun hideIdeErrors() {
         monitor?.ideErrors = { null }
+        monitor?.ideBanners = { null }
     }
 
     @After
     fun restoreIdeErrors() {
         if (ideErrors != null) monitor?.ideErrors = ideErrors
+        if (ideBanners != null) monitor?.ideBanners = ideBanners
     }
 
     @Test

@@ -122,16 +122,21 @@ class FreezeMonitor(private val scope: CoroutineScope) {
     @TestOnly
     internal var ideErrors: () -> IdeErrors? = IdeErrors::getInstanceOrNull
 
+    @TestOnly
+    internal var ideBanners: () -> IdeBanners? = IdeBanners::getInstanceOrNull
+
     /**
-     * Runs [call] and puts any freeze, and the errors the IDE logged since [session]'s last call, in front
-     * of its result. A call still running once a freeze has been known for [EARLY_ANSWER_MS] is answered
-     * with the freeze instead, and keeps running in the IDE. [reportsIdeErrors] tells that the call's own
-     * result lists the errors logged while it ran, as steroid_execute_code does.
+     * Runs [call] and puts any freeze, the errors the IDE logged since [session]'s last call, and the warning
+     * banners above open editors it was not told about, in front of its result. A call still running once a
+     * freeze has been known for [EARLY_ANSWER_MS] is answered with the freeze instead, and keeps running in the
+     * IDE. [reportsIdeErrors] tells that the call's own result lists the errors logged while it ran, as
+     * steroid_execute_code does.
      */
     suspend fun guard(session: Any, reportsIdeErrors: Boolean = false, call: suspend () -> ToolCallResult): ToolCallResult {
         val errors = ideErrors()
+        val banners = ideBanners()
         val startedAtMs = System.currentTimeMillis()
-        fun notices() = listOfNotNull(noticeFor(session), errors?.noticeFor(session)).joinToString("").ifEmpty { null }
+        fun notices() = listOfNotNull(noticeFor(session), errors?.noticeFor(session), banners?.noticeFor(session)).joinToString("").ifEmpty { null }
 
         val run = scope.async(currentCoroutineContext().minusKey(Job)) { call() }
         try {
@@ -143,6 +148,8 @@ class FreezeMonitor(private val scope: CoroutineScope) {
             }
             val result = run.await()
             if (reportsIdeErrors) errors?.reportedBy(session, startedAtMs, System.currentTimeMillis())
+            // After the call, which may have opened a file or changed the setup a banner is about.
+            banners?.refresh()
             val notice = notices() ?: return result
             return result.copy(content = listOf(ContentItem.Text(notice)) + result.content)
         } catch (e: CancellationException) {

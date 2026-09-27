@@ -117,6 +117,7 @@ soft. Each expect has one subject:
 | `file`: a project file's text | `value`, `contains` or `matches`, over `line` N when given | `{"action":"expect","file":"src/A.kt","line":3,"contains":"newName"}` |
 | `file` with `caret` | The caret in the file's editor, as `line:column`, 1-based | `{"action":"expect","file":"src/A.kt","caret":"3:14"}` |
 | `notification` | A notification shown since the call started, or listed in the Notifications tool window, whose title or text contains this | `{"action":"expect","notification":"Indexing"}` |
+| `banner` | A banner above one of the project's open editors, of any kind, whose text contains this | `{"action":"expect","banner":"Module JDK is not defined","not":true}` |
 | `error` | An IDE error logged since the call started whose summary contains this; `""` matches any | `{"action":"expect","error":"","not":true}` |
 
 A check that fails says what it wanted and what it found, and for a target that matched nothing, the
@@ -223,7 +224,7 @@ client sends a step to the Remote Development backend when:
 - the step says `"side": "backend"`, as a step on a window the backend draws needs: a host Settings page's
   controls, the Commit tool window, a refactoring dialog; or
 - the step needs the project itself, which only the backend holds, and names no side: `write`, `code`,
-  `goto`, an `expect` on a `file`, and `get` or `set` of an `inspection`. The file `goto` opens on the backend
+  `goto`, an `expect` on a `file` or a `banner`, and `get` or `set` of an `inspection`. The file `goto` opens on the backend
   shows in the client's editor.
 
 Everything else runs in the client: its windows, Settings dialog, tool windows and pictures. A step on the

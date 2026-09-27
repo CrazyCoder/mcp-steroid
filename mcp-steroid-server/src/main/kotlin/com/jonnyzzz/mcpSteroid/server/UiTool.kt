@@ -99,8 +99,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           a target with "is" (visible, hidden, enabled, disabled, checked, unchecked, focused, editable), "value",
           "contains", "matches" (a regex), "count", or "row" with "is" selected, expanded or collapsed;
           "title" (a window) with "is" visible or hidden; "file" with "value", "contains" or "matches", optionally
-          on "line", or "caret":"line:column"; "notification":"text" and "error":"text" ("" for any), shown or
-          logged since the call started. "soft" reports a failure and goes on; "bug" marks the check whose failure
+          on "line", or "caret":"line:column"; "banner":"text" above an open editor; "notification":"text" and
+          "error":"text" ("" for any), shown or logged since the call started. "soft" reports a failure and goes on; "bug" marks the check whose failure
           means the reported bug is present
         - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
           or name, or switches the open Settings window to it
@@ -117,7 +117,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           the topmost one, to the execution folder, for a visual review
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In
         Split Mode any step takes "side":"backend" to run on the Remote Development backend from a JetBrains
-        Client call; write, code, goto, file expects and inspection settings go there by default.
+        Client call; write, code, goto, file and banner expects and inspection settings go there by default.
 
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]

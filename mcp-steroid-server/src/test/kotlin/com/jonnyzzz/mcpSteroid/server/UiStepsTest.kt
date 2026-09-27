@@ -184,6 +184,9 @@ class UiStepsTest {
         assertEquals("Settings", UiSteps.parse("""[{"action":"expect","title":"Settings","is":"hidden"}]""").single().title)
         assertEquals("", UiSteps.parse("""[{"action":"expect","error":"","not":true}]""").single().error)
         assertEquals("Indexing", UiSteps.parse("""[{"action":"expect","notification":"Indexing"}]""").single().notification)
+        assertEquals("Module JDK", UiSteps.parse("""[{"action":"expect","banner":"Module JDK","not":true}]""").single().banner)
+        assertTrue(fails("""[{"action":"expect","banner":"x","error":"y"}]""").contains("not banner and error"))
+        assertTrue(fails("""[{"action":"click","name":"OK","banner":"x"}]""").contains("go(es) with expect"))
     }
 
     @Test

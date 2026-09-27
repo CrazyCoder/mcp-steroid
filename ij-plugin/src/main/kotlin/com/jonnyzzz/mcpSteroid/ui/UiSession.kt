@@ -194,12 +194,13 @@ class UiSession(
 
     /**
      * Whether a JetBrains Client sends [step] to the backend: its `side` when it names one, else the steps that need the
-     * project itself, which only the backend holds: files, the editor at a file, scripts and the inspection profile.
+     * project itself, which only the backend holds: files, the editor at a file, editor banners, scripts and the
+     * inspection profile.
      */
     private fun runsOnBackend(step: UiStep): Boolean = when (step.side) {
         "backend" -> true
         "frontend" -> false
-        else -> step.action in BACKEND_HOME || step.action == UiAction.EXPECT && step.file != null ||
+        else -> step.action in BACKEND_HOME || step.action == UiAction.EXPECT && (step.file != null || step.banner != null) ||
             (step.action == UiAction.GET || step.action == UiAction.SET) && step.inspection != null
     }
 

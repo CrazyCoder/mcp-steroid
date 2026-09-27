@@ -94,7 +94,7 @@ class IdeErrorsTest {
     @Test
     fun `guard puts the errors in front of the result, except those execute_code reported`() = runBlocking {
         try {
-            val monitor = FreezeMonitor(scope).also { it.ideErrors = { errors } }
+            val monitor = FreezeMonitor(scope).also { it.ideErrors = { errors }; it.ideBanners = { null } }
             val session = Any()
             val ok = ToolCallResult(listOf(ContentItem.Text("ok")))
             assertEquals(ok, monitor.guard(session) { ok })

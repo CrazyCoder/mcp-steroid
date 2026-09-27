@@ -120,6 +120,8 @@ data class UiStep(
     /** On an expect step with a file: the caret as `line:column`, both 1-based. */
     val caret: String? = null,
     val notification: String? = null,
+    /** On an expect step: a banner above an open editor whose text contains this, such as "Module JDK is not defined". */
+    val banner: String? = null,
     val error: String? = null,
     val page: String? = null,
     val registry: String? = null,
@@ -170,7 +172,7 @@ object UiSteps {
     private val FIELDS = TARGET_FIELDS + setOf(
         "action", "button", "count", "modifiers", "offset_x", "offset_y", "keys", "row", "index", "for", "title", "timeout_ms",
         "file", "line", "column", "symbol", "id", "pages",
-        "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "error",
+        "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
     )
     val SIDES = setOf("frontend", "backend")
@@ -275,6 +277,7 @@ object UiSteps {
             expectCount = obj.int("count").takeIf { action == UiAction.EXPECT },
             caret = obj.string("caret"),
             notification = obj.string("notification"),
+            banner = obj.string("banner"),
             error = obj.string("error"),
             page = obj.string("page"),
             registry = obj.string("registry"),
@@ -320,7 +323,7 @@ object UiSteps {
             require(!step.negate) { "not goes with expect, not $action" }
             val expectOnly = listOfNotNull(
                 step.state?.let { "is" }, step.contains?.let { "contains" }, step.matches?.let { "matches" },
-                step.caret?.let { "caret" }, step.notification?.let { "notification" }, step.error?.let { "error" },
+                step.caret?.let { "caret" }, step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
             )
             require(expectOnly.isEmpty()) { "${expectOnly.joinToString()} go(es) with expect, not $action" }
             if (step.action != UiAction.SET) require(step.value == null) { "value goes with expect and set, not $action" }
@@ -396,10 +399,10 @@ object UiSteps {
     private fun validateExpect(step: UiStep) {
         val subjects = listOfNotNull(
             step.target?.let { "a target" }, step.title?.let { "title" }, step.file?.let { "file" },
-            step.notification?.let { "notification" }, step.error?.let { "error" },
+            step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
         )
         require(subjects.size == 1) {
-            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, notification or error"
+            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, notification, banner or error"
             else "expect checks one subject, not ${subjects.joinToString(" and ")}"
         }
         require(listOfNotNull(step.value, step.contains, step.matches).size <= 1) { "pass one of value, contains or matches" }
@@ -441,7 +444,7 @@ object UiSteps {
                 step.line?.let { require(it >= 1) { "line is 1-based, was $it" } }
             }
             else -> require(step.state == null && !textCheck && step.caret == null && step.line == null) {
-                "a notification or an error is matched by its text alone; add \"not\":true to expect none"
+                "a notification, a banner or an error is matched by its text alone; add \"not\":true to expect none"
             }
         }
     }

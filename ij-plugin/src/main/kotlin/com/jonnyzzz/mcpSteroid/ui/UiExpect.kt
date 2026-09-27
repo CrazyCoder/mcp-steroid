@@ -14,6 +14,7 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
+import com.jonnyzzz.mcpSteroid.freeze.IdeBanners
 import com.jonnyzzz.mcpSteroid.freeze.IdeErrors
 import com.jonnyzzz.mcpSteroid.server.UiExpectState
 import com.jonnyzzz.mcpSteroid.server.UiStep
@@ -69,7 +70,19 @@ internal class UiExpect(
         step.title != null -> window(step.title!!, step.state)
         step.file != null -> file(step)
         step.notification != null -> notification(step.notification!!)
+        step.banner != null -> banner(step.banner!!)
         else -> error(step.error!!)
+    }
+
+    /** A banner above one of the project's open editors, of any severity, whose text contains [text]. */
+    private suspend fun banner(text: String): Check {
+        val banners = IdeBanners.read(project, all = true)
+        return Check(
+            banners.any { it.text.contains(text, ignoreCase = true) },
+            "a banner above an editor with \"$text\"",
+            if (banners.isEmpty()) "no open editor shows a banner"
+            else "banners: " + banners.take(5).joinToString("; ") { "${it.file}: ${it.text}" + if (it.links.isEmpty()) "" else " [${it.links.joinToString(" | ")}]" },
+        )
     }
 
     private suspend fun control(step: UiStep, target: UiTarget): Check {
