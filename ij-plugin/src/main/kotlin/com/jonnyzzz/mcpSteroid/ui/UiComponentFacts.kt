@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ui
 
+import com.intellij.ide.IdeBundle
 import com.intellij.openapi.diagnostic.logger
 import java.awt.Component
 import java.awt.KeyboardFocusManager
@@ -24,6 +25,7 @@ import javax.swing.text.JTextComponent
 object UiComponentFacts {
     private val log = logger<UiComponentFacts>()
     private const val MAX_VALUE = 200
+    private const val CLIENT_PROJECT_VIEW_TREE = "ThinClientProjectViewTree"
 
     /** Simple class names that mark a component as clickable although it is not a Swing button. */
     private val CLICKABLE_CLASS_NAMES = setOf("ActionButton", "TabLabel", "LinkLabel", "ActionLink", "HyperlinkLabel")
@@ -57,7 +59,17 @@ object UiComponentFacts {
         return if (at.y + at.height <= port.viewPosition.y) UiOffscreen.ABOVE else UiOffscreen.BELOW
     }
 
-    fun name(c: Component): String? = c.accessibleContext?.accessibleName?.let(::clean)?.takeIf { it.isNotEmpty() }
+    fun name(c: Component): String? = c.accessibleContext?.accessibleName?.let(::clean)?.takeIf { it.isNotEmpty() } ?: fallbackName(c)
+
+    /**
+     * The name a regular IDE gives a control that a JetBrains Client leaves unnamed, so that one step finds it in
+     * both: the Client's Project view tree is the regular IDE's "Project structure tree".
+     */
+    fun fallbackName(c: Component): String? = when (c.javaClass.simpleName) {
+        CLIENT_PROJECT_VIEW_TREE -> IdeBundle.message("project.structure.tree.accessible.name")
+        else -> null
+    }
+
 
     fun ownText(c: Component): String? {
         val raw = when (c) {

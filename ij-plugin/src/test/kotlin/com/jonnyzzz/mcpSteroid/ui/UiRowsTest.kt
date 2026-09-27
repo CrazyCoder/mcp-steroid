@@ -60,6 +60,35 @@ class UiRowsTest {
     }
 
     @Test
+    fun `a table row's cells are its columns after the first, and a checkbox cell shows its state`() {
+        val table = object : JTable(arrayOf(arrayOf<Any>("Hard wrap at:", 90, true), arrayOf<Any>("Wrap", 0, false)), arrayOf<Any>("name", "value", "on")) {
+            override fun getColumnClass(column: Int): Class<*> = if (column == 2) java.lang.Boolean::class.java else Any::class.java
+        }
+        assertEquals(listOf("90", "[x]"), onEdt { UiRows.cells(table, 0) })
+        assertEquals(listOf("0", "[ ]"), onEdt { UiRows.cells(table, 1) })
+        assertEquals(emptyList<String>(), UiRows.cells(table, 5))
+        assertEquals(emptyList<String>(), UiRows.cells(JLabel("x"), 0))
+    }
+
+    @Test
+    fun `a tree path matches rows whose text carries more than the segment, and several matches fail`() {
+        val root = DefaultMutableTreeNode("mcp  C:\\work\\mcp").apply {
+            add(DefaultMutableTreeNode("a").apply { add(DefaultMutableTreeNode(".env")) })
+            add(DefaultMutableTreeNode("b").apply { add(DefaultMutableTreeNode(".env")) })
+            add(DefaultMutableTreeNode("ba").apply { add(DefaultMutableTreeNode(".env")) })
+        }
+        val tree = JTree(root)
+        onEdt { var i = 0; while (i < tree.rowCount) tree.expandRow(i++) }
+        val rows = onEdt { UiRows.rows(tree)!! }
+        val bEnv = onEdt { UiRows.find(tree, rows, "mcp > b > .env") }
+        assertEquals("mcp C:\\work\\mcp > b > .env", onEdt { UiRows.treePath(tree, bEnv) })
+        assertEquals(bEnv, onEdt { UiRows.find(tree, rows, "b > .env") })
+        assertEquals(-1, onEdt { UiRows.find(tree, rows, "mcp > c > .env") })
+        assertEquals("a path names every level it spans", -1, onEdt { UiRows.find(tree, rows, "mcp > .env") })
+        assertThrows(UiStepFailure::class.java) { onEdt { UiRows.find(tree, rows, "cp > a > .env") } }
+    }
+
+    @Test
     fun `a row is found by exact text before substring`() {
         val list = JList(arrayOf("Editor Tabs", "Editor", "Keymap"))
         assertEquals(1, UiRows.find(list, UiRows.rows(list)!!, "Editor"))

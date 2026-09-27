@@ -94,9 +94,15 @@ object UiRows {
      * `A > B > C` names a row by its path. Several matching rows are an error that lists them by index.
      */
     fun find(c: Component, rows: List<String>, wanted: String): Int {
-        val labels = if (c is JTree && PATH_SEPARATOR in wanted) rows.indices.map { treePath(c, it) } else rows
-        val exact = labels.indices.filter { labels[it] == wanted }
-        val candidates = exact.ifEmpty { labels.indices.filter { labels[it].contains(wanted) } }
+        val candidates = if (c is JTree && PATH_SEPARATOR in wanted) {
+            val want = wanted.split(PATH_SEPARATOR).map { it.trim() }
+            val paths = rows.indices.map { treeSegments(c, it) }
+            paths.indices.filter { paths[it] == want }
+                .ifEmpty { paths.indices.filter { pathEndsWith(paths[it], want) { have, w -> have.startsWith("$w ") } } }
+                .ifEmpty { paths.indices.filter { pathEndsWith(paths[it], want) { have, w -> have.contains(w) } } }
+        } else {
+            rows.indices.filter { rows[it] == wanted }.ifEmpty { rows.indices.filter { rows[it].contains(wanted) } }
+        }
         return when (candidates.size) {
             0 -> -1
             1 -> candidates.single()
@@ -151,13 +157,15 @@ object UiRows {
     }
 
     /**
-     * The row of the child of [parent] that shows [segment], its text exactly, else part of it, or -1 when no child
-     * matches. Without a parent, any row counts. Several matching rows are an error that lists them.
+     * The row of the child of [parent] that shows [segment]: its text exactly, else the start of it followed by more,
+     * such as a location, else part of it; -1 when no child matches. Without a parent, any row counts. Several
+     * matching rows are an error that lists them.
      */
     fun childRow(tree: JTree, parent: TreePath?, segment: String): Int {
         val children = (0 until tree.rowCount).filter { parent == null || tree.getPathForRow(it)?.parentPath == parent }
-        val exact = children.filter { treeRow(tree, it) == segment }
-        val candidates = exact.ifEmpty { children.filter { treeRow(tree, it).contains(segment) } }
+        val candidates = children.filter { treeRow(tree, it) == segment }
+            .ifEmpty { children.filter { treeRow(tree, it).startsWith("$segment ") } }
+            .ifEmpty { children.filter { treeRow(tree, it).contains(segment) } }
         return when (candidates.size) {
             0 -> -1
             1 -> candidates.single()
@@ -173,15 +181,25 @@ object UiRows {
         (0 until tree.rowCount).filter { tree.getPathForRow(it)?.parentPath == parent }.map { "#$it ${treeRow(tree, it)}" }
 
     /** A tree row's text with its ancestors', such as `Editor > General > Appearance`. The root is left out when hidden. */
-    fun treePath(tree: JTree, row: Int): String {
-        val path = tree.getPathForRow(row) ?: return treeRow(tree, row)
+    fun treePath(tree: JTree, row: Int): String = treeSegments(tree, row).joinToString(PATH_SEPARATOR)
+
+    private fun treeSegments(tree: JTree, row: Int): List<String> {
+        val path = tree.getPathForRow(row) ?: return listOf(treeRow(tree, row))
         return generateSequence(path) { it.parentPath }
             .map { tree.getRowForPath(it) }
             .takeWhile { it >= 0 }
             .toList()
             .reversed()
-            .joinToString(PATH_SEPARATOR) { treeRow(tree, it) }
+            .map { treeRow(tree, it) }
     }
+
+    /**
+     * Whether a row's [path] ends with the [wanted] segments, each its row's text or a text that [loose] accepts. A
+     * row's text can carry more than its name, such as the Project view's root `mcp C:\work\mcp`, so a segment
+     * that starts the text is tried before one that is only part of it.
+     */
+    private fun pathEndsWith(path: List<String>, wanted: List<String>, loose: (String, String) -> Boolean): Boolean =
+        wanted.size <= path.size && path.takeLast(wanted.size).zip(wanted).all { (have, want) -> have == want || loose(have, want) }
 
     private fun row(c: Component, i: Int): UiRow = when (c) {
         is JList<*> -> UiRow(i, listRow(c, i), 0, c.isSelectedIndex(i), null)
