@@ -160,15 +160,8 @@ Use the inspection-based recipe only when the user explicitly wants near-duplica
 Submit this as a single `steroid_execute_code` call. Adjust `targetExtensions` to whatever your project uses. Everything else is fully self-contained.
 
 ```kotlin[AI,IC,IU,PY,RM,WS]
-import com.intellij.codeInspection.InspectionEngine
-import com.intellij.codeInspection.ProblemDescriptor
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
-import com.intellij.openapi.progress.EmptyProgressIndicator
-import com.intellij.psi.PsiManager
 import com.intellij.psi.search.FilenameIndex
 import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.util.PairProcessor
-import com.jetbrains.clones.DuplicateInspection
 import com.jetbrains.clones.DuplicateProblemDescriptor
 import com.jetbrains.clones.structures.TextClone
 import com.jetbrains.clones.structures.TextFragment
@@ -197,8 +190,6 @@ val files = readAction {
 }
 println("Scanning ${files.size} file(s) for clones")
 
-val wrapper = LocalInspectionToolWrapper(DuplicateInspection())
-
 // IMPORTANT — `DuplicatedCode` emits ONE descriptor per cluster *per file containing
 // its main fragment*. A 2-fragment cluster surfaces twice — once with fragment A as
 // `main` and B as a duplicate, then with the roles swapped (this happens for both
@@ -209,20 +200,10 @@ val clusters = mutableListOf<CloneCluster>()
 
 for (vf in files) {
     if (clusters.size >= maxClustersToReport) break
+    // Runs DuplicatedCode as Code | Inspect Code does, whether the profile enables it or not,
+    // in a background task that gives way to the user's edits.
+    val raw = runInspectionsDirectly(vf, inspections = setOf("DuplicatedCode")).values.flatten()
     val perFile = readAction {
-        val psiFile = PsiManager.getInstance(project).findFile(vf) ?: return@readAction emptyList<CloneCluster>()
-        val raw: List<ProblemDescriptor> = InspectionEngine.inspectEx(
-            listOf(wrapper),
-            psiFile,
-            psiFile.textRange,
-            psiFile.textRange,
-            false,
-            false,
-            true,
-            EmptyProgressIndicator(),
-            PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
-        ).values.flatten()
-
         raw.filterIsInstance<DuplicateProblemDescriptor>().mapNotNull { dpd ->
             val tc: TextClone = dpd.textClone
             val main = tc.main.toRange()
@@ -289,7 +270,7 @@ fun TextFragment.snippet(maxChars: Int = 300): String {
     val doc = FileDocumentManager.getInstance().getDocument(file) ?: return ""
     return range.substring(doc.text).take(maxChars)
 }
-// inside the same readAction { } that owns the descriptor:
+// inside the readAction { } that maps the descriptors:
 //   val text = tc.main.snippet()
 ```
 
@@ -339,7 +320,7 @@ unchanged.
 ###_IF_IDE[AI,IC,IU,PY,RM,WS]_###
 # How the Cross-check recipe works
 
-- `DuplicateInspection` is a `LocalInspectionTool` (`shortName = "DuplicatedCode"`, registered with `runForWholeFile="true"`). Per-file `checkFile` looks up a `DuplicateScopeExtension` for the file's language, queries the project-wide `HashFragmentIndex`, and emits a `DuplicateProblemDescriptor` for each clone where the inspected file holds the cluster's `main` fragment.
+- `DuplicateInspection` is a `LocalInspectionTool` (`shortName = "DuplicatedCode"`, registered with `runForWholeFile="true"`). `runInspectionsDirectly(vf, inspections = setOf("DuplicatedCode"))` runs it as Code | Inspect Code does; do not call `InspectionEngine.inspectEx` inside a read action instead, which can freeze the IDE on a project-wide scan. Per-file `checkFile` looks up a `DuplicateScopeExtension` for the file's language, queries the project-wide `HashFragmentIndex`, and emits a `DuplicateProblemDescriptor` for each clone where the inspected file holds the cluster's `main` fragment.
 - **Same logical cluster surfaces multiple times.** A 2-fragment cluster is reported twice — fragment A as `main` + B as duplicate, then B as `main` + A as duplicate. An N-fragment cluster appears N times, once per fragment-as-`main`. The Cross-check recipe deduplicates by hashing the unordered set of `(path:startLine-endLine)` ranges. Skip the dedup and your `CLUSTERS_FOUND` count is roughly 2× too large.
 - `maxClustersToReport` caps **unique** clusters (post-dedup) — the `seenKeys` guard ensures the loop's break runs against deduped count, not raw descriptor count.
 - `DuplicateProblemDescriptor.getTextClone()` returns a `TextClone(main: TextFragment, duplicates: List<TextFragment>)`. `TextFragment` exposes `file: VirtualFile`, `range: TextRange`, and `lines: IntRange` — everything you need to render `path:startLine-endLine` and pull the snippet text from the document.

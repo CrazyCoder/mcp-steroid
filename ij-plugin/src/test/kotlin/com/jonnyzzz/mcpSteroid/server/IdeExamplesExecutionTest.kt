@@ -14,6 +14,7 @@ import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.jonnyzzz.mcpSteroid.execution.ExecutionManager
+import com.jonnyzzz.mcpSteroid.execution.initInspectionsUntil
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.prompts.generated.ide.IdeIndex
@@ -51,6 +52,8 @@ class IdeExamplesExecutionTest : BasePlatformTestCase() {
 
     override fun setUp() {
         super.setUp()
+        // The inspect-and-fix example runs one named inspection, which builds a profile.
+        initInspectionsUntil(testRootDisposable)
 
         val basePath = project.basePath ?: error("Project base path is not available")
         val srcVf = WriteAction.computeAndWait<VirtualFile, RuntimeException> {

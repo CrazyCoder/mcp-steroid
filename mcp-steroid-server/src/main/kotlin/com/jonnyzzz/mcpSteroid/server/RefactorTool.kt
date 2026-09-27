@@ -29,6 +29,7 @@ enum class RefactorOp(val wire: String) {
     OPTIMIZE_IMPORTS("optimize_imports"),
     REFORMAT("reformat"),
     USAGES("usages"),
+    INSPECT("inspect"),
 }
 
 /**
@@ -39,7 +40,8 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
 
     override val description = """
         Run an IDE refactoring on a symbol without writing a script: rename, safe_delete, move, fix (an
-        inspection's quick fix), intention, optimize_imports, reformat, or usages (read-only). It resolves
+        inspection's quick fix), intention, optimize_imports, reformat, usages (read-only), or inspect
+        (read-only, Code | Inspect Code over a file, a directory or the project). It resolves
         the target through the IDE's code model, so every reference is updated, in any language the IDE
         understands.
 
@@ -64,11 +66,17 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         - fix: "inspection" is the inspection's short name (such as SimplifiableCallChain); "all": true
           fixes every problem it reports in the file, else the one on the target's line (the first, without a
           target). A dry run without "inspection" lists what every enabled inspection reports in the file,
-          with short names and severities, from WEAK WARNING up as the editor highlights them ("all": true
-          adds INFORMATION-level suggestions and proofreading); compiler and annotator errors are not
-          inspections and are not listed. An explicit "inspection" works at any level
+          with short names and severities, from WEAK WARNING up ("all": true adds INFORMATION-level
+          suggestions and proofreading). An explicit "inspection" works at any level
         - intention: "name" is the intention's text, such as "Convert to expression body"
         - optimize_imports, reformat: act on "file"
+        - inspect: runs the inspections as Code | Inspect Code does, in a background task that gives way to
+          the user's edits, over "file" (a file or a directory) or, without it, the whole project; it lists
+          path:line: [short name] SEVERITY description, from WEAK WARNING up ("all": true adds INFORMATION).
+          "inspection" limits it to short names, comma-separated. These are the Inspection Results view's
+          problems, which can differ from the editor's highlighting. Past 5 minutes it stops and says the list
+          is incomplete. Use it instead of a script that calls InspectionEngine: that can freeze the IDE
+        - fix and its dry run inspect "file" the same way
 
         While the IDE runs background tasks, as after a start or a project sync, references and problems can be
         incomplete: it waits up to 30 s for them (once for a task that keeps running), and the response names
@@ -106,11 +114,11 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
     val nth = intParam("nth", "Which occurrence of symbol outside comments, from 0.")
     val newName = stringParam("new_name", "rename: the new name.")
     val to = stringParam("to", "move: the target directory, absolute or relative to the project.")
-    val inspection = stringParam("inspection", "fix: the inspection's short name; omit it in a dry run to list problems.")
+    val inspection = stringParam("inspection", "fix: the inspection's short name; omit it in a dry run to list problems. inspect: short names, comma-separated.")
     val intentionName = stringParam("name", "intention: the intention's text.")
 
     val all = InputSchemaElement.param("all")
-        .description("fix: fix every problem the inspection reports in the file; without inspection, list every level.")
+        .description("fix: fix every problem the inspection reports in the file; without inspection, list every level. inspect: list every level.")
         .cliSynopsis("fix every problem in the file; list every level")
         .boolean()
         .withDefaultValue(false)

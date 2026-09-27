@@ -299,13 +299,13 @@ println(if (missing.isEmpty()) "All required classes present — run tests to ve
 
 ## Accessing Third-Party Inspection ProblemDescriptor Subclasses
 
-`InspectionEngine.inspectEx(...)` returns `ProblemDescriptor`s. Many bundled inspections store their extra payload on a *subclass* (e.g. `com.jetbrains.clones.DuplicateProblemDescriptor.getTextClone()`, custom Kotlin/Java DFA descriptors). The `steroid_execute_code` compile classpath already contains every loaded plugin's classes (`ScriptClassLoaderFactory.ideClasspath()` flattens `descriptor.pluginClassLoader.files` for every plugin and content module), so the **typed import + `filterIsInstance` cast** is the recipe — direct code, no reflection.
+`runInspectionsDirectly(...)` returns `ProblemDescriptor`s. Many bundled inspections store their extra payload on a *subclass* (e.g. `com.jetbrains.clones.DuplicateProblemDescriptor.getTextClone()`, custom Kotlin/Java DFA descriptors). The `steroid_execute_code` compile classpath already contains every loaded plugin's classes (`ScriptClassLoaderFactory.ideClasspath()` flattens `descriptor.pluginClassLoader.files` for every plugin and content module), so the **typed import + `filterIsInstance` cast** is the recipe — direct code, no reflection.
 
 ```kotlin[IU]
 import com.intellij.codeInspection.ProblemDescriptor
 import com.jetbrains.clones.DuplicateProblemDescriptor
 
-// `problems` would come from InspectionEngine.inspectEx(...) — see mcp-steroid://ide/find-duplicates
+// `problems` would come from runInspectionsDirectly(file, inspections = setOf("DuplicatedCode")) — see mcp-steroid://ide/find-duplicates
 val problems: List<ProblemDescriptor> = emptyList()
 problems.filterIsInstance<DuplicateProblemDescriptor>().forEach { dpd ->
     val tc = dpd.textClone   // Kotlin property accessor for getTextClone()

@@ -10,7 +10,6 @@ import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiElementVisitor
 import com.intellij.psi.PsiInvalidElementAccessException
-import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -36,6 +35,8 @@ class RunInspectionsDirectlyTest : BasePlatformTestCase() {
 
     override fun setUp() {
         super.setUp()
+        // Inspecting a file again without a crashed inspection builds a profile.
+        initInspectionsUntil(testRootDisposable)
 
         // Create a Kotlin file with known issues:
         // - Unused variable (warning)
@@ -202,23 +203,6 @@ class RunInspectionsDirectlyTest : BasePlatformTestCase() {
     // Issue #69: per-file PSI-invalid tolerance + additive return shape
     // ============================================================
 
-    /**
-     * Suppress ONLY the expected logger.error lines produced by the per-tool crash isolation
-     * (the production code intentionally logs every failed tool via logger.error, which would
-     * otherwise fail the test through TestLogger).
-     */
-    private fun suppressExpectedInspectionCrashErrors(): com.intellij.openapi.application.AccessToken =
-        LoggedErrorProcessor.executeWith(object : LoggedErrorProcessor() {
-            override fun processError(
-                category: String,
-                message: String,
-                details: Array<String>,
-                t: Throwable?
-            ): Set<Action> =
-                if (message.contains("crashed while inspecting")) Action.NONE
-                else super.processError(category, message, details, t)
-        })
-
     private fun crashIsolationScript(): String = $$"""
         val file = findFile("$$testFilePath") ?: error("File not found")
 
@@ -293,7 +277,7 @@ class RunInspectionsDirectlyTest : BasePlatformTestCase() {
         // but that must not be interpreted as "clean" when the only applicable tool crashed.
         myFixture.enableInspections(CrashingStubInspection())
 
-        suppressExpectedInspectionCrashErrors().use {
+        suppressStubInspectionCrashErrors().use {
             timeoutRunBlocking(60.seconds) {
                 val manager = project.service<ExecutionManager>()
 
@@ -321,7 +305,7 @@ class RunInspectionsDirectlyTest : BasePlatformTestCase() {
         // stub tool that reliably reports exactly one problem.
         myFixture.enableInspections(CrashingStubInspection(), HealthyStubInspection())
 
-        suppressExpectedInspectionCrashErrors().use {
+        suppressStubInspectionCrashErrors().use {
             timeoutRunBlocking(60.seconds) {
                 val manager = project.service<ExecutionManager>()
 
@@ -361,7 +345,7 @@ class RunInspectionsDirectlyTest : BasePlatformTestCase() {
         // exception reaches InspectionEngine in the field (stale PSI cached inside a tool).
         myFixture.enableInspections(PsiInvalidThrowingStubInspection(), HealthyStubInspection())
 
-        suppressExpectedInspectionCrashErrors().use {
+        suppressStubInspectionCrashErrors().use {
             timeoutRunBlocking(60.seconds) {
                 val manager = project.service<ExecutionManager>()
 

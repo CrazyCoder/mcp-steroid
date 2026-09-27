@@ -1,15 +1,16 @@
 Module Inspection Sweep
 
-Run enabled file-scoped inspections across one module without internal batch-inspection APIs.
+Run the enabled inspections across one module after changing several files.
 
-Use this when you need a module-wide local inspection pass after changing several
-files. The shipped recipe intentionally avoids `GlobalInspectionContextImpl`:
-that class is annotated `ApiStatus.Internal`, and `InspectionManager.createNewGlobalContext()`
-is deprecated. Do not ship recipes that depend on those APIs.
+Prefer the `steroid_refactor` tool, which needs no script:
+`{"op":"inspect","file":"<the module's directory>"}` runs Code | Inspect Code over the directory,
+global inspections included, in an IDE background task that gives way to the user's edits. It lists
+`path:line: [short name] SEVERITY description`, `"inspection"` limits it to short names, and past
+5 minutes it stops and says the list is incomplete. Without `"file"` it inspects the whole project.
 
-This recipe does not run true global inspections that need a whole-project
-reference graph, such as some unused-declaration analyses. For those, use the
-IDE UI or a dedicated, reviewed public recipe when one exists.
+The script below does the same file by file with `runInspectionsDirectly`, for a structured result
+with the verification status vocabulary. Each call is its own background run, so the loop cannot
+freeze the IDE. Do not replace it with `InspectionEngine.inspectEx` inside a read action: that can.
 
 ```kotlin[AI,IC,IU]
 import com.intellij.codeInspection.ProblemDescriptorUtil
@@ -126,13 +127,11 @@ printJson(
 
 Pitfalls:
 
-- This is a module-scope loop over file-scoped inspections. It is safe for local
-  inspections and uses the existing `runInspectionsDirectly` failure contract.
-- It is not equivalent to the IDE's batch "Inspect Code" action for global
-  inspections that need cross-file reference graphs.
-- `GlobalInspectionContextImpl` is internal and must not be used in shipped
-  recipes. `InspectionManager.createNewGlobalContext()` is deprecated. If you
-  explore them locally, keep that exploration out of final prompt resources.
+- This is a module-scope loop that inspects one file at a time, with the
+  `runInspectionsDirectly` failure contract. Global inspections that need a
+  cross-file reference graph, such as unused declarations, see one file per call
+  here; `steroid_refactor` `inspect` on the module's directory runs them over
+  the whole directory.
 - A module with no source files is `did_not_run`, not `clean`.
 - Routine post-edit checks should narrow the scope to changed files first. A
   module sweep can be expensive because every visited file runs the enabled

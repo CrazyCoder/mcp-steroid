@@ -5,7 +5,6 @@ import com.intellij.openapi.application.WriteAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.testFramework.LoggedErrorProcessor
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.common.timeoutRunBlocking
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -18,6 +17,12 @@ import kotlin.time.Duration.Companion.seconds
 
 class VerificationRecipeStatusContractTest : BasePlatformTestCase() {
     override fun runInDispatchThread(): Boolean = false
+
+    override fun setUp() {
+        super.setUp()
+        // Inspecting a file again without a crashed inspection builds a profile.
+        initInspectionsUntil(testRootDisposable)
+    }
 
     private fun text(result: ToolCallResult): String =
         result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
@@ -47,18 +52,6 @@ class VerificationRecipeStatusContractTest : BasePlatformTestCase() {
             child
         }
     }
-
-    private fun suppressExpectedInspectionCrashErrors(): com.intellij.openapi.application.AccessToken =
-        LoggedErrorProcessor.executeWith(object : LoggedErrorProcessor() {
-            override fun processError(
-                category: String,
-                message: String,
-                details: Array<String>,
-                t: Throwable?
-            ): Set<Action> =
-                if (message.contains("crashed while inspecting")) Action.NONE
-                else super.processError(category, message, details, t)
-        })
 
     fun testFileInspectionStatusIsFindingsWhenDiagnosticsArePresent(): Unit = timeoutRunBlocking(60.seconds) {
         val file = createInspectableKotlinFile()
@@ -100,7 +93,7 @@ class VerificationRecipeStatusContractTest : BasePlatformTestCase() {
         val filePath = file.path
         myFixture.enableInspections(CrashingStubInspection())
 
-        suppressExpectedInspectionCrashErrors().use {
+        suppressStubInspectionCrashErrors().use {
             val result = project.service<ExecutionManager>().executeWithProgress(
                 testExecParams(
                     code = $$"""

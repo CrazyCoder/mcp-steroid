@@ -9,11 +9,15 @@ file with `"all": true`. Without `inspection`, a dry run lists what every enable
 WEAK WARNING up, with short names and severities (`"all": true` adds INFORMATION-level suggestions). Use
 the script below to choose a fix other than the first, or to post-process the problems.
 
-The inspection-driving machinery (`InspectionEngine`, `LocalInspectionToolWrapper`, the
-inspection profile) is platform-level and identical in IDEA, PyCharm, WebStorm, Rider,
-CLion, GoLand. Only the inspection *classes* are language-plugin-bound — resolve the tool
-from the current profile by its short-name instead of importing a class, and the recipe
-runs unchanged in any IDE.
+`runInspectionsDirectly(file, inspections = setOf(shortName))` runs the named inspection the way
+Code | Inspect Code does: in an IDE background task that gives way to every write action. It resolves
+the inspection from the current profile by its short name, so the recipe runs unchanged in any
+JetBrains IDE, and it runs the inspection whether the profile enables it or not.
+
+**Do not call `InspectionEngine.inspectEx` from a script.** Inside a `readAction { }` or
+`smartReadAction { }` it inspects on worker threads that a pending write action cannot cancel. One
+slow inspection, or a JavaScript/TypeScript inspection that waits for the TypeScript service while the
+service waits for a write, then holds the read lock, and the IDE's UI freezes until it finishes.
 
 Find the short-name first: `mcp-steroid://ide/inspection-summary` lists every enabled
 inspection with its short-name (e.g. `UnusedDeclaration`, `RedundantCast`,
@@ -21,15 +25,10 @@ inspection with its short-name (e.g. `UnusedDeclaration`, `RedundantCast`,
 
 ```kotlin
 import com.intellij.codeInspection.CommonProblemDescriptor
-import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.codeInspection.QuickFix
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.openapi.command.CommandProcessor
-import com.intellij.openapi.progress.EmptyProgressIndicator
-import com.intellij.profile.codeInspection.InspectionProjectProfileManager
-import com.intellij.util.PairProcessor
 
 data class ProblemInfo(
     val problem: ProblemDescriptor,
@@ -47,39 +46,12 @@ val dryRun = true
 val virtualFile = findFile(filePath)
     ?: return println("File not found: $filePath")
 
-val (psiFile, wrapper) = readAction {
-    val psi = PsiManager.getInstance(project).findFile(virtualFile)
-    val toolWrapper = psi?.let {
-        InspectionProjectProfileManager.getInstance(project).currentProfile
-            .getInspectionTool(inspectionShortName, it) as? LocalInspectionToolWrapper
-    }
-    psi to toolWrapper
+// An unknown short name fails with the similar names the profile has.
+val result = runInspectionsDirectly(virtualFile, inspections = setOf(inspectionShortName))
+if (result.failedTools.isNotEmpty()) {
+    println("Inspection issues: " + result.failedTools.joinToString { "${it.toolId}: ${it.error}" })
 }
-
-if (psiFile == null) {
-    return println("Cannot parse file: $filePath")
-}
-if (wrapper == null) {
-    return println(
-        "Inspection '$inspectionShortName' not found or not a local inspection. " +
-            "List enabled tools via mcp-steroid://ide/inspection-summary"
-    )
-}
-
-val problems: List<ProblemDescriptor> = readAction {
-    val map = InspectionEngine.inspectEx(
-        listOf(wrapper),
-        psiFile,
-        psiFile.textRange,
-        psiFile.textRange,
-        false,
-        false,
-        true,
-        EmptyProgressIndicator(),
-        PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true }
-    )
-    map.values.flatten()
-}
+val problems: List<ProblemDescriptor> = result[inspectionShortName].orEmpty()
 
 if (problems.isEmpty()) {
     return println("No '$inspectionShortName' problems found in $filePath")
@@ -122,96 +94,19 @@ withContext(Dispatchers.EDT) {
 println("Applied quick fix: $fixName")
 ```
 
-###_IF_IDE[AI,IC,IU]_###
-# IDEA: instantiating a Java inspection class directly
+###_IF_IDE[RD]_###
+# Rider: ReSharper analyses
 
-In IntelliJ IDEA the Java-plugin inspection classes are on the script classpath, so a
-specific tool can also be instantiated directly — useful when it is not registered in the
-profile at all (plugin missing, or the short-name is unknown; the profile lookup returns every
-registered tool regardless of its enabled state):
-
-```kotlin[AI,IC,IU]
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
-import com.intellij.codeInspection.redundantCast.RedundantCastInspection
-
-val wrapper = LocalInspectionToolWrapper(RedundantCastInspection())
-println("Wrapper ready: ${wrapper.shortName} (${wrapper.displayName})")
-// Pass `wrapper` to InspectionEngine.inspectEx exactly as in the recipe above.
-```
-###_ELSE_###
-# Language-plugin inspection classes
-
-This IDE's language inspections (Python, C++, Go, JavaScript, ...) live inside
-language plugins — do not import them by class name in scripts. The profile lookup in the
-recipe above resolves the plugin's tool at runtime from its short-name; enumerate the
-candidates via `mcp-steroid://ide/inspection-summary`. Rider caveat: ReSharper-backed C#
-analyses run out-of-process and are NOT `LocalInspectionTool` instances — they cannot be
-driven through `InspectionEngine`; only IDE-frontend inspections (spellchecker, web, ...)
-resolve this way in Rider.
+ReSharper-backed C# analyses run out-of-process and are NOT `LocalInspectionTool` instances, so
+`runInspectionsDirectly` does not see them; only IDE-frontend inspections (spellchecker, web, ...)
+run this way in Rider.
 ###_END_IF_###
 
 # Inspect a file in ANOTHER open project
 
-The script context's `project` is resolved from the `project_name` tool argument (the unique
-routing key from `steroid_list_projects`, NOT the raw folder name) and is normally already the
-project you want — prefer passing the right `project_name` over switching projects in code.
-When you genuinely need to inspect a file that belongs to a
-*different* open project, select it explicitly and pass it to every project-parameterized
-call (`PsiManager`, the profile manager, `smartReadAction`):
-
-```kotlin
-import com.intellij.codeInspection.InspectionEngine
-import com.intellij.codeInspection.ProblemDescriptor
-import com.intellij.codeInspection.ProblemDescriptorUtil
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
-import com.intellij.openapi.progress.EmptyProgressIndicator
-import com.intellij.openapi.project.ProjectManager
-import com.intellij.openapi.vfs.LocalFileSystem
-import com.intellij.profile.codeInspection.InspectionProjectProfileManager
-import com.intellij.util.PairProcessor
-
-// Configuration - modify these for your use case
-val targetProjectName = "other-project" // TODO: name of the other OPEN project
-val filePath = "/path/in/other/project/File.kt" // TODO: file inside that project
-val inspectionShortName = "SpellCheckingInspection" // TODO: short-name to run
-
-val openProjects = ProjectManager.getInstance().openProjects
-val target = openProjects.firstOrNull { it.name == targetProjectName }
-    ?: return println(
-        "Project '$targetProjectName' is not open. Open projects: " +
-            openProjects.joinToString(", ") { it.name }
-    )
-
-val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(filePath)
-    ?: return println("File not found: $filePath")
-
-val problems: List<ProblemDescriptor> = smartReadAction(target) {
-    val psiFile = PsiManager.getInstance(target).findFile(virtualFile)
-        ?: error("Cannot parse file in '${target.name}': $filePath")
-    val wrapper = InspectionProjectProfileManager.getInstance(target).currentProfile
-        .getInspectionTool(inspectionShortName, psiFile) as? LocalInspectionToolWrapper
-        ?: error("Inspection '$inspectionShortName' not found in '${target.name}'")
-    InspectionEngine.inspectEx(
-        listOf(wrapper),
-        psiFile,
-        psiFile.textRange,
-        psiFile.textRange,
-        false,
-        false,
-        true,
-        EmptyProgressIndicator(),
-        PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true }
-    ).values.flatten()
-}
-
-println("Found ${problems.size} problem(s) in ${target.name}:$filePath")
-readAction {
-    problems.take(10).forEach { println("- ${ProblemDescriptorUtil.renderDescriptionMessage(it, it.psiElement)}") }
-}
-```
-
-Applying a quick fix in the other project works exactly like the main recipe — substitute
-`target` for `project` in the `executeCommand` and `applyFix` calls.
+`runInspectionsDirectly` and `steroid_refactor` inspect the project that the `project_name` tool
+argument names (the unique routing key from `steroid_list_projects`, NOT the raw folder name). To
+inspect a file of another open project, call them with that project's `project_name`.
 
 # See also
 

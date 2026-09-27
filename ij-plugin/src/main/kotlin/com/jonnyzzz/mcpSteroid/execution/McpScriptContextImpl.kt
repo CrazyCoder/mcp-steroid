@@ -6,18 +6,12 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
-import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.diagnostic.PluginException
-import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.progress.ProcessCanceledException
-import com.intellij.openapi.project.IndexNotReadyException
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiManager
 import com.intellij.openapi.wm.WindowManager
-import com.intellij.util.PairProcessor
 import com.intellij.codeInsight.daemon.HighlightDisplayKey
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.EDT
@@ -39,6 +33,7 @@ import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.diagnostic.ThreadDumper
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
+import com.jonnyzzz.mcpSteroid.inspection.BatchInspection
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
@@ -62,7 +57,6 @@ import java.io.File
 import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.util.Base64
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.time.Duration
@@ -479,181 +473,51 @@ class McpScriptContextImpl(
 
     override suspend fun runInspectionsDirectly(
         file: VirtualFile,
-        includeInfoSeverity: Boolean
+        includeInfoSeverity: Boolean,
+        inspections: Collection<String>?,
     ): InspectionRunResult {
         checkDisposed()
         log.info("[$executionId] Running inspections directly on ${file.name}...")
         resultBuilder.logProgress("Running inspections on ${file.name}...")
 
         // Bounded wait first (60 s -> ToolCallErrorException) so a never-finishing indexing fails
-        // fast instead of suspending forever inside the unbounded smartReadAction below.
+        // fast instead of waiting inside the inspection run.
         waitForSmartMode()
 
-        // The sweep runs under smartReadAction, not readAction: dumb mode can begin between
-        // waitForSmartMode() and a plain read action, and index-backed tools would then throw
-        // IndexNotReadyException mid-visit — a transient IDE condition that must never be recorded
-        // as a per-tool crash. smartReadAction re-runs the block under guaranteed smart mode.
-        //
-        // The failure map is allocated INSIDE the block: smartReadAction cancels and RETRIES its
-        // block when a pending write action interrupts it, and failures recorded by an aborted
-        // attempt must not leak into the retry — each attempt starts clean.
-        val (problems, toolFailures) = intellijSmartReadAction(project) {
-            // Per-tool crash isolation (issue #93): first failure of each tool, keyed by short name.
-            val attemptFailures = ConcurrentHashMap<String, InspectionToolFailure>()
-            val recordFailure: (String, Class<*>?, Throwable, Boolean) -> Unit = { toolId, toolClass, error, logAsError ->
-                attemptFailures.putIfAbsent(toolId, InspectionToolFailure(toolClass, error, logAsError))
-            }
-            val noProblems = emptyMap<String, List<ProblemDescriptor>>()
-
-            val psiFile = PsiManager.getInstance(project).findFile(file)
-            if (psiFile == null) {
-                recordFailure(
-                    InspectionRunResult.SWEEP_FAILURE_ID,
-                    null,
-                    IllegalArgumentException("No PSI file for ${file.path}; runInspectionsDirectly requires a real file VirtualFile"),
-                    false
-                )
-                return@intellijSmartReadAction noProblems to attemptFailures
-            }
-
-            // Get inspection profile and enabled tools
-            val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
-            val toolWrappers = profile.getAllEnabledInspectionTools(project)
-                .mapNotNull { toolState ->
-                    val tool = toolState.tool
-                    if (tool is LocalInspectionToolWrapper) {
-                        // Filter by severity if needed
-                        val key = HighlightDisplayKey.find(tool.shortName)
-                        if (key != null) {
-                            val severity = profile.getErrorLevel(key, psiFile).severity
-                            if (includeInfoSeverity || severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal) {
-                                tool
-                            } else {
-                                null
-                            }
-                        } else {
-                            // Include tool if we can't determine severity
-                            tool
-                        }
-                    } else {
-                        null
-                    }
-                }
-
-            if (toolWrappers.isEmpty()) {
-                log.info("[$executionId] No applicable inspection tools found")
-                return@intellijSmartReadAction noProblems to attemptFailures
-            }
-
-            // Issue #93: InspectionEngine only guards buildVisitor() — a visit-time exception from
-            // ONE tool (e.g. kotlinx-serialization plugin-generated PSI under K2) aborts the whole
-            // inspectEx call and loses every other tool's findings. Wrapping each tool in a
-            // crash-isolating delegate keeps the sweep a single engine pass while a crashing tool
-            // is recorded and skipped. The delegate preserves the original short name, so
-            // LocalInspectionToolWrapper(tool) re-attaches the ORIGINAL inspection EP (language
-            // applicability, IDs) and the result keys are unchanged.
-            val isolatedWrappers = toolWrappers.mapNotNull { wrapper ->
-                try {
-                    LocalInspectionToolWrapper(
-                        CrashIsolatingLocalInspectionTool(wrapper.tool) { toolId, toolClass, error ->
-                            recordFailure(toolId, toolClass, error, true)
-                        }
-                    )
-                } catch (e: ProcessCanceledException) {
-                    throw e
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: IndexNotReadyException) {
-                    throw e
-                } catch (e: OutOfMemoryError) {
-                    throw e
-                } catch (e: Throwable) {
-                    // wrapper.tool lazily instantiates the tool from its EP — class loading can fail
-                    // with NoClassDefFoundError / LinkageError / AssertionError, not just Exception,
-                    // so this mirrors the delegate's Throwable isolation. No tool instance exists
-                    // here, hence no class to attribute the failure to (toolClass = null).
-                    recordFailure(wrapper.shortName, null, e, true)
-                    null
-                }
-            }
-
-            log.info("[$executionId] Running ${isolatedWrappers.size} inspections on ${file.name}")
-
-            val problemsOfAttempt = try {
-                // Run inspections directly - bypasses daemon focus check
-                val results = InspectionEngine.inspectEx(
-                    isolatedWrappers,
-                    psiFile,
-                    psiFile.textRange,
-                    psiFile.textRange,
-                    false,  // isOnTheFly = false (batch mode)
-                    false,  // inspectInjectedPsi
-                    true,   // ignoreSuppressedElements
-                    EmptyProgressIndicator(),
-                    PairProcessor.alwaysTrue()
-                )
-
-                // Convert to map of tool ID -> problems
-                results.mapKeys { (wrapper, _) -> wrapper.shortName }
-                    .filterValues { it.isNotEmpty() }
-            } catch (e: ProcessCanceledException) {
-                throw e
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: IndexNotReadyException) {
-                throw e
-            } catch (e: OutOfMemoryError) {
-                throw e
-            } catch (e: Throwable) {
-                // Issue #69: engine-internal PSI traversal can fail outside any single tool —
-                // PsiInvalidElementAccessException on stale PSI, AssertionError, stub-tree
-                // inconsistency errors. A file-level failure must not throw out of the helper:
-                // scripts inspecting files in a loop keep the healthy files' results.
-                recordFailure(InspectionRunResult.SWEEP_FAILURE_ID, null, e, true)
-                noProblems
-            }
-
-            problemsOfAttempt to attemptFailures
+        if (readAction { PsiManager.getInstance(project).findFile(file) } == null) {
+            val message = "No PSI file for ${file.path}; runInspectionsDirectly requires a real file VirtualFile"
+            log.warn("[$executionId] inspections did not run for ${file.path}: $message")
+            val failure = FailedInspection(InspectionRunResult.SWEEP_FAILURE_ID, "${IllegalArgumentException::class.java.name}: $message")
+            return InspectionRunResult(emptyMap(), listOf(failure))
         }
 
-        if (toolFailures.isNotEmpty()) {
-            for ((toolId, failure) in toolFailures) {
-                // Attribute the error to the crashing inspection's plugin (the platform convention
-                // from InspectionEngine.createVisitor), so IDE fatal-error balloons blame the plugin
-                // that owns the inspection rather than mcp-steroid. Falls back to the raw error when
-                // no tool instance exists (EP instantiation or sweep-level failures).
-                if (failure.logAsError) {
-                    val attributed = failure.toolClass
-                        ?.let { toolClass -> PluginException.createByClass("Inspection tool '$toolId' failed", failure.error, toolClass) }
-                        ?: failure.error
-                    log.error("[$executionId] inspection '$toolId' crashed while inspecting ${file.name} — findings from other tools are preserved", attributed)
-                } else {
-                    log.warn("[$executionId] inspection '$toolId' did not run for ${file.path}: ${failure.error.message}")
-                }
-            }
+        // A crashing inspection becomes a failedTools entry, and the other inspections' findings
+        // stay (issue #93): BatchInspection inspects the file again without it.
+        val batch = BatchInspection(project)
+        val result = batch.run(batch.scopeOf(listOf(file)), inspections)
+
+        val problems = readAction {
+            val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
+            result.problems.filter { (shortName, problem) ->
+                val psiFile = problem.psiElement?.takeIf { it.isValid }?.containingFile ?: return@filter false
+                val severity = HighlightDisplayKey.find(shortName)?.let { profile.getErrorLevel(it, psiFile).severity } ?: HighlightSeverity.WARNING
+                inspections != null || includeInfoSeverity || severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal
+            }.groupBy({ it.shortName }, { it.descriptor })
+        }
+        val failedTools = result.crashed.map { (toolId, error) -> FailedInspection(toolId, error) }.toMutableList()
+        if (!result.finished) {
+            failedTools += FailedInspection(InspectionRunResult.SWEEP_FAILURE_ID, "the inspections did not finish within ${BatchInspection.DEFAULT_TIMEOUT}")
+        }
+        if (failedTools.isNotEmpty()) {
             resultBuilder.logMessage(
-                "WARNING: ${toolFailures.size} inspection issue(s) while inspecting ${file.name} " +
+                "WARNING: ${failedTools.size} inspection issue(s) while inspecting ${file.name} " +
                     "(findings from any completed tools are preserved): " +
-                    toolFailures.keys.sorted().joinToString(", ") +
+                    failedTools.map { it.toolId }.sorted().joinToString(", ") +
                     ". Details are in the result's failedTools property."
             )
         }
-
-        val failedTools = toolFailures.entries
-            .map { (toolId, failure) -> FailedInspection(toolId = toolId, error = "${failure.error.javaClass.name}: ${failure.error.message}") }
-            .sortedBy { it.toolId }
-        return InspectionRunResult(problems, failedTools)
+        return InspectionRunResult(problems, failedTools.sortedBy { it.toolId })
     }
-
-    /**
-     * One recorded failure of [runInspectionsDirectly]: the raw [error] (surfaced verbatim in
-     * [FailedInspection.error]) plus the crashing tool's class, used only to attribute the logged
-     * error to the inspection's plugin via [PluginException.createByClass]. [toolClass] is null
-     * when no tool instance exists — EP instantiation failures and sweep-level failures.
-     * [logAsError] is false for user/setup inputs that make a sweep impossible, such as passing
-     * a directory [VirtualFile]; those are reported in-band through failedTools and logged as warn.
-     */
-    private class InspectionToolFailure(val toolClass: Class<*>?, val error: Throwable, val logAsError: Boolean)
 
     // ============================================================
     // Read/Write Actions - Convenience Wrappers

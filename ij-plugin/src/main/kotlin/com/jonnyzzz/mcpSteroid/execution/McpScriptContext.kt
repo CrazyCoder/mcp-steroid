@@ -283,22 +283,23 @@ interface McpScriptContext {
     ): List<HighlightInfo>
 
     /**
-     * Run inspections directly on a file without relying on the daemon code analyzer.
+     * Run inspections on a file the way Code | Inspect Code does, without the daemon code analyzer.
      *
-     * This method bypasses the daemon's focus-dependent caching and runs inspections directly
-     * using InspectionEngine.inspectEx(). It works reliably regardless of whether the IDE
-     * window is focused or active.
-     *
-     * Use this method when you need accurate inspection results in automated/headless scenarios.
+     * It runs in an IDE background task that gives way to every write action, so it cannot freeze
+     * the IDE, and it works whether or not the IDE window is focused. Its problems are those of the
+     * Inspection Results view, which can differ from what the editor highlights. Do not call
+     * `InspectionEngine.inspectEx` from a script instead: inside a read action it can freeze the IDE.
      *
      * Crash isolation: a single inspection tool throwing (e.g. on compiler-plugin-generated PSI)
      * does NOT abort the sweep. The failed tool is recorded in [InspectionRunResult.failedTools]
-     * (tool id + exception message) and findings from all other tools are returned. Likewise, a
-     * PsiInvalidElementAccessException for the file is reported via `failedTools` instead of being
-     * thrown, so inspecting files in a loop never loses the healthy files' results.
+     * (tool id + exception message) and findings from all other tools are returned, so inspecting
+     * files in a loop never loses the healthy files' results. A run that does not finish within
+     * 5 minutes is reported there too.
      *
      * @param file The virtual file to inspect
      * @param includeInfoSeverity Whether to include INFO-level problems (default: false)
+     * @param inspections Short names to run instead of the whole profile, such as `DuplicatedCode`;
+     *   they run whether the profile enables them or not, and at every severity
      * @return [InspectionRunResult] — a Map of inspection tool ID to the list of ProblemDescriptors
      *   found (use it exactly like the Map it is), plus the additive `failedTools` list of tools
      *   that crashed during the sweep
@@ -319,14 +320,15 @@ interface McpScriptContext {
      * }
      * ```
      *
-     * It runs local inspections only. Warnings from the highlighting passes, such as unused symbols,
-     * come only from [getHighlightsWhenReady].
+     * Warnings from the highlighting passes, such as unused symbols, come only from
+     * [getHighlightsWhenReady].
      *
      * @see getHighlightsWhenReady for daemon-based highlights (requires the active project window)
      */
     suspend fun runInspectionsDirectly(
         file: VirtualFile,
-        includeInfoSeverity: Boolean = false
+        includeInfoSeverity: Boolean = false,
+        inspections: Collection<String>? = null,
     ): InspectionRunResult
 
     // ============================================================

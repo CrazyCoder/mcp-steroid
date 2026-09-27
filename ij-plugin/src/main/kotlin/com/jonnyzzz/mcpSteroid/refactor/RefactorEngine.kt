@@ -2,15 +2,16 @@
 package com.jonnyzzz.mcpSteroid.refactor
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey
+import com.jonnyzzz.mcpSteroid.inspection.BatchInspection
+import com.jonnyzzz.mcpSteroid.inspection.UnknownInspectionsException
+import kotlin.time.Duration.Companion.seconds
 import com.intellij.codeInsight.intention.IntentionAction
 import com.intellij.codeInsight.intention.IntentionManager
 import com.intellij.codeInsight.intention.impl.ShowIntentionActionsHandler
-import com.intellij.codeInspection.InspectionEngine
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.codeInspection.ProblemDescriptorUtil
 import com.intellij.codeInspection.ProblemHighlightType
 import com.intellij.codeInspection.QuickFix
-import com.intellij.codeInspection.ex.LocalInspectionToolWrapper
 import com.intellij.lang.LanguageImportStatements
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.lang.injection.InjectedLanguageManager
@@ -26,9 +27,6 @@ import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.openapi.progress.EmptyProgressIndicator
-import com.intellij.openapi.progress.ProgressManager
-import com.intellij.openapi.progress.blockingContextToIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
@@ -53,7 +51,6 @@ import com.intellij.refactoring.safeDelete.SafeDeleteProcessor
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessorDelegate
 import com.intellij.refactoring.safeDelete.usageInfo.SafeDeleteReferenceUsageInfo
 import com.intellij.usageView.UsageInfo
-import com.intellij.util.PairProcessor
 import com.jonnyzzz.mcpSteroid.server.RefactorOp
 import com.jonnyzzz.mcpSteroid.server.RefactorParams
 import com.jonnyzzz.mcpSteroid.ui.CodeLocation
@@ -88,6 +85,53 @@ class RefactorEngine(private val project: Project) {
         RefactorOp.INTENTION -> intention(params)
         RefactorOp.OPTIMIZE_IMPORTS -> optimizeImports(params)
         RefactorOp.REFORMAT -> fileEdit(params, "Reformat") { file -> Runnable { CodeStyleManager.getInstance(project).reformat(file) } }
+        RefactorOp.INSPECT -> inspectScope(params)
+    }
+
+    /** Code | Inspect Code over "file" (a file or a directory) or the project, as `path:line: [name] SEVERITY text`. */
+    private suspend fun inspectScope(params: RefactorParams): String {
+        val batch = BatchInspection(project)
+        val scope = params.file?.let { path ->
+            val file = withContext(Dispatchers.IO) { CodeLocation.findFile(project, path) } ?: throw RefactorFailure("file not found: $path")
+            batch.scopeOf(listOf(file))
+        } ?: batch.projectScope()
+        val names = params.inspection?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+        val result = try {
+            batch.run(scope, names, SCOPE_TIMEOUT)
+        } catch (e: UnknownInspectionsException) {
+            throw RefactorFailure(e.message!!)
+        }
+        val (shown, hidden) = readAction {
+            val lines = result.problems.mapNotNull { (name, problem) ->
+                val psiFile = problemFile(problem) ?: return@mapNotNull null
+                val severity = severity(psiFile, name, problem)
+                Triple(scopeProblemLine(psiFile, problem, name, severity), severity, name)
+            }.distinctBy { it.first }
+            lines.partition { params.all || it.second >= HighlightSeverity.WEAK_WARNING }
+        }
+        val sorted = shown.sortedWith(compareBy({ it.first.substringBefore(':') }, { it.first.substringAfter(':').substringBefore(':').toIntOrNull() ?: 0 }))
+        return buildString {
+            append("inspected ${result.files} file(s)")
+            if (!result.finished) append("; stopped after $SCOPE_TIMEOUT, so the list is incomplete")
+            append(": ${sorted.size} problem(s)")
+            if (hidden.isNotEmpty()) append("; ${hidden.size} suggestion(s) and proofreading hint(s) below WEAK WARNING are left out, all: true lists them")
+            if (sorted.size > MAX_INSPECT_LINES) {
+                append("; by inspection: ")
+                append(sorted.groupingBy { it.third }.eachCount().entries.sortedByDescending { it.value }.joinToString { "${it.key}=${it.value}" })
+            }
+            sorted.take(MAX_INSPECT_LINES).forEach { append("\n").append(it.first) }
+            if (sorted.size > MAX_INSPECT_LINES) append("\n… and ${sorted.size - MAX_INSPECT_LINES} more; narrow \"file\" or \"inspection\" to see them")
+        }
+    }
+
+    /** `path:line: [name] SEVERITY description [fix: ...]` for a problem anywhere in the project. Read action. */
+    private fun scopeProblemLine(psiFile: PsiFile, problem: ProblemDescriptor, shortName: String, severity: HighlightSeverity): String {
+        val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
+        val line = document?.let { it.getLineNumber(problemOffset(problem).coerceIn(0, it.textLength)) + 1 } ?: (problem.lineNumber + 1)
+        val path = psiFile.virtualFile?.let { CodeLocation.shortPath(project, it) } ?: psiFile.name
+        return "$path:$line: [$shortName] ${severity.name} " +
+            plainText(ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)) +
+            (problem.fixes?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
     }
 
     private class Target(val file: VirtualFile, val psiFile: PsiFile, val document: Document, val offset: Int, val located: Boolean)
@@ -341,50 +385,44 @@ class RefactorEngine(private val project: Project) {
     }
 
     private suspend fun problems(target: Target, shortName: String): List<ProblemDescriptor> =
-        inspect(target, listOf(inspectionTool(target, shortName))).map { it.second }
+        inspect(target, listOf(shortName)).filter { it.first == shortName }.map { it.second }
 
-    /** The inspection [shortName] of the current profile; an unknown name fails with the similar names it has. */
-    private suspend fun inspectionTool(target: Target, shortName: String): LocalInspectionToolWrapper = readAction {
-        val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
-        profile.getInspectionTool(shortName, target.psiFile) as? LocalInspectionToolWrapper ?: run {
-            val similar = profile.allTools.map { it.tool.shortName }.distinct().filter { it.contains(shortName, ignoreCase = true) || shortName.contains(it, ignoreCase = true) }
-                .sortedWith(compareBy({ !it.startsWith(shortName, ignoreCase = true) }, { it.length })).take(8)
-            throw RefactorFailure("no local inspection with the short name $shortName" + if (similar.isEmpty()) "; a dry run without inspection lists the file's problems" else "; similar: ${similar.joinToString()}")
+    /**
+     * What the current profile, or only the inspections [shortNames], report on the target's file, by position,
+     * each with its inspection's short name. It runs as Code | Inspect Code does: see [BatchInspection].
+     */
+    private suspend fun inspect(target: Target, shortNames: List<String>?): List<Pair<String, ProblemDescriptor>> {
+        val batch = BatchInspection(project)
+        val result = try {
+            batch.run(batch.scopeOf(listOf(target.file)), shortNames, INSPECTION_TIMEOUT)
+        } catch (e: UnknownInspectionsException) {
+            throw RefactorFailure(e.message + if (e.similar.isEmpty()) "; a dry run without inspection lists the file's problems" else "")
         }
+        if (!result.finished) throw RefactorFailure("the inspections did not finish within $INSPECTION_TIMEOUT")
+        return readAction { result.problems.filter { it.descriptor.psiElement?.isValid == true }.map { it.shortName to it.descriptor }.sortedBy { problemOffset(it.second) } }
     }
 
-    /** The local inspections the current profile enables for the target's file, in its language. */
-    private suspend fun enabledInspections(target: Target): List<LocalInspectionToolWrapper> = readAction {
-        InspectionProjectProfileManager.getInstance(project).currentProfile.getAllEnabledInspectionTools(project)
-            .mapNotNull { it.getEnabledTool(target.psiFile) as? LocalInspectionToolWrapper }
-            .filter { it.isApplicable(target.psiFile.language) }
+    /** Where [problem] starts, in the host file for a problem in injected code, such as a regular expression. Read action. */
+    private fun problemOffset(problem: ProblemDescriptor): Int {
+        val element = problem.psiElement ?: return 0
+        val offset = (element.textRange?.startOffset ?: 0) + (problem.textRangeInElement?.startOffset ?: 0)
+        return InjectedLanguageManager.getInstance(project).injectedToHost(element, offset)
     }
 
-    /** What [tools] report on the target's file, by position, each with its inspection's short name. */
-    private suspend fun inspect(target: Target, tools: List<LocalInspectionToolWrapper>): List<Pair<String, ProblemDescriptor>> = smartReadAction(project) {
-        // The read action's own indicator, which a pending write action cancels. A fresh indicator would never be
-        // cancelled: the inspections would hold the read lock to the end and freeze the EDT while it waits to write.
-        blockingContextToIndicator {
-            InspectionEngine.inspectEx(
-                tools, target.psiFile, target.psiFile.textRange, target.psiFile.textRange, false, false, true,
-                ProgressManager.getGlobalProgressIndicator() ?: EmptyProgressIndicator(), PairProcessor<LocalInspectionToolWrapper, Any> { _, _ -> true },
-            )
-        }.flatMap { (tool, problems) -> problems.map { tool.shortName to it } }.sortedBy { problemOffset(it.second) }
-    }
-
-    private fun problemOffset(problem: ProblemDescriptor): Int =
-        (problem.psiElement?.textRange?.startOffset ?: 0) + (problem.textRangeInElement?.startOffset ?: 0)
+    /** The file [problem] is in, the host file for a problem in injected code. Read action. */
+    private fun problemFile(problem: ProblemDescriptor): PsiFile? =
+        problem.psiElement?.takeIf { it.isValid }?.let { InjectedLanguageManager.getInstance(project).getTopLevelFile(it) }
 
     /**
      * The severity the editor shows [problem] of the inspection [shortName] with: the level the problem sets itself,
      * else the inspection's level in the current profile. Read action.
      */
-    private fun severity(target: Target, shortName: String, problem: ProblemDescriptor): HighlightSeverity = when (problem.highlightType) {
+    private fun severity(psiFile: PsiFile, shortName: String, problem: ProblemDescriptor): HighlightSeverity = when (problem.highlightType) {
         ProblemHighlightType.ERROR, ProblemHighlightType.GENERIC_ERROR -> HighlightSeverity.ERROR
         ProblemHighlightType.WARNING -> HighlightSeverity.WARNING
         ProblemHighlightType.WEAK_WARNING -> HighlightSeverity.WEAK_WARNING
         ProblemHighlightType.INFORMATION -> HighlightSeverity.INFORMATION
-        else -> HighlightDisplayKey.find(shortName)?.let { InspectionProjectProfileManager.getInstance(project).currentProfile.getErrorLevel(it, target.psiFile).severity }
+        else -> HighlightDisplayKey.find(shortName)?.let { InspectionProjectProfileManager.getInstance(project).currentProfile.getErrorLevel(it, psiFile).severity }
             ?: HighlightSeverity.WARNING
     }
 
@@ -392,7 +430,7 @@ class RefactorEngine(private val project: Project) {
     private fun problemLine(target: Target, problem: ProblemDescriptor, shortName: String, named: Boolean): String {
         val line = target.document.getLineNumber(problemOffset(problem).coerceIn(0, target.document.textLength)) + 1
         return "${CodeLocation.shortPath(project, target.file)}:$line: " + (if (named) "[$shortName] " else "") +
-            severity(target, shortName, problem).name + " " +
+            severity(target.psiFile, shortName, problem).name + " " +
             // As the Problems view renders it: #ref becomes the reported code, #loc goes.
             plainText(ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)) +
             (problem.fixes?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
@@ -402,15 +440,15 @@ class RefactorEngine(private val project: Project) {
         val target = target(params)
         val shortName = params.inspection ?: run {
             if (params.apply) throw RefactorFailure("fix needs inspection: the short name in brackets that a dry run without it lists")
-            val found = inspect(target, enabledInspections(target))
+            val found = inspect(target, null)
             val (lines, hidden) = readAction {
                 // Below a weak warning the editor highlights nothing, or only proofreading: suggestions, not problems.
-                val (shown, hidden) = found.partition { (name, p) -> params.all || severity(target, name, p) >= HighlightSeverity.WEAK_WARNING }
+                val (shown, hidden) = found.partition { (name, p) -> params.all || severity(target.psiFile, name, p) >= HighlightSeverity.WEAK_WARNING }
                 // An inspection can report one problem twice, as a warning and as an editor-only hint.
                 shown.map { (name, p) -> problemLine(target, p, name, named = true) }.distinct() to hidden.size
             }
             val left = if (hidden == 0) "" else "; $hidden suggestion(s) and proofreading hint(s) below WEAK WARNING are left out, all: true lists them"
-            return "dry run: the enabled inspections report ${lines.size} problem(s)$left; compiler and annotator errors are not listed" +
+            return "dry run: the enabled inspections report ${lines.size} problem(s)$left" +
                 lines.joinToString("") { "\n$it" }
         }
         val found = problems(target, shortName)
@@ -529,6 +567,9 @@ class RefactorEngine(private val project: Project) {
     private companion object {
         const val MAX_LINES = 30
         const val MAX_FIXES = 50
+        val INSPECTION_TIMEOUT = 60.seconds
+        val SCOPE_TIMEOUT = 300.seconds
+        const val MAX_INSPECT_LINES = 200
     }
 }
 

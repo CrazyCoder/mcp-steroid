@@ -313,12 +313,13 @@ Full API reference with literal sample outputs and an end-to-end example:
 
 ### 5. Running Inspections
 
-The IDE has hundreds of inspections — `DuplicatedCode`, `RedundantCast`, `UnusedDeclaration`, language-specific DFA, etc. Two paths from a script:
+The IDE has hundreds of inspections — `DuplicatedCode`, `RedundantCast`, `UnusedDeclaration`, language-specific DFA, etc.:
 
 | You want to… | Use |
 |---|---|
 | Run **all enabled** inspections on a file (warnings/errors style) | `runInspectionsDirectly(file)` — context-API helper, behaves like `Map<toolId, List<ProblemDescriptor>>` and also exposes `failedTools`. Works regardless of window focus. |
-| Run **one named** inspection (e.g. `DuplicatedCode`) on a file | Construct the inspection class directly and pass it to `InspectionEngine.inspectEx(...)` via a `LocalInspectionToolWrapper`. See the `inspect-and-fix` and `find-duplicates` recipes. |
+| Run **one named** inspection (e.g. `DuplicatedCode`) on a file | `runInspectionsDirectly(file, inspections = setOf("DuplicatedCode"))`, which runs it whether the profile enables it or not. See the `inspect-and-fix` and `find-duplicates` recipes. Never `InspectionEngine.inspectEx(...)` in a read action: it can freeze the IDE. |
+| Inspect a directory, a module or the project | `steroid_refactor` with `"op":"inspect"`: Code \| Inspect Code in a background task, no script needed. |
 | List which inspections are enabled (to know what's available) | `mcp-steroid://ide/inspection-summary` |
 | Find duplicate code clusters across the project | `mcp-steroid://ide/find-duplicates` (typed `DuplicateProblemDescriptor.textClone`, no reflection) |
 

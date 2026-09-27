@@ -36,8 +36,10 @@ class RefactorToolHandlerIJ : RefactorToolHandler {
         // and say what still runs, so a short usage list is not taken for the whole truth.
         val busy = IdeBackgroundActivity.awaitIdle(project, BUSY_WAIT_MS)
         val note = busy.note()?.let { "\n$it" } ?: ""
+        // inspect stops itself after RefactorEngine.SCOPE_TIMEOUT and returns what it found by then.
+        val timeoutMs = if (params.op == RefactorOp.INSPECT) INSPECT_TIMEOUT_MS else TIMEOUT_MS
         return try {
-            val text = withTimeout(TIMEOUT_MS.milliseconds) { RefactorEngine(project).run(params) }
+            val text = withTimeout(timeoutMs.milliseconds) { RefactorEngine(project).run(params) }
             val result = "$header (${started.elapsedNow().inWholeMilliseconds} ms)$note\n$text"
             storage.writeCodeExecutionData(executionId, "refactor.txt", result)
             builder.addTextContent(result).build()
@@ -46,7 +48,7 @@ class RefactorToolHandlerIJ : RefactorToolHandler {
             builder.addTextContent("$header$note\nFAILED: ${e.message}").markAsError().build()
         } catch (e: TimeoutCancellationException) {
             val running = IdeBackgroundActivity.running(project)
-            val message = "steroid_refactor did not finish within ${TIMEOUT_MS / 1000} s" +
+            val message = "steroid_refactor did not finish within ${timeoutMs / 1000} s" +
                 if (running.isEmpty()) "" else "; the IDE is busy with ${running.joinToString("; ")}"
             storage.writeCodeErrorEvent(executionId, message)
             builder.addTextContent("$header\nERROR: $message").markAsError().build()
@@ -61,6 +63,7 @@ class RefactorToolHandlerIJ : RefactorToolHandler {
 
     private companion object {
         const val TIMEOUT_MS = 90_000L
+        const val INSPECT_TIMEOUT_MS = 360_000L
         const val BUSY_WAIT_MS = 30_000L
     }
 }

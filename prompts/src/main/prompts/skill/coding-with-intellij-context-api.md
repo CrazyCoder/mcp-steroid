@@ -277,12 +277,14 @@ if (buildFile != null) {
     println("Highlighting done: ${isEditorHighlightingCompleted(buildFile)}")
 
     // Inspections on a file (RECOMMENDED — works regardless of window focus):
-    //   runInspectionsDirectly(file: VirtualFile, includeInfoSeverity: Boolean = false)
+    //   runInspectionsDirectly(file: VirtualFile, includeInfoSeverity: Boolean = false,
+    //                          inspections: Collection<String>? = null)
     //     -> InspectionRunResult
     //        (Map<inspectionShortName, List<ProblemDescriptor>> + failedTools)
     // Runs every ENABLED inspection from the project's current profile against
-    // `file` and returns the descriptor list per inspection. By default skips
-    // INFO severity; pass `includeInfoSeverity = true` to include them.
+    // `file` as Code | Inspect Code does, in a background task that gives way to
+    // the user's edits, and returns the descriptor list per inspection. By default
+    // skips INFO severity; pass `includeInfoSeverity = true` to include them.
     val result = runInspectionsDirectly(buildFile)
     val findings = readAction {
         result.entries.flatMap { (toolId, descriptors) ->
@@ -302,13 +304,14 @@ if (buildFile != null) {
     }
     printJson(mapOf("status" to status, "findings" to findings, "failedTools" to result.failedTools))
 
-    // To target a SPECIFIC inspection (e.g. DuplicatedCode), do not use
-    // runInspectionsDirectly — it runs the full enabled-set. Construct the
-    // inspection class directly and call InspectionEngine.inspectEx; see
-    // mcp-steroid://ide/inspect-and-fix (single inspection + quick fix) or
-    // mcp-steroid://ide/find-duplicates (DuplicatedCode across the project).
+    // To target SPECIFIC inspections (e.g. DuplicatedCode), pass their short names:
+    // runInspectionsDirectly(file, inspections = setOf("DuplicatedCode")) runs them
+    // whether the profile enables them or not; see mcp-steroid://ide/inspect-and-fix
+    // (single inspection + quick fix) or mcp-steroid://ide/find-duplicates.
 }
 ```
+
+> **Never call `InspectionEngine.inspectEx` from a script.** Inside `readAction { }` or `smartReadAction { }` it inspects on worker threads that a pending write action cannot cancel, so a slow inspection, or a JavaScript/TypeScript one waiting for the TypeScript service, holds the read lock and freezes the IDE's UI. `runInspectionsDirectly` and `steroid_refactor` (`fix`, `inspect`) run inspections the safe way.
 
 > **A crashing inspection tool no longer aborts the sweep.** `runInspectionsDirectly` returns an additive result: it still behaves exactly like the `Map<inspectionShortName, List<ProblemDescriptor>>` shown above, and additionally exposes `result.failedTools` — the tools that crashed during the sweep, or a sweep-level failure such as passing a non-PSI `VirtualFile` (tool id + error message). Findings from the healthy tools survive a crashing tool, so check `failedTools` before declaring a file clean.
 
