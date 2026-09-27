@@ -163,7 +163,10 @@ class UiToolHandlerIJ : UiToolHandler {
                 StandardOpenOption.CREATE, StandardOpenOption.APPEND)
             Files.readAllLines(file).count { it.isNotBlank() }
         }
-        return "recorded: ${result.recorded.size} step(s) to $file ($total in this task), with refs replaced by names; the lines are the steps of a scenario"
+        // A ref whose control closed before its step found it, as an expect for a closed window does, has no name to take.
+        val refs = result.recorded.count { "ref" in it }
+        return "recorded: ${result.recorded.size} step(s) to $file ($total in this task), with refs replaced by names; the lines are the steps of a scenario" +
+            if (refs == 0) "" else ". $refs recorded step(s) still name a ref, which does not replay: give them a name, text or class before saving"
     }
 
     companion object {

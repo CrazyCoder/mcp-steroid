@@ -237,12 +237,13 @@ class UiStepsTest {
     }
 
     @Test
-    fun `screenshot takes an optional target and a plain file name`() {
+    fun `screenshot takes an optional target and needs a plain file name`() {
         val step = UiSteps.parse("""[{"action":"screenshot","name":"Settings categories","save":"settings-tree"}]""").single()
         assertEquals(UiAction.SCREENSHOT, step.action)
         assertEquals("settings-tree", step.save)
         assertEquals(UiTarget(name = "Settings categories"), step.target)
-        assertNull(UiSteps.parse("""[{"action":"screenshot"}]""").single().target)
+        assertNull(UiSteps.parse("""[{"action":"screenshot","save":"top"}]""").single().target)
+        assertTrue(fails("""[{"action":"screenshot"}]""").contains("screenshot needs save"))
         assertTrue(fails("""[{"action":"screenshot","save":"../up"}]""").contains("plain file name"))
         assertTrue(fails("""[{"action":"click","name":"OK","save":"x"}]""").contains("save goes with screenshot"))
     }

@@ -18,13 +18,12 @@ import com.intellij.openapi.ui.popup.util.PopupUtil
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
+import com.intellij.openapi.util.Disposer
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiSnapshotMode
-import com.intellij.openapi.util.Disposer
 import com.jonnyzzz.mcpSteroid.server.UiStep
 import com.jonnyzzz.mcpSteroid.server.UiStepOutcome
 import com.jonnyzzz.mcpSteroid.server.UiSteps
-import kotlinx.serialization.json.JsonObject
 import com.jonnyzzz.mcpSteroid.server.UiTarget
 import com.jonnyzzz.mcpSteroid.server.UiWaitCondition
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
@@ -32,6 +31,7 @@ import com.jonnyzzz.mcpSteroid.vision.findComponentByWindowId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 import java.awt.Component
 import java.awt.Dialog
 import java.awt.Frame
@@ -41,6 +41,7 @@ import java.awt.Rectangle
 import java.awt.Window
 import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
+import java.nio.file.Path
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.AbstractButton
@@ -66,7 +67,7 @@ data class UiSessionResult(
     val reports: List<UiStepReport>,
     val failure: String?,
     val snapshot: String,
-    /** How each step that ran ended, in order, for the verdict of a reproduction. */
+    /** How each step that ran ended, in order, for the verdict of a scenario. */
     val outcomes: List<UiStepOutcome> = emptyList(),
     /** The steps that ran, rewritten to replay in another session: refs replaced by names, row indexes by row text. */
     val recorded: List<JsonObject> = emptyList(),
@@ -84,7 +85,7 @@ class UiSession(
     private val trace: UiTrace? = null,
     taskId: String = "",
     /** Where a screenshot step saves its picture: the call's execution folder. */
-    private val artifacts: java.nio.file.Path? = null,
+    private val artifacts: Path? = null,
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput()
@@ -191,8 +192,12 @@ class UiSession(
     private fun portable(step: UiStep, source: JsonObject): JsonObject =
         UiPortable.rewrite(source, portableTarget, portableRow, portableFields, textIsInput = step.action in TEXT_INPUT)
 
-    /** An expect's match, which also finds the portable target of a ref, as [resolve] does for the other steps. */
+    /**
+     * An expect's match, which also finds the portable target of a ref, as [resolve] does for the other steps. A ref
+     * whose control closed matches nothing, rather than failing as stale: that is what `"is":"hidden"` waits for.
+     */
     private suspend fun matchForExpect(target: UiTarget): UiMatch {
+        target.ref?.let { if (registry.resolve(it) is UiRefResolution.Stale) return UiMatch.None(emptyList()) }
         val m = match(target)
         if (target.ref != null && m is UiMatch.One) notePortable(target, m.node)
         return m
@@ -589,8 +594,7 @@ class UiSession(
         return withContext(edtAny) {
             val window = node?.let { it.component as? Window ?: SwingUtilities.getWindowAncestor(it.component) }
                 ?: scopeWindows().firstOrNull() ?: throw UiStepFailure("no window is showing")
-            val name = (step.save ?: "screenshot-${System.currentTimeMillis()}") + ".png"
-            val file = dir.resolve("screenshots").resolve(name)
+            val file = dir.resolve("screenshots").resolve(step.save!! + ".png")
             UiTrace.paint(window, file)
             "saved ${window.width}x${window.height} picture of ${describeWindow(window)} to $file"
         }

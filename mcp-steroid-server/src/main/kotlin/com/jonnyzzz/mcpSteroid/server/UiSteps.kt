@@ -136,7 +136,7 @@ data class UiStep(
     val tab: String? = null,
     /** On a toolwindow step: hide the tool window instead of showing it. */
     val hide: Boolean = false,
-    /** On a screenshot step: the picture's file name, without folder or extension. */
+    /** On a screenshot step: the picture's file name, without folder or extension. Required there. */
     val save: String? = null,
     val command: String? = null,
     val code: String? = null,
@@ -371,6 +371,8 @@ object UiSteps {
                 require(step.text != null) { "write needs text, the whole new content of the file" }
             }
             UiAction.PERF -> require(!step.command.isNullOrBlank()) { "perf needs a command, such as \"%openFile src/A.kt\"" }
+            // A fixed name lines the pictures of two replays up with each other.
+            UiAction.SCREENSHOT -> require(step.save != null) { "screenshot needs save, the picture's name, such as \"settings-appearance\"" }
             UiAction.CODE -> {
                 require(!step.code.isNullOrBlank()) { "code needs code, the Kotlin body steroid_execute_code runs" }
                 step.modal?.let { require(it in MODALS) { "unknown modal '$it'; use one of ${MODALS.joinToString()}" } }

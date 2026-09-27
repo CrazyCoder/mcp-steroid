@@ -111,7 +111,7 @@ soft. Each expect has one subject:
 
 | Subject | Checks | Example |
 |---|---|---|
-| A target (`name`, `text`, `class`, `ref`, `nth`) | `is`: visible, hidden, enabled, disabled, checked, unchecked, focused, editable; `value` (exact); `contains`; `matches` (a regex); `count` (how many controls match) | `{"action":"expect","name":"Apply","is":"disabled"}` |
+| A target (`name`, `text`, `class`, `ref`, `nth`) | `is`: visible, hidden, enabled, disabled, checked, unchecked, focused, editable; `value` (exact); `contains`; `matches` (a regex); `count` (how many controls match, in the topmost window that has a match) | `{"action":"expect","name":"Apply","is":"disabled"}` |
 | A row of a list, tree, table or tabbed pane | `row` (or `index`) alone for present, with `is`: selected, expanded, collapsed | `{"action":"expect","name":"Settings categories","row":"Terminal","is":"selected"}` |
 | `title`: a window | `is`: visible (default) or hidden | `{"action":"expect","title":"Rename","is":"hidden"}` |
 | `file`: a project file's text | `value`, `contains` or `matches`, over `line` N when given | `{"action":"expect","file":"src/A.kt","line":3,"contains":"newName"}` |
@@ -145,7 +145,8 @@ Other setup steps:
 - `{"action":"toolwindow","id":"Problems View","tab":"Project Errors"}` shows and activates a tool window and
   selects a tab; `"hide":true` hides it. An unknown id lists the ids.
 - `{"action":"write","file":"src/Sample.kt","text":"..."}` creates or replaces a project file, with its
-  folders, through the IDE's documents, so the editor and the index see it at once.
+  folders, through the IDE's documents, so the editor and the index see it at once. A path outside the
+  project folder is refused.
 - `{"action":"code","code":"...","modal":"non_modal"}` runs a Kotlin body exactly as `steroid_execute_code`
   does, for setup that no step covers, and fails the step when the script fails. Its default `modal` closes
   open dialogs, so pass `non_modal` or `dialog` in the middle of a dialog flow.
@@ -157,7 +158,8 @@ Other setup steps:
 With a target, such as `{"action":"screenshot","name":"Settings categories","save":"tree"}`, it pictures the
 window that holds the target. It paints only that window, never the rest of the screen, and lets the UI
 settle first. Read the saved file to review it, or keep it next to the scenario to compare with a later run.
-Name each picture after the state it shows, so a replay's pictures line up with the earlier ones.
+`save` is required: name each picture after the state it shows, so a replay's pictures line up with the
+earlier ones.
 
 Use pictures for what text cannot check: layout, icons, colors, clipping, a theme. For anything a snapshot
 shows, an `expect` is the stronger check, because it fails on its own.

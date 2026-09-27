@@ -40,6 +40,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import java.awt.Window
 import java.nio.file.Path
 import java.util.Collections
@@ -139,7 +140,9 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         }
         val shown = CompletableDeferred<Unit>()
         window.activate({ shown.complete(Unit) }, true, true)
-        withTimeout(step.timeoutMs) { shown.await() }
+        // withTimeoutOrNull: a timeout thrown from here would read as the whole call timing out.
+        withTimeoutOrNull(step.timeoutMs) { shown.await() }
+            ?: throw UiStepFailure("the $id tool window did not show within ${step.timeoutMs} ms" + if (!window.isAvailable) "; it is not available in this project" else "")
         val contents = window.contentManager.contents.toList()
         // A tab name can be HTML, as the Problems tool window's are.
         fun name(c: com.intellij.ui.content.Content) = StringUtil.removeHtmlTags(c.displayName.orEmpty(), true).replace(Regex("\\s+"), " ").trim()
@@ -159,6 +162,7 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         val path = step.file!!
         val base = project.basePath?.let(Path::of) ?: throw UiStepFailure("the project has no folder to resolve $path against")
         val target = base.resolve(path).normalize()
+        if (!target.startsWith(base.normalize())) throw UiStepFailure("write changes files of the project only; $path is outside ${project.basePath}")
         val parent = target.parent ?: throw UiStepFailure("$path has no parent folder")
         val text = step.text!!
         val created = withContext(Dispatchers.IO) { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target) } == null
