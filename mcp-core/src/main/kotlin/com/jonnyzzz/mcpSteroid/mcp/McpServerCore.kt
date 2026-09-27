@@ -92,7 +92,7 @@ class McpServerCore(
 
         // Notification path: no response under any circumstances.
         if (isNotification) {
-            if (method != null) handleNotification(method)
+            if (method != null) handleNotification(method, json["params"] as? JsonObject, session)
             return null
         }
 
@@ -160,12 +160,13 @@ class McpServerCore(
         else -> false
     }
 
+    /** The response to a request; `null` for a `tools/call` the client cancelled, which gets none. */
     private suspend fun handleRequest(
         id: JsonElement,
         method: String,
         params: JsonObject?,
         session: McpSession
-    ): String {
+    ): String? {
         return when (method) {
             McpMethods.INITIALIZE -> handleInitialize(id, params, session)
             McpMethods.PING -> handlePing(id)
@@ -180,11 +181,19 @@ class McpServerCore(
         }
     }
 
-    private fun handleNotification(method: String) {
-        // Notifications never produce a response per JSON-RPC §4.1; we just record them.
-        // Per-method handlers can be added here when they need to do work.
+    private fun handleNotification(method: String, params: JsonObject?, session: McpSession) {
+        // Notifications never produce a response per JSON-RPC §4.1.
         log.info("Client notification: $method")
+        if (method == McpMethods.CANCELLED) {
+            // MCP §Cancellation: the client no longer wants the result of `requestId`; stop the work it started.
+            val requestId = params?.get("requestId") ?: return
+            val reason = (params["reason"] as? JsonPrimitive)?.contentOrNull
+            if (!session.cancelRequest(requestKey(requestId), reason)) log.info("No running request ${requestKey(requestId)} to cancel")
+        }
     }
+
+    /** A request id as one key, the same for the string `"7"` and the number `7`. */
+    private fun requestKey(id: JsonElement): String = (id as? JsonPrimitive)?.content ?: id.toString()
 
     private fun handleInitialize(id: JsonElement, params: JsonObject?, session: McpSession): String {
         // Per MCP 2025-11-25 §Lifecycle/Initialization, initialize MUST carry params with
@@ -254,7 +263,7 @@ class McpServerCore(
         return encodeResult(id, McpJson.encodeToJsonElement(result))
     }
 
-    private suspend fun handleToolsCall(id: JsonElement, params: JsonObject?, session: McpSession): String {
+    private suspend fun handleToolsCall(id: JsonElement, params: JsonObject?, session: McpSession): String? {
         if (params == null) {
             return encodeError(id, JsonRpcErrorCodes.INVALID_PARAMS, "Missing tool call params")
         }
@@ -267,7 +276,8 @@ class McpServerCore(
             return encodeError(id, JsonRpcErrorCodes.INVALID_PARAMS, "Invalid tool call params: ${e.message}")
         }
 
-        val result = toolRegistry.callTool(callParams, session)
+        // A cancelled call gets no response (MCP §Cancellation).
+        val result = session.runCancellable(requestKey(id)) { toolRegistry.callTool(callParams, session) } ?: return null
         return encodeResult(id, McpJson.encodeToJsonElement(result))
     }
 

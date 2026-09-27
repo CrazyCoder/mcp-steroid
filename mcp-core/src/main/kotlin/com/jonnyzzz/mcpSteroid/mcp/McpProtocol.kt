@@ -501,6 +501,7 @@ object McpMethods {
     const val RESOURCES_LIST = "resources/list"
     const val RESOURCES_READ = "resources/read"
     const val PROGRESS = "notifications/progress"
+    const val CANCELLED = "notifications/cancelled"
     const val LOGGING_MESSAGE = "notifications/message"
     const val LOGGING_SET_LEVEL = "logging/setLevel"
     const val TOOLS_LIST_CHANGED = "notifications/tools/list_changed"

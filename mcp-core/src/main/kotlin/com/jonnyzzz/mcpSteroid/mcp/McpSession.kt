@@ -2,8 +2,13 @@
 package com.jonnyzzz.mcpSteroid.mcp
 
 import com.jonnyzzz.mcpSteroid.thisLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.withTimeoutOrNull
@@ -229,6 +234,34 @@ class McpSession(
         return result
     }
 
+    /** The client's requests this session is running, by request id, for `notifications/cancelled`. */
+    private val runningRequests = ConcurrentHashMap<String, Job>()
+
+    /**
+     * Runs [block] as the client's request [requestId]. Returns `null` when the client cancels that request with
+     * `notifications/cancelled` ([cancelRequest]); a cancellation of the caller itself propagates.
+     */
+    suspend fun <T : Any> runCancellable(requestId: String, block: suspend () -> T): T? = coroutineScope {
+        val call = async { block() }
+        runningRequests[requestId] = call
+        try {
+            call.await()
+        } catch (e: CancellationException) {
+            ensureActive()
+            null
+        } finally {
+            runningRequests.remove(requestId, call)
+        }
+    }
+
+    /** Cancels the running request [requestId], as the client asks; false when no such request runs. */
+    fun cancelRequest(requestId: String, reason: String?): Boolean {
+        val call = runningRequests[requestId] ?: return false
+        log.info("Client cancelled request $requestId" + (reason?.let { ": $it" } ?: ""))
+        call.cancel(CancellationException("the client cancelled the request" + (reason?.let { ": $it" } ?: "")))
+        return true
+    }
+
     /**
      * Close the session.
      */
@@ -238,6 +271,7 @@ class McpSession(
         // Cancel any pending requests
         pendingRequests.values.forEach { it.cancel() }
         pendingRequests.clear()
+        runningRequests.values.forEach { it.cancel(CancellationException("the session closed")) }
     }
 }
 
