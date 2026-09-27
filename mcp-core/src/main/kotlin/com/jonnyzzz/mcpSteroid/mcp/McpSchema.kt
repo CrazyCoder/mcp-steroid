@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.mcp
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
@@ -232,11 +233,17 @@ fun InputSchemaElement<Nothing>.boolean() = InputSchemaElement(
     }
 )
 
+/**
+ * A string parameter. A client that sends a JSON array or object for it, as agents do for a parameter that holds JSON
+ * text such as steroid_ui's steps, gets that JSON as the text instead of a crash.
+ */
 fun InputSchemaElement<Nothing>.string() = InputSchemaElement(
     spec = spec.copy(type = "string"),
     parser = object : InputSchemaParamParser<String?> {
-        override fun parseParameter(context: ToolCallContext): String? {
-            return context.params.arguments[spec.name]?.jsonPrimitive?.contentOrNull
+        override fun parseParameter(context: ToolCallContext): String? = when (val value = context.params.arguments[spec.name]) {
+            null -> null
+            is JsonPrimitive -> value.contentOrNull
+            else -> value.toString()
         }
     }
 )
