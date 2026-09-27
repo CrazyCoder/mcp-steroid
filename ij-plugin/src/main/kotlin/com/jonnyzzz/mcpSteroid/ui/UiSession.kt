@@ -203,7 +203,8 @@ class UiSession(
     /**
      * After a goto that ran on the backend, focuses the JetBrains Client's editor of [file], which the backend's
      * navigation opened, so that the next step acts where the caret is, as after a goto in a regular IDE. Without it
-     * the focus stays where it was, and an action such as Reformat Code runs on the Project view instead.
+     * the focus stays where it was, and an action such as Reformat Code runs on the Project view instead. Fails when
+     * the Client shows no such editor.
      */
     private suspend fun focusClientEditor(file: String): String {
         val name = file.substringAfterLast('/')
@@ -216,7 +217,12 @@ class UiSession(
                 if (editor == null) delay(POLL_MS)
             }
         }
-        val shown = editor ?: return "; the JetBrains Client shows no editor of $name"
+        // The backend moved its caret, but the user sees no editor: every step after this one would act elsewhere.
+        val shown = editor ?: throw UiStepFailure(
+            "the backend opened $file, but the JetBrains Client shows no editor of $name after $EDITOR_WAIT_MS ms; " +
+                "a tab the Client restored when it connected shows its editor only once the tab is clicked: " +
+                "{\"action\":\"click\",\"name\":\"$name\",\"class\":\"EditorTabLabel\"}"
+        )
         withContext(edtAny) { IdeFocusManager.getInstance(project).requestFocus(shown.contentComponent, true) }
         return "; focus: the JetBrains Client's editor of $name"
     }

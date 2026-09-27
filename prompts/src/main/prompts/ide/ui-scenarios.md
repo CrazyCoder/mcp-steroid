@@ -226,7 +226,8 @@ client sends a step to the Remote Development backend when:
   controls, the Commit tool window, a refactoring dialog; or
 - the step needs the project itself, which only the backend holds, and names no side: `write`, `code`,
   `goto`, an `expect` on a `file` or a `banner`, and `get` or `set` of an `inspection`. The file `goto` opens on the backend
-  shows in the client's editor, which then has the focus, so a `run` after it acts on that file.
+  shows in the client's editor, which then has the focus, so a `run` after it acts on that file. The
+  `goto` fails when the client shows no editor of the file.
 
 Everything else runs in the client: its windows, Settings dialog, tool windows and pictures. A step on the
 backend reports `on the backend:`, and the verdict covers both sides. A relative scenario path resolves against

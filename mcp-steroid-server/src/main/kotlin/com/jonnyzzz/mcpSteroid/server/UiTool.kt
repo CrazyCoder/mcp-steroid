@@ -103,8 +103,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           "value", "contains" or "matches" for a table row's other cells;
           "title" (a window) with "is" visible or hidden; "file" with "value", "contains" or "matches", optionally
           on "line", or "caret":"line:column"; "banner":"text" above an open editor; "notification":"text" and
-          "error":"text" ("" or true for any), shown or logged since the call started. "soft" reports a failure and goes on; "bug" marks the check whose failure
-          means the reported bug is present
+          "error":"text" ("" or true for any), shown or logged since the call started. "soft" reports a failure
+          and goes on; "bug" marks the check whose failure means the reported bug is present
         - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
           or name, or switches the open Settings window to it
         - {"action":"toolwindow", "id":"Project", optional "tab":"...", or "hide":true}

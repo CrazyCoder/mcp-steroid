@@ -140,13 +140,27 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         return out
     }
 
-    /** Shows a tool window and selects its tab, or hides it. */
-    suspend fun toolWindow(step: UiStep): String = withContext(edtAny) {
-        val manager = ToolWindowManager.getInstance(project)
+    /**
+     * Shows a tool window and selects its tab, or hides it. Waits up to the step's timeout for the tool window: a
+     * JetBrains Client registers the backend's tool windows only a moment after it connects.
+     */
+    suspend fun toolWindow(step: UiStep): String {
         val wanted = step.id!!
-        val id = manager.toolWindowIds.firstOrNull { it == wanted }
+        val started = TimeSource.Monotonic.markNow()
+        while (withContext(edtAny) { toolWindowId(wanted) } == null && started.elapsedNow().inWholeMilliseconds < step.timeoutMs) delay(POLL_MS)
+        return showToolWindow(step, wanted)
+    }
+
+    private fun toolWindowId(wanted: String): String? {
+        val manager = ToolWindowManager.getInstance(project)
+        return manager.toolWindowIds.firstOrNull { it == wanted }
             ?: manager.toolWindowIds.firstOrNull { it.equals(wanted, ignoreCase = true) || manager.getToolWindow(it)?.stripeTitle.equals(wanted, ignoreCase = true) }
-            ?: throw UiStepFailure("no tool window $wanted; tool windows: ${manager.toolWindowIds.sorted().joinToString()}")
+    }
+
+    private suspend fun showToolWindow(step: UiStep, wanted: String): String = withContext(edtAny) {
+        val manager = ToolWindowManager.getInstance(project)
+        val id = toolWindowId(wanted)
+            ?: throw UiStepFailure("no tool window $wanted after ${step.timeoutMs} ms; tool windows: ${manager.toolWindowIds.sorted().joinToString()}")
         val window = manager.getToolWindow(id)!!
         if (step.hide) {
             window.hide(null)
