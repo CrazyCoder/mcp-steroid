@@ -26,6 +26,30 @@ class UiLocatorTest {
     private fun one(target: UiTarget) = (UiLocator.find(listOf(root), target) as UiMatch.One).node.component
 
     @Test
+    fun `a control named by the target wins over one that only has it as its caption`() {
+        val arrows = JCheckBox("Show arrows")
+        val mode = JComboBox(arrayOf("On hover", "Always"))
+        val caption = JLabel("Size:")
+        val size = JTextField("12")
+        val panel = UiModel.labelled(FallbackUiWalker(onlyShowing = false).build(JPanel().apply { add(arrows); add(mode); add(caption); add(size) }))
+        assertEquals("Show arrows", panel.walk().first { it.component === mode }.label)
+        assertEquals(arrows, (UiLocator.find(listOf(panel), UiTarget(name = "Show arrows")) as UiMatch.One).node.component)
+        assertEquals(mode, (UiLocator.find(listOf(panel), UiTarget(name = "Show arrows", cls = "JComboBox")) as UiMatch.One).node.component)
+        // A label is not interactive: the unnamed field it captions is what the name means.
+        assertEquals(size, (UiLocator.find(listOf(panel), UiTarget(name = "Size:")) as UiMatch.One).node.component)
+    }
+
+    @Test
+    fun `a name matches without a caption's colon and with either ellipsis`() {
+        val numbers = JCheckBox("Show line numbers:")
+        val more = JButton("Settings…")
+        val panel = FallbackUiWalker(onlyShowing = false).build(JPanel().apply { add(numbers); add(more) })
+        assertEquals(numbers, (UiLocator.find(listOf(panel), UiTarget(name = "Show line numbers")) as UiMatch.One).node.component)
+        assertEquals(more, (UiLocator.find(listOf(panel), UiTarget(name = "Settings...")) as UiMatch.One).node.component)
+        assertTrue(UiLocator.find(listOf(panel), UiTarget(name = "Show line")) is UiMatch.None)
+    }
+
+    @Test
     fun `name matches exactly`() {
         assertEquals(field, one(UiTarget(name = "Font size")))
         assertTrue(UiLocator.find(listOf(root), UiTarget(name = "Font")) is UiMatch.None)

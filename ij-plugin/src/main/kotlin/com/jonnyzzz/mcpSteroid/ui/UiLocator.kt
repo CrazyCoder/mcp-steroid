@@ -26,8 +26,9 @@ object UiLocator {
         }
         val nodes = roots.flatMap { it.walk().toList() }.distinctBy { it.component }
         // An unnamed field answers to its caption, the label="..." a snapshot shows for it.
+        val name = target.name?.let(::sameName)
         fun matches(node: UiNode) =
-            (target.name == null || node.name == target.name || (node.name == null && node.label == target.name)) &&
+            (name == null || node.name?.let(::sameName) == name || (node.name == null && node.label?.let(::sameName) == name)) &&
                 (target.text == null || node.text.any { it.contains(target.text!!) } || node.name?.contains(target.text!!) == true ||
                     node.label?.contains(target.text!!) == true) &&
                 (target.cls == null || classMatches(node.component, target.cls!!)) &&
@@ -35,7 +36,7 @@ object UiLocator {
         // The topmost window with a match is the one the user sees, so a "Cancel" in a non-modal dialog does not
         // compete with one in the frame behind it.
         val matches = roots.asSequence()
-            .map { root -> narrow(root.walk().filter(::matches).distinctBy { it.component }.toList()) }
+            .map { root -> narrow(ownNameFirst(root.walk().filter(::matches).distinctBy { it.component }.toList(), target)) }
             .firstOrNull { it.isNotEmpty() }
             .orEmpty()
         val nth = target.nth
@@ -45,6 +46,19 @@ object UiLocator {
             matches.size == 1 -> UiMatch.One(matches.single())
             else -> UiMatch.Many(matches)
         }
+    }
+
+    /**
+     * A control whose own name is the target's name wins over an unnamed one that only has it as its caption: the
+     * combo box after the checkbox "Show code folding arrows" takes the checkbox's text as its caption, and a step by
+     * that name means the checkbox. Target the captioned control by its class. Only interactive controls compete
+     * this way: a label named like the field it captions still gives way to the field.
+     */
+    private fun ownNameFirst(matches: List<UiNode>, target: UiTarget): List<UiNode> {
+        val name = target.name?.let(::sameName) ?: return matches
+        val interactive = matches.filter { it.interactive }
+        val own = interactive.filter { it.name?.let(::sameName) == name }
+        return if (own.isNotEmpty() && own.size < interactive.size) own else matches
     }
 
     /**
@@ -59,6 +73,12 @@ object UiLocator {
             kept.none { outer -> outer !== inner && SwingUtilities.isDescendingFrom(inner.component, outer.component) }
         }
     }
+
+    /**
+     * A name as a step compares it: without the colon a caption ends with and with one spelling of the ellipsis, so
+     * "Show line numbers" finds the checkbox "Show line numbers:" and "Settings..." the button "Settings…".
+     */
+    fun sameName(name: String): String = name.trim().removeSuffix(":").trimEnd().replace("...", "…")
 
     private fun classMatches(c: Component, cls: String): Boolean =
         generateSequence<Class<*>>(c.javaClass) { it.superclass }.any { it.simpleName == cls || it.name == cls } ||
