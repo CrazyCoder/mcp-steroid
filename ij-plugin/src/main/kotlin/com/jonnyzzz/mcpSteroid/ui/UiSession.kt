@@ -24,6 +24,7 @@ import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
 import com.intellij.openapi.util.Disposer
 import com.jonnyzzz.mcpSteroid.server.UiAction
+import com.jonnyzzz.mcpSteroid.server.UiEditorState
 import com.jonnyzzz.mcpSteroid.server.UiSnapshotMode
 import com.jonnyzzz.mcpSteroid.server.UiStep
 import com.jonnyzzz.mcpSteroid.server.UiStepOutcome
@@ -32,7 +33,6 @@ import com.jonnyzzz.mcpSteroid.server.UiTarget
 import com.jonnyzzz.mcpSteroid.server.UiWaitCondition
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
 import com.jonnyzzz.mcpSteroid.vision.findComponentByWindowId
-import com.jonnyzzz.mcpSteroid.server.UiEditorState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext

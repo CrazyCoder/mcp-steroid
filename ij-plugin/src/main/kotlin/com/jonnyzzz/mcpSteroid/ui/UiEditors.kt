@@ -17,6 +17,7 @@ import com.intellij.openapi.fileEditor.ex.FileEditorProviderManager
 import com.intellij.openapi.fileTypes.LanguageFileType
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.jonnyzzz.mcpSteroid.server.UiEditorSide
@@ -27,12 +28,13 @@ import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.awt.KeyboardFocusManager
+import java.nio.file.Path
 import javax.swing.SwingUtilities
 
 /**
  * The editors each side of the IDE has open: the regular IDE's or JetBrains Client's own, and on a Remote Development
  * backend also its record of every Client session, which a Client's editors can drift from. Also the facts of one
- * project file: its type and which side hosts its editor.
+ * project file: its type, language and editor providers.
  */
 internal class UiEditors(private val project: Project) {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
@@ -69,7 +71,7 @@ internal class UiEditors(private val project: Project) {
         }
     }
 
-    /** Whether an editor of [wanted], a project-relative path or a file name, shows here, and has the focus. EDT. */
+    /** Whether an editor of [wanted], a project-relative path or a file name, shows here, and has the focus. */
     suspend fun shown(wanted: String): Shown = withContext(edtAny) {
         val manager = FileEditorManager.getInstance(project)
         val editors = manager.allEditors.filter { editor -> editor.file?.let { matches(it, wanted) } == true && editor.component.isShowing }
@@ -82,8 +84,9 @@ internal class UiEditors(private val project: Project) {
 
     /** A project file's type, language, size and editor providers, and on a backend how many editors each Client session has of it. */
     suspend fun facts(path: String): String {
-        val base = project.guessProjectDir() ?: throw UiStepFailure("the project has no folder to find $path in")
-        val file = base.findFileByRelativePath(path) ?: throw UiStepFailure("no file $path in the project")
+        val file = if (Path.of(path).isAbsolute) LocalFileSystem.getInstance().refreshAndFindFileByPath(path.replace('\\', '/'))
+        else project.guessProjectDir()?.findFileByRelativePath(path)
+        file ?: throw UiStepFailure("no file $path in the project")
         val (type, language) = readAction { file.fileType.name to (file.fileType as? LanguageFileType)?.language?.id }
         val providers = FileEditorProviderManager.getInstance().getProviderList(project, file).map { it.editorTypeId }
         val hosts = hosts(file)
