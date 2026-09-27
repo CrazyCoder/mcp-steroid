@@ -30,6 +30,9 @@ data class FreezeAnalysis(
     /** A thread other than the UI thread that waits to start a write action. */
     val writer: String?,
     val holders: List<ReadHolder>,
+    /** The steroid_execute_code script the busy UI thread runs, such as code it passed to `invokeLater`. */
+    val uiScriptClass: String? = null,
+    val uiScriptLine: String? = null,
 ) {
     val scriptClasses: Set<String> get() = holders.mapNotNullTo(LinkedHashSet()) { it.scriptClass }
 
@@ -57,8 +60,15 @@ data class FreezeAnalysis(
                 .sortedWith(compareBy<ReadHolder>({ it.scriptClass == null }, { !it.running }))
                 .take(MAX_HOLDERS)
             val uiWaits = ui != null && waitsForLock(ui)
-            return FreezeAnalysis(uiWaits, if (ui == null || uiWaits) emptyList() else doing(ui), writer, holders)
+            val uiScript = if (ui == null || uiWaits) null else scriptFrame(ui)
+            return FreezeAnalysis(
+                uiWaits, if (ui == null || uiWaits) emptyList() else doing(ui), writer, holders,
+                uiScriptClass = uiScript?.className?.substringBefore('$'),
+                uiScriptLine = uiScript?.let { "${it.fileName}:${it.lineNumber}" },
+            )
         }
+
+        private fun scriptFrame(t: ThreadSample) = t.frames.firstOrNull { it.className.startsWith(SCRIPT_CLASS_PREFIX) }
 
         private fun isUiThread(t: ThreadSample) = t.name.startsWith("AWT-EventQueue")
 
@@ -79,7 +89,7 @@ data class FreezeAnalysis(
             .map { "${it.className.substringAfterLast('.')}.${it.methodName}(${it.fileName}:${it.lineNumber})" }
 
         private fun holder(t: ThreadSample): ReadHolder {
-            val script = t.frames.firstOrNull { it.className.startsWith(SCRIPT_CLASS_PREFIX) }
+            val script = scriptFrame(t)
             return ReadHolder(
                 thread = t.name,
                 running = t.state == Thread.State.RUNNABLE,

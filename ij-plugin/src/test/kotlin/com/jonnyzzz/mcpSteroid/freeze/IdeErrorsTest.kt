@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.freeze
 
+import com.jonnyzzz.mcpSteroid.execution.CapturedIdeException
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import kotlinx.coroutines.CoroutineScope
@@ -52,6 +53,16 @@ class IdeErrorsTest {
     }
 
     @Test
+    fun `a split frontend's copy of a backend error is left to the backend`() {
+        fun captured(t: Throwable) = CapturedIdeException(java.time.Instant.ofEpochMilli(now), t, t.message, "", null)
+        errors.add(captured(com.intellij.diagnostic.RemoteSerializedThrowable("BackendProbe", "BackendProbe", "java.lang.IllegalStateException", emptyArray(), null)))
+        errors.add(captured(IllegalStateException("FrontendProbe")))
+        val notice = errors.noticeFor(Any(), now)!!
+        assertTrue(notice, notice.contains("FrontendProbe"))
+        assertFalse(notice, notice.contains("BackendProbe"))
+    }
+
+    @Test
     fun `the notice groups repeats, caps its lines, and names the log`() {
         var seq = 0L
         val logged = List(5) { IdeError(++seq, now, "Same: again", null) } + (1..4).map { IdeError(++seq, now, "Kind$it: once", null) }
@@ -62,6 +73,7 @@ class IdeErrorsTest {
         assertTrue(text, text.contains("Kind4: once"))
         assertTrue(text, text.contains("- and 2 more kinds of error"))
         assertFalse("the oldest kinds give way to the newest", text.contains("Same: again"))
+        assertTrue(IdeErrors.render(logged, null, "the backend").startsWith("IDE ERRORS in the backend: the IDE logged 9 errors since your last call."))
     }
 
     @Test

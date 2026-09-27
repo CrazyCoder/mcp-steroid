@@ -11,6 +11,8 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.execution.RunningExecutions
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.server.split.SplitRole
+import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -99,6 +101,11 @@ class FreezeMonitor(private val scope: CoroutineScope) {
                 log.warn("Cancelled execution $executionId: it holds a read lock during a UI freeze")
             }
         }
+        // A script that blocks the UI thread itself is named, not cancelled: its code on that thread has already
+        // left the coroutine that cancellation reaches.
+        freeze.analysis?.uiScriptClass?.let { cls ->
+            if (cls !in executions) RunningExecutions.forScriptClass(cls)?.let { executions[cls] = it }
+        }
         val updated = freeze.copy(executions = executions, cancelled = cancelled)
         latest = updated
         active = updated
@@ -109,7 +116,7 @@ class FreezeMonitor(private val scope: CoroutineScope) {
         val now = System.currentTimeMillis()
         val freeze = active ?: latest?.takeIf { now - it.detectedAtMs < RECENT_MS && reported[session] != it.id } ?: return null
         if (freeze.durationMs != null) reported[session] = freeze.id
-        return render(freeze, now, RunningExecutions::forScriptClass)
+        return render(freeze, now, RunningExecutions::forScriptClass, side = sideOf(currentSplitRole()))
     }
 
     @TestOnly
@@ -160,30 +167,46 @@ class FreezeMonitor(private val scope: CoroutineScope) {
 
         fun getInstanceOrNull(): FreezeMonitor? = ApplicationManager.getApplication()?.let { service<FreezeMonitor>() }
 
+        /** Which process of a Split Mode pair this is, for the notices; `null` in a regular IDE. */
+        fun sideOf(role: SplitRole): String? = when (role) {
+            SplitRole.BACKEND -> "the backend"
+            SplitRole.FRONTEND -> "the JetBrains Client"
+            SplitRole.MONOLITH -> null
+        }
+
         /**
          * The freeze as agents read it. [executionFor] maps a script class in a dump to its execution id, and
-         * [isRunning] tells whether that execution's call is still running.
+         * [isRunning] tells whether that execution's call is still running. [side] names the process in
+         * Split Mode, as [sideOf] gives it.
          */
         fun render(
             freeze: Freeze,
             nowMs: Long,
             executionFor: (String) -> String? = RunningExecutions::forScriptClass,
             isRunning: (String) -> Boolean = RunningExecutions::isRunning,
+            side: String? = null,
         ): String = buildString {
             val since = TIME.format(Instant.ofEpochMilli(freeze.frozenSinceMs))
             val threshold = freeze.thresholdMs / 1000
+            val where = side?.let { " in $it" }.orEmpty()
             if (freeze.durationMs == null) {
-                append("IDE FREEZE: the IDE's UI has not responded for ${(nowMs - freeze.frozenSinceMs) / 1000} s, since $since ")
+                append("IDE FREEZE$where: the IDE's UI has not responded for ${(nowMs - freeze.frozenSinceMs) / 1000} s, since $since ")
                 append("(the IDE reports a freeze after $threshold s). Calls that need the UI wait until it ends.")
             } else {
-                append("IDE FREEZE (ended): the IDE's UI did not respond for ${freeze.durationMs / 1000} s, from $since.")
+                append("IDE FREEZE$where (ended): the IDE's UI did not respond for ${freeze.durationMs / 1000} s, from $since.")
             }
             val analysis = freeze.analysis
+            val uiScript = analysis?.uiScriptClass
             when {
                 analysis == null -> Unit
                 analysis.uiWaitsForLock && analysis.writer != null ->
                     append(" The UI thread waits for a write action on thread \"${analysis.writer}\", which waits for these threads to release their read locks:")
                 analysis.uiWaitsForLock -> append(" The UI thread waits for a lock held by:")
+                uiScript != null -> {
+                    val executionId = freeze.executions[uiScript] ?: executionFor(uiScript)
+                    val script = if (executionId != null) "steroid_execute_code execution $executionId" else "a steroid_execute_code script"
+                    append(" The UI thread runs code of $script at ${analysis.uiScriptLine}, such as a block it passed to invokeLater.")
+                }
                 analysis.uiDoing.isNotEmpty() -> append(" The UI thread is busy, not waiting for a lock: ${analysis.uiDoing.joinToString(" <- ")}.")
             }
             for (holder in analysis?.holders.orEmpty()) {

@@ -7,6 +7,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.jonnyzzz.mcpSteroid.execution.CapturedIdeException
 import com.jonnyzzz.mcpSteroid.execution.ExceptionCaptureService
+import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import java.nio.file.Path
@@ -40,7 +41,10 @@ class IdeErrors(private val scope: CoroutineScope) {
         scope.launch { service<ExceptionCaptureService>().exceptions.collect(::add) }
     }
 
-    fun add(e: CapturedIdeException) = add(summaryOf(e.throwable), e.timestamp.toEpochMilli(), e.pluginId)
+    fun add(e: CapturedIdeException) {
+        if (isRemoteCopy(e.throwable)) return
+        add(summaryOf(e.throwable), e.timestamp.toEpochMilli(), e.pluginId)
+    }
 
     fun add(summary: String, atMs: Long, pluginId: String?) = synchronized(errors) {
         errors.addLast(IdeError(nextSeq++, atMs, summary, pluginId))
@@ -70,7 +74,7 @@ class IdeErrors(private val scope: CoroutineScope) {
                 (if (after != null) e.seq >= after else nowMs - e.atMs < RECENT_MS) && spans.none { e.atMs in it }
             }
         }
-        return if (fresh.isEmpty()) null else render(fresh, logFile())
+        return if (fresh.isEmpty()) null else render(fresh, logFile(), FreezeMonitor.sideOf(currentSplitRole()))
     }
 
     companion object {
@@ -85,6 +89,12 @@ class IdeErrors(private val scope: CoroutineScope) {
 
         private fun logFile(): Path? = runCatching { Path.of(PathManager.getLogPath(), "idea.log") }.getOrNull()
 
+        /**
+         * A split frontend logs a copy of each error the backend logs. The backend tells about its own
+         * errors in the results of forwarded calls, so the copies would repeat them.
+         */
+        fun isRemoteCopy(t: Throwable): Boolean = t.javaClass.name == "com.intellij.diagnostic.RemoteSerializedThrowable"
+
         /** The exception class, the first line of its message, and where it was thrown. */
         fun summaryOf(t: Throwable): String {
             val message = t.message?.lineSequence()?.firstOrNull()?.trim().orEmpty()
@@ -96,11 +106,14 @@ class IdeErrors(private val scope: CoroutineScope) {
             return t.javaClass.simpleName + (if (clipped.isNotEmpty()) ": $clipped" else "") + frame.orEmpty()
         }
 
-        /** Same errors on one line with a count, the newest groups first, at most [MAX_LINES] lines. */
-        fun render(errors: List<IdeError>, logFile: Path?): String = buildString {
+        /**
+         * Same errors on one line with a count, the newest groups first, at most [MAX_LINES] lines. [side] names
+         * the process in Split Mode, as [FreezeMonitor.sideOf] gives it.
+         */
+        fun render(errors: List<IdeError>, logFile: Path?, side: String? = null): String = buildString {
             val groups = errors.groupBy { it.summary to it.pluginId }.values.sortedByDescending { g -> g.maxOf { it.seq } }
             val count = if (errors.size == 1) "1 error" else "${errors.size} errors"
-            append("IDE ERRORS: the IDE logged $count since your last call")
+            append("IDE ERRORS${side?.let { " in $it" }.orEmpty()}: the IDE logged $count since your last call")
             append(if (logFile != null) "; full stack traces are in $logFile." else ".")
             for (group in groups.take(MAX_LINES)) {
                 val last = group.maxBy { it.seq }

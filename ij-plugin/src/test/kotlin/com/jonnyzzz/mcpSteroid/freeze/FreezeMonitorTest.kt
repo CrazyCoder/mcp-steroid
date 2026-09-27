@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.freeze
 import com.jonnyzzz.mcpSteroid.execution.RunningExecutions
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.server.split.SplitRole
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -77,6 +78,29 @@ class FreezeMonitorTest {
         ))))
         assertFalse(a.uiWaitsForLock)
         assertEquals("SlowAction.actionPerformed(SlowAction.kt:12)", a.uiDoing.first())
+    }
+
+    @Test
+    fun `a UI thread blocked by a script's invokeLater block names the script`() {
+        val a = FreezeAnalysis.of(listOf(ThreadSample("AWT-EventQueue-0", Thread.State.TIMED_WAITING, listOf(
+            f("java.lang.Thread", "sleep"),
+            f("$scriptClass\$code\$1", "run", "input.kt", 29),
+            f("com.intellij.ide.IdeEventQueue", "defaultDispatchEvent", "IdeEventQueue.kt", 720),
+        ))))
+        assertEquals(scriptClass, a.uiScriptClass)
+        val text = FreezeMonitor.render(Freeze(1, detectedAtMs = 20_000, thresholdMs = 5_000, reportDir = null, analysis = a),
+            nowMs = 25_000, executionFor = { if (it == scriptClass) "eid-1" else null }, isRunning = { false })
+        assertTrue(text, text.contains("The UI thread runs code of steroid_execute_code execution eid-1 at input.kt:29"))
+        assertFalse(text, text.contains("IdeEventQueue"))
+    }
+
+    @Test
+    fun `in Split Mode the notice names the process that froze`() {
+        val freeze = Freeze(1, detectedAtMs = 20_000, thresholdMs = 5_000, reportDir = null, analysis = null)
+        assertTrue(FreezeMonitor.render(freeze, 25_000, side = FreezeMonitor.sideOf(SplitRole.BACKEND)).startsWith("IDE FREEZE in the backend: "))
+        assertTrue(FreezeMonitor.render(freeze.copy(durationMs = 9_000), 30_000, side = FreezeMonitor.sideOf(SplitRole.FRONTEND))
+            .startsWith("IDE FREEZE in the JetBrains Client (ended): "))
+        assertTrue(FreezeMonitor.render(freeze, 25_000, side = FreezeMonitor.sideOf(SplitRole.MONOLITH)).startsWith("IDE FREEZE: "))
     }
 
     @Test
