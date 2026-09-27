@@ -43,11 +43,12 @@ backend unloads it. The client log then has `PairedPluginStateEnforcer - Disabli
 mcp-steroid -> [VERSION_MISMATCH]` or `[NOT_LOADED_ON_CLIENT]`, and the plugin stays disabled on the next
 start.
 
-So install the same build on both sides before the client connects. The client loads its plugins from the
-`frontend` folder of the plugins directory, and keeps its disabled plugins in `disabled_plugins_frontend.txt`
-in the config directory. A client started by `idea64 splitMode <project>` uses the default directories even
-when the backend runs with a custom `idea.properties`. After a mismatch, remove
-`io.github.crazycoder.mcp-steroid` from that file and from the backend's `disabled_plugins.txt`.
+So install the same build on both sides before the client connects. A client started on the same machine by
+`idea64 splitMode <project>` uses the installation's default directories, even when the backend runs with a
+custom `idea.properties`: it loads plugins from the `frontend` folder of the default plugins directory, and
+at every start copies its disabled plugins from `disabled_plugins_frontend.txt` in the default config
+directory. After a mismatch, remove `io.github.crazycoder.mcp-steroid` from that file and from the
+backend's `disabled_plugins.txt`.
 
 ## Where each tool runs
 
