@@ -10,6 +10,7 @@ import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
@@ -23,6 +24,7 @@ import com.intellij.ui.HyperlinkLabel
 import com.intellij.util.ui.UIUtil
 import com.jonnyzzz.mcpSteroid.server.split.SplitRole
 import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -47,12 +49,28 @@ class IdeBanners {
     internal var current: List<IdeBanner> = emptyList()
     private val seen = WeakHashMap<Any, Set<IdeBanner>>()
 
-    /** Reads the banners of every open project's editors again, unless the EDT does not answer in time. */
+    /**
+     * Reads the banners of every open project's editors again, unless the EDT does not answer in time. It runs after
+     * every call, and reads internal platform classes, so a failure, even a linkage error on another IDE build, leaves
+     * the last reading and is logged once instead of failing the call.
+     */
     suspend fun refresh() {
-        withTimeoutOrNull(REFRESH_MS) {
-            current = ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.flatMap { read(it) }
+        try {
+            withTimeoutOrNull(REFRESH_MS) {
+                current = ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.flatMap { read(it) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            if (!failureLogged) {
+                failureLogged = true
+                thisLogger().warn("Cannot read the editor banners; the banner notice stays off", e)
+            }
         }
     }
+
+    @Volatile
+    private var failureLogged = false
 
     /** The banners [session] has not been told about, as a notice, and marks every current banner as told. */
     fun noticeFor(session: Any): String? {

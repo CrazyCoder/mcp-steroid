@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.freeze
 
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -23,6 +24,15 @@ class IdeBannersTest {
         assertNull(banners.noticeFor(session))
         banners.current = listOf(jdkA)
         assertTrue(banners.noticeFor(session)!!.contains("Module JDK is not defined"))
+    }
+
+    @Test
+    fun `a refresh that cannot read the banners keeps the last reading instead of failing the call`() {
+        // No IDE runs in this test, so reading the open projects throws, as a missing platform class would.
+        val banners = IdeBanners()
+        banners.current = listOf(jdkA)
+        runBlocking { banners.refresh() }
+        assertEquals(listOf(jdkA), banners.current)
     }
 
     @Test
