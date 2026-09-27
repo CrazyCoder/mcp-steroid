@@ -45,8 +45,8 @@ start.
 
 So install the same build on both sides before the client connects. A client started on the same machine by
 `idea64 splitMode <project>` uses the installation's default directories, even when the backend runs with a
-custom `idea.properties`: it loads plugins from the `frontend` folder of the default plugins directory, and
-at every start copies its disabled plugins from `disabled_plugins_frontend.txt` in the default config
+custom `idea.properties`. It loads plugins from the `frontend` folder of the default plugins directory. At
+every start, it copies its disabled plugins from `disabled_plugins_frontend.txt` in the default config
 directory. After a mismatch, remove `io.github.crazycoder.mcp-steroid` from that file and from the
 backend's `disabled_plugins.txt`.
 
