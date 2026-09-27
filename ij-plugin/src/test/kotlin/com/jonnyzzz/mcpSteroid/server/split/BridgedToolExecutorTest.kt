@@ -51,10 +51,11 @@ class BridgedToolExecutorTest {
     }
 
     @Test
-    fun `the bridge session is removed afterwards`() = runBlocking {
-        val c = core(tool { ToolCallResult.successTextResult("x") })
-        val before = c.sessionManager.getAllSessions().size
-        executeBridgedTool(c, ToolCallParams(name = "t")).toList()
-        assertEquals(before, c.sessionManager.getAllSessions().size)
+    fun `bridged calls share one session`() = runBlocking {
+        val sessions = mutableListOf<Any>()
+        val c = core(tool { sessions += it.session; ToolCallResult.successTextResult("x") })
+        repeat(3) { executeBridgedTool(c, ToolCallParams(name = "t")).toList() }
+        assertEquals(1, sessions.toSet().size)
+        assertEquals(1, c.sessionManager.getAllSessions().size)
     }
 }

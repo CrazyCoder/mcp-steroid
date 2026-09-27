@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.After
 import org.junit.Before
@@ -81,6 +82,16 @@ class RoutedToolTest {
         assertEquals(0, local.calls)
         assertEquals(listOf("steroid_execute_code"), bridge.forwarded)
         assertEquals(listOf("from backend"), seen)
+    }
+
+    @Test
+    fun `only a local steroid_execute_code run counts as reporting its own IDE errors`() {
+        val none = buildJsonObject { }
+        assertTrue(RoutedTool.reportsOwnIdeErrors(SplitRole.MONOLITH, "steroid_execute_code", none))
+        assertTrue(RoutedTool.reportsOwnIdeErrors(SplitRole.BACKEND, "steroid_execute_code", none))
+        assertFalse("forwarded to the backend", RoutedTool.reportsOwnIdeErrors(SplitRole.FRONTEND, "steroid_execute_code", none))
+        assertTrue(RoutedTool.reportsOwnIdeErrors(SplitRole.FRONTEND, "steroid_execute_code", buildJsonObject { put("side", "frontend") }))
+        assertFalse(RoutedTool.reportsOwnIdeErrors(SplitRole.MONOLITH, "steroid_list_projects", none))
     }
 
     @Test

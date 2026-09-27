@@ -8,6 +8,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Runs [delegate] locally or forwards the call to the backend, per [routeTool]. [FreezeMonitor.guard]
@@ -20,7 +21,8 @@ class RoutedTool(
 ) : McpTool by delegate {
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val monitor = FreezeMonitor.getInstanceOrNull() ?: return route(context)
-        return monitor.guard(context.session, reportsIdeErrors = delegate.name == EXECUTE_CODE) { route(context) }
+        val reports = reportsOwnIdeErrors(role(), delegate.name, context.params.arguments)
+        return monitor.guard(context.session, reportsIdeErrors = reports) { route(context) }
     }
 
     private suspend fun route(context: ToolCallContext): ToolCallResult {
@@ -51,7 +53,14 @@ class RoutedTool(
         }
     }
 
-    private companion object {
-        const val EXECUTE_CODE = "steroid_execute_code"
+    internal companion object {
+        private const val EXECUTE_CODE = "steroid_execute_code"
+
+        /**
+         * Whether the call's result lists the errors this process logged while it ran: steroid_execute_code
+         * does for its own process, so not when a split frontend forwards it to the backend.
+         */
+        fun reportsOwnIdeErrors(role: SplitRole, toolName: String, arguments: JsonObject): Boolean =
+            toolName == EXECUTE_CODE && (role != SplitRole.FRONTEND || routeTool(role, toolName, arguments) == ToolSide.LOCAL)
     }
 }
