@@ -71,7 +71,15 @@
     {"action": "fill", "class": "TreeTable", "row": "Hard wrap at:", "text": "90"},
     {"action": "expect", "class": "TreeTable", "row": "Hard wrap at:", "value": "90"},
     {"action": "expect", "class": "TreeTable", "row": "Hard wrap at:", "contains": "9"},
-    {"action": "expect", "error": "", "not": true}
+    {"action": "expect", "error": "", "not": true},
+    {"action": "get", "editors": true},
+    {"action": "get", "file": "src/Split.java"},
+    {"action": "get", "log": "#com.jetbrains.rdserver.fileEditors"},
+    {"action": "set", "log": "#com.jetbrains.rdserver.fileEditors", "value": "trace"},
+    {"action": "expect", "editor": "src/Split.java"},
+    {"action": "expect", "editor": "Split.java", "is": "focused"},
+    {"action": "expect", "editor": "docs/headings.md", "is": "hidden"},
+    {"action": "expect", "log": "Opening remote editor for file=page.xml", "side": "backend"}
   ],
   "cleanup": [
     {"action": "close"},

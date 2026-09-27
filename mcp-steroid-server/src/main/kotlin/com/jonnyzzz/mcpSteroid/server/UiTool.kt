@@ -102,8 +102,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           "contains", "matches" (a regex), "count", or "row" with "is" selected, expanded or collapsed, or with
           "value", "contains" or "matches" for a table row's other cells;
           "title" (a window) with "is" visible or hidden; "file" with "value", "contains" or "matches", optionally
-          on "line", or "caret":"line:column"; "banner":"text" above an open editor; "notification":"text" and
-          "error":"text" ("" or true for any), shown or logged since the call started. "soft" reports a failure
+          on "line", or "caret":"line:column"; "editor":"path or name" with "is" visible, focused or hidden;
+          "banner":"text" above an open editor; "notification":"text", "error":"text" ("" or true for any) and
+          "log":"text" (an idea.log line), shown or logged since the call started. "soft" reports a failure
           and goes on; "bug" marks the check whose failure means the reported bug is present
         - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
           or name, or switches the open Settings window to it
@@ -112,7 +113,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           "component":"StateName" with "field", and "value" for set}: reads or changes a setting without a dialog.
           "option" is an on/off option as Search Everywhere lists it (get with part of the name lists matches);
           "inspection" takes on, off or a severity; "component" is a persistent settings component by its state
-          name, get alone shows its saved XML. A set reports the value before and after
+          name, get alone shows its saved XML. "log":"#category" reads or sets a debug log level (trace, debug,
+          all, or default). A set reports the value before and after. get also takes "editors":true (the open
+          editors of each side, and in Split Mode where they disagree) and "file":"path" (its type, language,
+          editor providers and open editors)
         - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
         - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does

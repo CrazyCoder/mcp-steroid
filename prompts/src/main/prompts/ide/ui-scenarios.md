@@ -120,6 +120,8 @@ soft. Each expect has one subject:
 | `notification` | A notification shown since the call started, or listed in the Notifications tool window, whose title or text contains this | `{"action":"expect","notification":"Indexing"}` |
 | `banner` | A banner above one of the project's open editors, of any kind, whose text contains this | `{"action":"expect","banner":"Module JDK is not defined","not":true}` |
 | `error` | An IDE error logged since the call started whose summary contains this; `""` or `true` matches any | `{"action":"expect","error":"","not":true}` |
+| `editor` | An editor of a project file, by path or name, that this side shows: `is` visible (default), focused, or hidden for none. It checks what the user sees, where `file` checks the text | `{"action":"expect","editor":"src/A.kt","is":"focused"}` |
+| `log` | A line of this side's `idea.log`, written since the run started, that contains this, not counting MCP Steroid's own lines. It checks the mechanism behind a symptom, such as an editor opening | `{"action":"expect","log":"Opening remote editor for file=A.kt","side":"backend"}` |
 
 A check that fails says what it wanted and what it found, and for a target that matched nothing, the
 nearest controls. `{"action":"expect","error":"","not":true}` after the steps is the check for a report of
@@ -137,6 +139,17 @@ window opened. A set reports the value before and after, which is what a cleanup
 | `advanced` | `{"action":"set","advanced":"editor.tab.painting","value":"ARROW"}` | An advanced setting by id; an enum takes its constant's name, and a wrong one lists the constants |
 | `inspection` | `{"action":"set","inspection":"UnusedDeclaration","value":"off"}` | An inspection of the project's current profile by short name: `on`, `off`, or a severity such as `ERROR`, `WARNING`, `WEAK WARNING`, `INFORMATION`. Highlighting restarts |
 | `component` + `field` | `{"action":"set","component":"EditorSettings","field":"IS_WHITESPACES_SHOWN","value":"true"}` | A field of a persistent settings component, by the state name it is saved under. `get` with `component` alone shows its saved XML, which lists the fields that differ from their defaults. Only components already loaded are found, and a field that holds structured XML needs a `code` step |
+| `log` | `{"action":"set","log":"#com.jetbrains.rdserver.fileEditors","value":"debug"}` | A debug log category, as Help \| Diagnostic Tools \| Debug Log Settings sets it: `trace`, `debug`, `all`, or `default` to remove the level set for it. It lasts across restarts, so a cleanup step sets `default`. Set it before the steps whose log lines an `expect` on `log` checks |
+
+`get` also reads two things no `set` changes:
+
+- `{"action":"get","editors":true}` lists the open editors of each side, with how many editors a file has
+  when it is more than one, and the selected file. On a Remote Development backend it also lists what the
+  backend keeps for each JetBrains Client session. Through a JetBrains Client it adds the backend's record and a
+  `mismatch:` line for each disagreement.
+- `{"action":"get","file":"src/A.kt"}` gives a project file's type, language, size and editor providers, and on
+  a backend how many editors each Client session has of it. It shows, for example, whether `.env.local` is a
+  DotEnv file in this IDE or plain text.
 
 Other setup steps:
 
@@ -237,8 +250,13 @@ as a Rename dialog: its steps need `"side": "backend"`. Three things differ by s
 - `get` and `set` of an `option`, `registry` or `advanced` setting reach the side the step runs on, and both
   sides keep their own values. Turning line numbers off in the client leaves the backend's Settings page
   showing them on. Pick the side the report is about.
-- An `expect` on `error` or `notification` sees the side it runs on: add `"side": "backend"` for the backend's.
-  Either way it counts from the start of the run, not of the step.
+- An `expect` on `error`, `notification` or `log` sees the side it runs on: add `"side": "backend"` for the
+  backend's. Either way it counts from the start of the run, not of the step. A `get` or `set` of a `log` level
+  also reaches the side it runs on.
+- After steps that can open, close or switch editors, a call through the JetBrains Client compares its editors
+  with the backend's record of them and starts with an `EDITOR STATE` notice when they disagree, each
+  disagreement once per task. A file the backend keeps an extra editor of opens neither from the Project view nor
+  from a navigation until its tab is clicked.
 - A backend endpoint refuses a step with `"side": "frontend"`, because it cannot reach the client.
 
 See [Split Mode](mcp-steroid://skill/split-mode) for what each side draws.

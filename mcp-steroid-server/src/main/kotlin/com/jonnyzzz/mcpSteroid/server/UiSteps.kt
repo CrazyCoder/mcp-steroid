@@ -123,6 +123,15 @@ data class UiStep(
     /** On an expect step: a banner above an open editor whose text contains this, such as "Module JDK is not defined". */
     val banner: String? = null,
     val error: String? = null,
+    /** On an expect step: a file whose editor the IDE shows, by its path or name. */
+    val editor: String? = null,
+    /**
+     * On an expect step: a text of an `idea.log` line written since the run started. On a get or a set: a log
+     * category, such as `#com.jetbrains.rdserver.fileEditors`, whose level a set changes.
+     */
+    val log: String? = null,
+    /** On a get step: the open editors, per side and per JetBrains Client session. */
+    val editors: Boolean = false,
     val page: String? = null,
     val registry: String? = null,
     val advanced: String? = null,
@@ -174,8 +183,12 @@ object UiSteps {
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
+        "editor", "editors", "log",
     )
     val SIDES = setOf("frontend", "backend")
+    /** The levels a set of a log category takes; default puts the category back to the IDE's configuration. */
+    val LOG_LEVELS = setOf("trace", "debug", "all", "default")
+    private val EDITOR_STATES = setOf(UiExpectState.VISIBLE, UiExpectState.FOCUSED, UiExpectState.HIDDEN)
     private val SAVE_NAME = Regex("[A-Za-z0-9._-]{1,80}")
     internal val BUTTONS = setOf("left", "right", "middle")
     /** Actions whose "text" is what they enter, look for in the editor or write, not a target. */
@@ -279,6 +292,9 @@ object UiSteps {
             notification = obj.string("notification"),
             banner = obj.string("banner"),
             // true reads as any error, as "" does: a flag is the natural spelling, and no error summary is "true".
+            editor = obj.string("editor"),
+            log = obj.string("log"),
+            editors = obj.boolean("editors") ?: false,
             error = (obj["error"] as? JsonPrimitive)?.takeIf { !it.isString && it.booleanOrNull == true }?.let { "" } ?: obj.string("error"),
             page = obj.string("page"),
             registry = obj.string("registry"),
@@ -325,6 +341,7 @@ object UiSteps {
             val expectOnly = listOfNotNull(
                 step.state?.let { "is" }, step.contains?.let { "contains" }, step.matches?.let { "matches" },
                 step.caret?.let { "caret" }, step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
+                step.editor?.let { "editor" },
             )
             require(expectOnly.isEmpty()) { "${expectOnly.joinToString()} go(es) with expect, not $action" }
             if (step.action != UiAction.SET) require(step.value == null) { "value goes with expect and set, not $action" }
@@ -342,6 +359,8 @@ object UiSteps {
                 step.inspection?.let { "inspection" }, step.component?.let { "component" }, step.field?.let { "field" },
             )
             require(config.isEmpty()) { "${config.joinToString()} go(es) with get and set, not $action" }
+            require(!step.editors) { "editors goes with get, not $action" }
+            if (step.action != UiAction.EXPECT) require(step.log == null) { "log goes with expect, get and set, not $action" }
         }
         when (step.action) {
             UiAction.FILL, UiAction.TYPE -> require(step.text != null) { "$action needs text" }
@@ -366,8 +385,18 @@ object UiSteps {
                 "settings needs a page: its id, its name as the Settings tree shows it, or a path such as \"Editor > General\""
             }
             UiAction.GET, UiAction.SET -> {
-                val kinds = listOfNotNull(step.registry, step.advanced, step.option, step.inspection, step.component)
-                require(kinds.size == 1) { "$action needs exactly one of registry, advanced, option, inspection or component" }
+                val kinds = listOfNotNull(
+                    step.registry, step.advanced, step.option, step.inspection, step.component, step.log,
+                    step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors },
+                )
+                require(kinds.size == 1) {
+                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file or editors"
+                    else "set needs exactly one of registry, advanced, option, inspection, component or log"
+                }
+                if (step.action == UiAction.SET) require(!step.editors && step.file == null) { "editors and file go with get, not set" }
+                if (step.action == UiAction.SET && step.log != null) require(step.value?.lowercase() in LOG_LEVELS) {
+                    "a log category's level is one of ${LOG_LEVELS.joinToString()}"
+                }
                 if (step.field != null) require(step.component != null) { "field goes with component" }
                 if (step.action == UiAction.SET) {
                     require(step.value != null) { "set needs a value" }
@@ -401,9 +430,10 @@ object UiSteps {
         val subjects = listOfNotNull(
             step.target?.let { "a target" }, step.title?.let { "title" }, step.file?.let { "file" },
             step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
+            step.editor?.let { "editor" }, step.log?.let { "log" },
         )
         require(subjects.size == 1) {
-            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, notification, banner or error"
+            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, editor, notification, banner, error or log"
             else "expect checks one subject, not ${subjects.joinToString(" and ")}"
         }
         require(listOfNotNull(step.value, step.contains, step.matches).size <= 1) { "pass one of value, contains or matches" }
@@ -444,8 +474,12 @@ object UiSteps {
                 step.caret?.let { require(CARET.matches(it)) { "caret is line:column, both 1-based, such as \"3:14\"" } }
                 step.line?.let { require(it >= 1) { "line is 1-based, was $it" } }
             }
+            step.editor != null -> {
+                require(step.state == null || step.state in EDITOR_STATES) { "an editor is visible, focused or hidden" }
+                require(!textCheck && step.caret == null && step.line == null) { "an editor takes is=visible, focused or hidden only; check its text with file" }
+            }
             else -> require(step.state == null && !textCheck && step.caret == null && step.line == null) {
-                "a notification, a banner or an error is matched by its text alone; add \"not\":true to expect none"
+                "a notification, a banner, an error or a log line is matched by its text alone; add \"not\":true to expect none"
             }
         }
     }

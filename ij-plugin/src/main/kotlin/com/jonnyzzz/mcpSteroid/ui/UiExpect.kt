@@ -46,6 +46,7 @@ internal class UiExpect(
     private val describe: (UiNode) -> String,
 ) {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
+    private val editors = UiEditors(project)
 
     /** What a check wanted, in words, and what the IDE showed. */
     private class Check(val holds: Boolean, val wanted: String, val actual: String)
@@ -54,7 +55,7 @@ internal class UiExpect(
         val started = TimeSource.Monotonic.markNow()
         // An error or a notification arrives some time after what caused it: let the IDE settle before a check that
         // none arrived, which would otherwise pass at once.
-        if (step.negate && (step.error != null || step.notification != null)) UiSettle.settle(quietMs = NEGATIVE_QUIET_MS, maxMs = step.timeoutMs)
+        if (step.negate && (step.error != null || step.notification != null || step.log != null)) UiSettle.settle(quietMs = NEGATIVE_QUIET_MS, maxMs = step.timeoutMs)
         val not = if (step.negate) "not " else ""
         var last: Check
         while (true) {
@@ -72,7 +73,36 @@ internal class UiExpect(
         step.file != null -> file(step)
         step.notification != null -> notification(step.notification!!)
         step.banner != null -> banner(step.banner!!)
+        step.editor != null -> editor(step.editor!!, step.state)
+        step.log != null -> log(step.log!!)
         else -> error(step.error!!)
+    }
+
+    /** An editor of a file that this side shows: visible, focused, or with is=hidden, none showing. */
+    private suspend fun editor(file: String, state: UiExpectState?): Check {
+        val shown = editors.shown(file)
+        val actual = when {
+            shown.focused -> "its editor shows and has the focus"
+            shown.visible -> "its editor shows without the focus"
+            shown.open.isEmpty() -> "no editor is open"
+            else -> "no editor of it shows; open: ${shown.open.take(10).joinToString()}"
+        }
+        return when (state) {
+            UiExpectState.FOCUSED -> Check(shown.focused, "the editor of $file focused", actual)
+            UiExpectState.HIDDEN -> Check(!shown.visible, "no editor of $file showing", actual)
+            else -> Check(shown.visible, "the editor of $file showing", actual)
+        }
+    }
+
+    /** A line of this side's idea.log, written since the run started, that contains [text]. */
+    private suspend fun log(text: String): Check {
+        val (lines, read) = UiLogs.linesSince(startedMs, text)
+        return Check(
+            lines.isNotEmpty(),
+            "a log line with \"$text\"",
+            if (lines.isEmpty()) "none of the $read log entries since the run started has it"
+            else "${lines.size} line(s), the last: ${lines.last().lineSequence().first().take(300)}",
+        )
     }
 
     /** A banner above one of the project's open editors, of any severity, whose text contains [text]. */

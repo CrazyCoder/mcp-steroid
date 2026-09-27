@@ -56,6 +56,7 @@ internal class UiConfig(private val project: Project) {
         step.advanced != null -> advancedBean(step.advanced!!).let { Outcome("advanced ${it.id} = ${advancedValue(it)} (${it.type()})") }
         step.option != null -> getOption(step.option!!)
         step.inspection != null -> Outcome(inspectionState(step.inspection!!))
+        step.log != null -> Outcome(UiLogs.level(step.log!!))
         else -> Outcome(getComponent(step.component!!, step.field))
     }
 
@@ -87,6 +88,7 @@ internal class UiConfig(private val project: Project) {
             }
             step.option != null -> setOption(step.option!!, bool(value))
             step.inspection != null -> Outcome(setInspection(step.inspection!!, value))
+            step.log != null -> Outcome(UiLogs.setLevel(step.log!!, value))
             else -> Outcome(setComponent(step.component!!, step.field!!, value))
         }
     }

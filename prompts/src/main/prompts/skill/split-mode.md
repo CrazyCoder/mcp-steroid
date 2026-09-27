@@ -50,6 +50,19 @@ every start, it copies its disabled plugins from `disabled_plugins_frontend.txt`
 directory. After a mismatch, remove `io.github.crazycoder.mcp-steroid` from that file and from the
 backend's `disabled_plugins.txt`.
 
+## When the editors of the two sides disagree
+
+The backend keeps its own record of the editors each JetBrains Client has open, and the two can drift apart. A
+Client that reconnects with a file's tab open can leave the backend with two editors of that file, one restored
+from the backend's saved state and one from the Client's tabs; the file then opens neither from the Project view
+nor from a navigation, until its tab is clicked. Closing tabs in the Client can also leave them open in the
+backend's record, which then restores them at the next reconnect.
+
+`{"action":"get","editors":true}` through the Client's endpoint lists both sides and a `mismatch:` line for
+each disagreement, and a `steroid_ui` call that opens or closes editors reports new ones in an `EDITOR STATE`
+notice. The backend logs each open as `Opening remote editor for file=...`, and each close as
+`Removing editor`, which `{"action":"expect","log":"...","side":"backend"}` checks.
+
 ## Where each tool runs
 
 Through the client's endpoint:

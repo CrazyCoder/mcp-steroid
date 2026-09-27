@@ -32,6 +32,7 @@ import com.jonnyzzz.mcpSteroid.server.UiTarget
 import com.jonnyzzz.mcpSteroid.server.UiWaitCondition
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
 import com.jonnyzzz.mcpSteroid.vision.findComponentByWindowId
+import com.jonnyzzz.mcpSteroid.server.UiEditorState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -106,6 +107,7 @@ class UiSession(
     private val editorSteps = UiEditorSteps(project)
     private val ideSteps = UiIdeSteps(project, taskId)
     private val config = UiConfig(project)
+    private val editors = UiEditors(project)
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
     /** The step that runs, and what a replay of it names instead of its refs, row indexes, page names and option names. */
@@ -236,7 +238,23 @@ class UiSession(
         "backend" -> true
         "frontend" -> false
         else -> step.action in BACKEND_HOME || step.action == UiAction.EXPECT && (step.file != null || step.banner != null) ||
-            (step.action == UiAction.GET || step.action == UiAction.SET) && step.inspection != null
+            (step.action == UiAction.GET || step.action == UiAction.SET) && step.inspection != null ||
+            step.action == UiAction.GET && step.file != null
+    }
+
+    /**
+     * The open editors of this side, and on a Remote Development backend its record of each JetBrains Client
+     * session. In a Client, also the backend's record, which it gets by sending the step there, and the places where
+     * the two disagree.
+     */
+    private suspend fun editorsReport(step: UiStep): String {
+        val local = editors.local()
+        val own = UiEditorState.render(listOf(local) + editors.sessions())
+        val send = forward ?: return own
+        val backend = send(step).removePrefix(ON_BACKEND)
+        val mismatches = UiEditorState.mismatches(local, UiEditorState.parse(backend))
+        return own + "\n" + ON_BACKEND.trimEnd() + "\n" + backend +
+            mismatches.joinToString("") { "\nmismatch: $it" }
     }
 
     /**
@@ -321,7 +339,11 @@ class UiSession(
         UiAction.RUN -> withEffects { actStep(step) }.let {
             if (inplaceActive()) "$it; started an in-place template: type the value, then press ENTER" else it
         }
-        UiAction.GET -> config.get(step).line
+        UiAction.GET -> when {
+            step.editors -> editorsReport(step)
+            step.file != null -> editors.facts(step.file!!)
+            else -> config.get(step).line
+        }
         UiAction.SET -> config.set(step).also { o -> o.option?.let { portableFields["option"] = it } }.line
         UiAction.WRITE -> ideSteps.write(step)
         UiAction.CODE -> ideSteps.code(step)
@@ -1023,6 +1045,7 @@ class UiSession(
          */
         private val BACKEND_HOME = setOf(UiAction.WRITE, UiAction.CODE, UiAction.GOTO)
         private const val EDITOR_WAIT_MS = 3_000L
+        private const val ON_BACKEND = "on the backend: "
         private const val LUX_PREFIX = "Lux"
         private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")
         private val UNCHECKED_WORDS = setOf("false", "off", "no", "[ ]")

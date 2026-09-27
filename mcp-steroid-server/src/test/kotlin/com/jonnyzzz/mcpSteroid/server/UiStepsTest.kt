@@ -211,6 +211,24 @@ class UiStepsTest {
     }
 
     @Test
+    fun `editors, file and log are read as their own subjects, each with its own checks`() {
+        assertTrue(UiSteps.parse("""[{"action":"get","editors":true}]""").single().editors)
+        assertEquals("a.md", UiSteps.parse("""[{"action":"get","file":"a.md"}]""").single().file)
+        assertEquals("trace", UiSteps.parse("""[{"action":"set","log":"#x","value":"trace"}]""").single().value)
+        assertEquals("a.md", UiSteps.parse("""[{"action":"expect","editor":"a.md","is":"focused"}]""").single().editor)
+        assertEquals("Opening", UiSteps.parse("""[{"action":"expect","log":"Opening","not":true}]""").single().log)
+        assertTrue(fails("""[{"action":"get","editors":true,"registry":"a"}]""").contains("exactly one of"))
+        assertTrue(fails("""[{"action":"set","file":"a.md","value":"x"}]""").contains("set needs exactly one of"))
+        assertTrue(fails("""[{"action":"set","log":"#x","value":"loud"}]""").contains("trace, debug, all, default"))
+        assertTrue(fails("""[{"action":"expect","editor":"a.md","is":"checked"}]""").contains("visible, focused or hidden"))
+        assertTrue(fails("""[{"action":"expect","editor":"a.md","contains":"x"}]""").contains("check its text with file"))
+        assertTrue(fails("""[{"action":"expect","log":"x","is":"visible"}]""").contains("text alone"))
+        assertTrue(fails("""[{"action":"click","name":"OK","editors":true}]""").contains("editors goes with get"))
+        assertTrue(fails("""[{"action":"click","name":"OK","log":"x"}]""").contains("log goes with expect, get and set"))
+        assertTrue(fails("""[{"action":"click","name":"OK","editor":"a.md"}]""").contains("go(es) with expect"))
+    }
+
+    @Test
     fun `error true checks for any IDE error, as the empty text does`() {
         assertEquals("", UiSteps.parse("""[{"action":"expect","error":true,"not":true}]""").single().error)
         assertEquals("true", UiSteps.parse("""[{"action":"expect","error":"true"}]""").single().error)

@@ -12,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.server.split.SPLIT_FRONTEND_BRIDGE_EP
 import com.jonnyzzz.mcpSteroid.server.split.SplitFrontendBridge
 import com.jonnyzzz.mcpSteroid.server.split.SplitRole
 import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
+import com.jonnyzzz.mcpSteroid.ui.UiEditors
 import com.jonnyzzz.mcpSteroid.ui.UiStepFailure
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -103,6 +104,8 @@ class UiToolHandlerIJ : UiToolHandler {
                 else session.run(cleanup.map { it.copy(soft = true) }, UiSnapshotMode.NONE, labelPrefix = "cleanup step")
                 main to after
             }
+            val editorNotice = bridge?.takeIf { steps.any { it.action in EDITOR_ACTIONS } }
+                ?.let { editorMismatchNotice(it, project, params.taskId, runStartedMs) }
             val planned = allSteps.drop(from - 1)
             val judged = scenario != null || planned.any { it.bug != null }
             val verdict = if (judged) UiVerdict.of(planned, result.outcomes) else null
@@ -124,6 +127,7 @@ class UiToolHandlerIJ : UiToolHandler {
                 }
             }
             project.executionStorage.writeCodeExecutionData(executionId, "ui.txt", text)
+            editorNotice?.let { builder.addTextContent(it) }
             builder.addTextContent(text)
             val failed = when (verdict?.kind) {
                 null -> result.failure != null
@@ -172,6 +176,31 @@ class UiToolHandlerIJ : UiToolHandler {
         val report = UiForwardedStep.parse(text, UiForwardedStep.label(step), result.isError)
         if (!report.passed) throw UiStepFailure("on the backend: ${report.text}")
         return "on the backend: ${report.text}"
+    }
+
+    /**
+     * In a JetBrains Client, where its editors and the backend's record of them disagree after steps that can open or
+     * close editors, as a notice, each disagreement told once per task. A file the backend keeps an extra editor of
+     * opens neither from the Project view nor from a navigation, and nothing else says why. A failure to read the
+     * backend's record is no notice: the run's own report stands.
+     */
+    private suspend fun editorMismatchNotice(bridge: SplitFrontendBridge, project: Project, taskId: String, runStartedMs: Long): String? {
+        val mismatches = try {
+            val local = UiEditors(project).local()
+            val backend = forwardStep(bridge, project, taskId, GET_EDITORS, runStartedMs).removePrefix("on the backend: ")
+            UiEditorState.mismatches(local, UiEditorState.parse(backend)).toSet()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null
+        }
+        val told = toldMismatches.put(taskId, mismatches).orEmpty()
+        val fresh = mismatches - told
+        if (fresh.isEmpty()) return null
+        return "EDITOR STATE: the JetBrains Client and the backend disagree about the open editors:\n" +
+            fresh.joinToString("\n") { "- $it" } +
+            "\nA file the Client shows no editor of opens again once its tab is clicked; " +
+            "{\"action\":\"get\",\"editors\":true} lists both sides."
     }
 
     private suspend fun loadScenario(base: String?, path: String): UiScenario {
@@ -226,5 +255,14 @@ class UiToolHandlerIJ : UiToolHandler {
         private const val STEP_ALLOWANCE_MS = 15_000L
         private const val BASE_ALLOWANCE_MS = 30_000L
         private val UNSAFE = Regex("[^A-Za-z0-9_-]")
+
+        /** The steps that can open, close or switch editors, after which a JetBrains Client compares its editors with the backend's. */
+        private val EDITOR_ACTIONS = setOf(
+            UiAction.CLICK, UiAction.GOTO, UiAction.RUN, UiAction.PRESS, UiAction.CLOSE, UiAction.TYPE, UiAction.SELECT, UiAction.CODE,
+        )
+        private val GET_EDITORS = UiSteps.parse("""[{"action":"get","editors":true}]""").single()
+
+        /** The editor disagreements each task was told, so a notice repeats none of them. */
+        private val toldMismatches = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
     }
 }
