@@ -88,10 +88,8 @@ class UiToolHandlerIJ : UiToolHandler {
                 scenario?.let { append('\n').append(header(it)) }
                 result.reports.forEach { append('\n').append(it.line) }
                 result.failure?.let { append('\n').append("FAILED ").append(it) }
-                cleanupResult?.let { c ->
-                    c.reports.forEach { append('\n').append(it.line) }
-                    c.failure?.let { append('\n').append("CLEANUP FAILED ").append(it) }
-                }
+                // Cleanup steps run soft, so a failed one is among the reports and never stops the others.
+                cleanupResult?.reports?.forEach { append('\n').append(it.line) }
                 verdict?.let { append('\n').append(it.line) }
                 recording?.let { append('\n').append(it) }
                 trace?.let { append('\n').append("trace: ").append(it.folder.resolve("trace.md")) }

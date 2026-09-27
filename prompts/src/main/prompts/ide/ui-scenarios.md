@@ -132,7 +132,7 @@ window opened. A set reports the value before and after, which is what a cleanup
 |---|---|---|
 | `option` | `{"action":"set","option":"Show line numbers","value":false}` | An on/off option as Search Everywhere lists it: most Settings checkboxes of the IDE and the project, several thousand. `get` with part of a name lists the matches, their values and their Settings page id. A set needs one match: pass the full name, such as `Appearance: Show line numbers:` |
 | `registry` | `{"action":"set","registry":"ide.balloon.shadow.size","value":"0"}` | A registry key. An unknown key lists similar keys |
-| `advanced` | `{"action":"set","advanced":"editor.tab.painting","value":"UNDERLINE"}` | An advanced setting by id; an enum takes its constant's name |
+| `advanced` | `{"action":"set","advanced":"editor.tab.painting","value":"ARROW"}` | An advanced setting by id; an enum takes its constant's name, and a wrong one lists the constants |
 | `inspection` | `{"action":"set","inspection":"UnusedDeclaration","value":"off"}` | An inspection of the project's current profile by short name: `on`, `off`, or a severity such as `ERROR`, `WARNING`, `WEAK WARNING`, `INFORMATION`. Highlighting restarts |
 | `component` + `field` | `{"action":"set","component":"EditorSettings","field":"IS_WHITESPACES_SHOWN","value":"true"}` | A field of a persistent settings component, by the state name it is saved under. `get` with `component` alone shows its saved XML, which lists the fields that differ from their defaults. Only components already loaded are found, and a field that holds structured XML needs a `code` step |
 
