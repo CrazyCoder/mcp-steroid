@@ -108,7 +108,6 @@ class UiSession(
     private val config = UiConfig(project)
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
-
     /** The step that runs, and what a replay of it names instead of its refs, row indexes, page names and option names. */
     private var current: UiStep? = null
     private var portableTarget: UiTarget? = null
@@ -202,11 +201,6 @@ class UiSession(
     }
 
     /**
-     * Whether a JetBrains Client sends [step] to the backend: its `side` when it names one, else the steps that need the
-     * project itself, which only the backend holds: files, the editor at a file, editor banners, scripts and the
-     * inspection profile.
-     */
-    /**
      * After a goto that ran on the backend, focuses the JetBrains Client's editor of [file], which the backend's
      * navigation opened, so that the next step acts where the caret is, as after a goto in a regular IDE. Without it
      * the focus stays where it was, and an action such as Reformat Code runs on the Project view instead.
@@ -227,6 +221,11 @@ class UiSession(
         return "; focus: the JetBrains Client's editor of $name"
     }
 
+    /**
+     * Whether a JetBrains Client sends [step] to the backend: its `side` when it names one, else the steps that need the
+     * project itself, which only the backend holds: files, the editor at a file, editor banners, scripts and the
+     * inspection profile.
+     */
     private fun runsOnBackend(step: UiStep): Boolean = when (step.side) {
         "backend" -> true
         "frontend" -> false
@@ -425,7 +424,7 @@ class UiSession(
             ?: throw UiStepFailure("fill with a row sets a table cell, and ${describe(node)} is not a table")
         val rows = UiRows.rows(table)!!
         val index = step.index ?: UiRows.find(table, rows, step.row!!)
-        if (index !in rows.indices) throw UiStepFailure("${describe(node)} has no row \"${step.row}\"; rows: " + rows.take(10).withIndex().joinToString("; ") { (i, r) -> "#$i $r" })
+        if (index !in rows.indices) throw UiStepFailure("${describe(node)} has no row ${step.row?.let { "\"$it\"" } ?: "#${step.index}"}; rows: " + rows.take(10).withIndex().joinToString("; ") { (i, r) -> "#$i $r" })
         val column = (1 until table.columnCount).firstOrNull { table.isCellEditable(index, it) }
             ?: throw UiStepFailure("row #$index \"${rows[index]}\" of ${describe(node)} has no cell to edit")
         UiRows.select(table, index)
@@ -438,7 +437,11 @@ class UiSession(
                     ?: throw UiStepFailure("the cell's list has no item \"$text\"; items: " + (0 until minOf(editor.itemCount, 20)).joinToString { editor.getItemAt(it).toString() })
                 editor.selectedIndex = item
             }
-            editor is AbstractButton -> editor.isSelected = text.lowercase() in setOf("true", "on", "yes", "[x]")
+            editor is AbstractButton -> editor.isSelected = when (text.lowercase()) {
+                in CHECKED_WORDS -> true
+                in UNCHECKED_WORDS -> false
+                else -> throw UiStepFailure("the cell is a checkbox: fill it with true or false, not \"$text\"")
+            }
             else -> {
                 val field = editor as? JTextComponent ?: UIUtil.findComponentOfType(editor as? JComponent, JTextComponent::class.java)
                     ?: throw UiStepFailure("the cell's editor ${UiComponentFacts.simpleClassName(editor)} takes no text")
@@ -1009,6 +1012,8 @@ class UiSession(
         private val BACKEND_HOME = setOf(UiAction.WRITE, UiAction.CODE, UiAction.GOTO)
         private const val EDITOR_WAIT_MS = 3_000L
         private const val LUX_PREFIX = "Lux"
+        private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")
+        private val UNCHECKED_WORDS = setOf("false", "off", "no", "[ ]")
         private const val POLL_MS = 100L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L

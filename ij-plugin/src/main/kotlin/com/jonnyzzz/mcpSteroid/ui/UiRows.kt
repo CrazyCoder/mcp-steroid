@@ -20,8 +20,10 @@ import javax.swing.plaf.basic.ComboPopup
 import javax.swing.text.JTextComponent
 import javax.swing.tree.TreePath
 
-/** One row of a list, tree, table or tabbed pane as a snapshot shows it. [expanded] is null for a list row or a tree leaf. */
-/** A row as a snapshot lists it. [cells] are a table row's cells after its first, which [text] holds. */
+/**
+ * One row of a list, tree, table or tabbed pane as a snapshot shows it. [expanded] is null for a list row or a tree
+ * leaf; [cells] are a table row's cells after its first, which [text] holds.
+ */
 data class UiRow(
     val index: Int,
     val text: String,

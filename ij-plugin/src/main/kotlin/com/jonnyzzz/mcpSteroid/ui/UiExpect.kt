@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.awt.Frame
+import java.awt.Component
 import java.awt.Dialog
 import java.awt.KeyboardFocusManager
 import java.awt.Window
@@ -173,7 +174,7 @@ internal class UiExpect(
     }
 
     /** The value check of a table row: its cells after the first, which a value equals one of. EDT. */
-    private fun cells(step: UiStep, c: java.awt.Component, index: Int, shown: String): Check {
+    private fun cells(step: UiStep, c: Component, index: Int, shown: String): Check {
         val cells = UiRows.cells(c, index)
         if (cells.isEmpty()) throw UiStepFailure("$shown has no cells beside its text; value, contains and matches check a table row's other cells")
         val actual = "it shows ${cells.joinToString(" | ") { "\"${it.take(80)}\"" }}"

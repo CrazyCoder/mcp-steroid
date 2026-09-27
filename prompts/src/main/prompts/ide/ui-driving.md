@@ -43,7 +43,7 @@ step fails and lists them by index. `select` also switches a tab, and on an open
 picks the combo box's item. `click` with a row ref presses the row itself, as a double click to open a
 row needs. A table row lists its other cells after `|`, as `#0 Hard wrap at: | 120`, and a checkbox cell as `[x]`
 or `[ ]`. `{"action":"fill","class":"TreeTable","row":"Hard wrap at:","text":"90"}` sets the row's value cell
-through the cell's editor, and `expect` with `row` and `value` checks it. `press`
+through the cell's editor, `true` or `false` for a checkbox cell, and `expect` with `row` and `value` checks it. `press`
 and `type` without a target go to the control that has the focus in the topmost window, even while the IDE
 is not the active application.
 

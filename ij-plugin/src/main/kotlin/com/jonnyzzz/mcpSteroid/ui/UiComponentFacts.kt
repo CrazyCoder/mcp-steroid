@@ -70,7 +70,6 @@ object UiComponentFacts {
         else -> null
     }
 
-
     fun ownText(c: Component): String? {
         val raw = when (c) {
             is JLabel -> c.text
