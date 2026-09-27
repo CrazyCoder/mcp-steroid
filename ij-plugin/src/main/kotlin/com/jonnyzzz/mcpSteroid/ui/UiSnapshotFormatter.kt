@@ -89,6 +89,7 @@ object UiSnapshotFormatter {
         }
         for (row in view.rows) {
             out.append('\n').append("  ".repeat(depth + row.depth)).append('#').append(row.index).append(' ').append(cut(row.text, MAX_TEXT))
+            if (row.cells.any { it.isNotBlank() }) out.append(" | ").append(cut(row.cells.joinToString(" | "), MAX_TEXT))
             when (row.expanded) {
                 true -> out.append(" [expanded]")
                 false -> out.append(" [collapsed]")

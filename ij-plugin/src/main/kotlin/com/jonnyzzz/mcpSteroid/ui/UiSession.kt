@@ -11,7 +11,11 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
 import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.impl.EditorComponentImpl
 import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.wm.IdeFocusManager
+import com.intellij.openapi.wm.IdeFrame
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.openapi.ui.popup.util.PopupUtil
@@ -31,6 +35,7 @@ import com.jonnyzzz.mcpSteroid.vision.findComponentByWindowId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
 import java.awt.Component
 import java.awt.Dialog
@@ -49,7 +54,9 @@ import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JScrollPane
+import javax.swing.JSpinner
 import javax.swing.JTabbedPane
+import javax.swing.JTable
 import javax.swing.JTree
 import javax.swing.JViewport
 import javax.swing.RootPaneContainer
@@ -91,6 +98,8 @@ class UiSession(
      * [UiStepFailure] when it fails there. Null in a regular IDE and on the backend, where every step runs here.
      */
     private val forward: (suspend (UiStep) -> String)? = null,
+    /** When the run started: an expect on errors or notifications counts the ones since then. */
+    private val startedMs: Long = System.currentTimeMillis(),
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput()
@@ -99,8 +108,6 @@ class UiSession(
     private val config = UiConfig(project)
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
-    /** When the session started: an expect on errors or notifications counts the ones since then. */
-    private val startedMs = System.currentTimeMillis()
 
     /** The step that runs, and what a replay of it names instead of its refs, row indexes, page names and option names. */
     private var current: UiStep? = null
@@ -144,7 +151,9 @@ class UiSession(
                 val outcome = try {
                     Result.success(
                         when {
-                            forward != null && runsOnBackend(step) -> forward.invoke(step)
+                            forward != null && runsOnBackend(step) -> forward.invoke(step).let { line ->
+                                if (step.action == UiAction.GOTO) line + focusClientEditor(step.file!!) else line
+                            }
                             step.action == UiAction.EXPECT -> expect.run(step)
                             else -> runStep(step)
                         }
@@ -197,6 +206,27 @@ class UiSession(
      * project itself, which only the backend holds: files, the editor at a file, editor banners, scripts and the
      * inspection profile.
      */
+    /**
+     * After a goto that ran on the backend, focuses the JetBrains Client's editor of [file], which the backend's
+     * navigation opened, so that the next step acts where the caret is, as after a goto in a regular IDE. Without it
+     * the focus stays where it was, and an action such as Reformat Code runs on the Project view instead.
+     */
+    private suspend fun focusClientEditor(file: String): String {
+        val name = file.substringAfterLast('/')
+        var editor: Editor? = null
+        withTimeoutOrNull(EDITOR_WAIT_MS) {
+            while (editor == null) {
+                editor = withContext(edtAny) {
+                    FileEditorManager.getInstance(project).selectedTextEditor?.takeIf { it.virtualFile?.name == name && it.contentComponent.isShowing }
+                }
+                if (editor == null) delay(POLL_MS)
+            }
+        }
+        val shown = editor ?: return "; the JetBrains Client shows no editor of $name"
+        withContext(edtAny) { IdeFocusManager.getInstance(project).requestFocus(shown.contentComponent, true) }
+        return "; focus: the JetBrains Client's editor of $name"
+    }
+
     private fun runsOnBackend(step: UiStep): Boolean = when (step.side) {
         "backend" -> true
         "frontend" -> false
@@ -324,11 +354,15 @@ class UiSession(
             }
             UiAction.FILL -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
+                if (step.row != null || step.index != null) return withContext(edtAny) { fillCell(step, node) }
                 val field = withContext(edtAny) { textField(node.component) }
                     ?: throw UiStepFailure("${describe(node)} is not a text field and holds no single one")
-                withContext(edtAny) { field.selectAll() }
+                withContext(edtAny) { selectAllText(field) }
                 if (step.text!!.isEmpty()) input.press(UiInput.parseKeys("DELETE"), field) else input.type(step.text!!, field)
                 val value = withContext(edtAny) { field.text }
+                // A field that keeps part of its text, as an editor field whose selection did not cover it all does,
+                // would type a different value than asked; that is a failure, not a success with a surprise.
+                if (value != step.text) throw UiStepFailure("typed \"${step.text}\" but ${describe(node)} holds \"${value.take(80)}\"")
                 "value is now \"${value.take(80)}\""
             }
             UiAction.PRESS -> {
@@ -365,11 +399,58 @@ class UiSession(
      * The field a fill types into: [c] itself, an editable combo box's editor, or the one editable text field inside
      * a wrapper such as `SearchTextField`. EDT.
      */
+    /**
+     * Selects all of [field]'s text, so that typing replaces it. An IDE editor field, such as the name field of a
+     * Rename dialog that preselects the name without its extension, keeps its own selection, which selectAll on its
+     * Swing face does not change.
+     */
+    private fun selectAllText(field: JTextComponent) {
+        val editor = (field as? EditorComponentImpl)?.editor
+        if (editor != null) editor.selectionModel.setSelection(0, editor.document.textLength) else field.selectAll()
+    }
+
     private fun textField(c: Component): JTextComponent? {
         (c as? JTextComponent)?.let { return it }
         (c as? JComboBox<*>)?.takeIf { it.isEditable }?.let { return it.editor?.editorComponent as? JTextComponent }
         return UIUtil.findComponentsOfType(c as? JComponent ?: return null, JTextComponent::class.java)
             .singleOrNull { it.isShowing && it.isEditable }
+    }
+
+    /**
+     * A fill step with a row: sets the row's first editable cell after its name, as a table of options such as Code
+     * Style's holds its values, through the cell's own editor, and reads the row back. EDT.
+     */
+    private fun fillCell(step: UiStep, node: UiNode): String {
+        val table = node.component as? JTable
+            ?: throw UiStepFailure("fill with a row sets a table cell, and ${describe(node)} is not a table")
+        val rows = UiRows.rows(table)!!
+        val index = step.index ?: UiRows.find(table, rows, step.row!!)
+        if (index !in rows.indices) throw UiStepFailure("${describe(node)} has no row \"${step.row}\"; rows: " + rows.take(10).withIndex().joinToString("; ") { (i, r) -> "#$i $r" })
+        val column = (1 until table.columnCount).firstOrNull { table.isCellEditable(index, it) }
+            ?: throw UiStepFailure("row #$index \"${rows[index]}\" of ${describe(node)} has no cell to edit")
+        UiRows.select(table, index)
+        if (!table.editCellAt(index, column)) throw UiStepFailure("row #$index \"${rows[index]}\" of ${describe(node)} did not start editing")
+        val editor = table.editorComponent ?: throw UiStepFailure("row #$index \"${rows[index]}\" of ${describe(node)} opened no editor")
+        val text = step.text!!
+        when {
+            editor is JComboBox<*> -> {
+                val item = (0 until editor.itemCount).firstOrNull { UiComponentFacts.clean(editor.getItemAt(it).toString()) == text }
+                    ?: throw UiStepFailure("the cell's list has no item \"$text\"; items: " + (0 until minOf(editor.itemCount, 20)).joinToString { editor.getItemAt(it).toString() })
+                editor.selectedIndex = item
+            }
+            editor is AbstractButton -> editor.isSelected = text.lowercase() in setOf("true", "on", "yes", "[x]")
+            else -> {
+                val field = editor as? JTextComponent ?: UIUtil.findComponentOfType(editor as? JComponent, JTextComponent::class.java)
+                    ?: throw UiStepFailure("the cell's editor ${UiComponentFacts.simpleClassName(editor)} takes no text")
+                field.text = text
+                (editor as? JSpinner)?.commitEdit()
+            }
+        }
+        if (table.isEditing && table.cellEditor?.stopCellEditing() == false) {
+            table.cellEditor?.cancelCellEditing()
+            throw UiStepFailure("row #$index \"${rows[index]}\" of ${describe(node)} refused \"$text\"")
+        }
+        return "row #$index \"${rows[index]}\" of ${describe(node)} now shows ${UiRows.cells(table, index).joinToString(" | ") { "\"${it.take(80)}\"" }}"
     }
 
     /**
@@ -888,8 +969,20 @@ class UiSession(
         },
         modal = (window as? Dialog)?.isModal == true,
         source = model.source,
-        note = model.note,
+        note = listOfNotNull(model.note, backendDrawnNote(window)).joinToString("; ").ifEmpty { null },
     )
+
+    /**
+     * In a JetBrains Client, a window whose content the backend draws, such as a Rename dialog or a host Settings
+     * page, shows none of its controls here. Says so, since the snapshot alone reads as an empty window. The main
+     * window always holds some backend-drawn part, so it is left out.
+     */
+    private fun backendDrawnNote(window: Window): String? {
+        if (forward == null || window is IdeFrame) return null
+        val root = (window as? RootPaneContainer)?.rootPane ?: return null
+        val lux = UIUtil.uiTraverser(root).any { it.isShowing && it.javaClass.simpleName.startsWith(LUX_PREFIX) }
+        return if (lux) "the backend draws controls of this window; add \"side\":\"backend\" to a step to see and drive them" else null
+    }
 
     private fun windowTitle(w: Window): String? = (w as? Frame)?.title ?: (w as? Dialog)?.title
 
@@ -914,6 +1007,8 @@ class UiSession(
          * project file by its path, so goto opens it on the backend, whose editor the client shows.
          */
         private val BACKEND_HOME = setOf(UiAction.WRITE, UiAction.CODE, UiAction.GOTO)
+        private const val EDITOR_WAIT_MS = 3_000L
+        private const val LUX_PREFIX = "Lux"
         private const val POLL_MS = 100L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L

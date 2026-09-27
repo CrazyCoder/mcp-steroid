@@ -159,6 +159,7 @@ internal class UiExpect(
             return Check(false, "$shown ${step.state?.wire ?: "present"}", "there is no such row; rows: $some")
         }
         val tree = c as? JTree
+        if (step.value != null || step.contains != null || step.matches != null) return cells(step, c, index, shown)
         return when (step.state) {
             null -> Check(true, "$shown present", "row #$index \"${rows[index].take(80)}\"")
             UiExpectState.SELECTED -> UiRows.isSelected(c, index).let { Check(it, "$shown selected", if (it) "it is selected" else "it is not selected") }
@@ -168,6 +169,18 @@ internal class UiExpect(
                 Check(expanded == (step.state == UiExpectState.EXPANDED), "$shown ${step.state!!.wire}", if (expanded) "it is expanded" else "it is collapsed")
             }
             else -> error("control state on a row")
+        }
+    }
+
+    /** The value check of a table row: its cells after the first, which a value equals one of. EDT. */
+    private fun cells(step: UiStep, c: java.awt.Component, index: Int, shown: String): Check {
+        val cells = UiRows.cells(c, index)
+        if (cells.isEmpty()) throw UiStepFailure("$shown has no cells beside its text; value, contains and matches check a table row's other cells")
+        val actual = "it shows ${cells.joinToString(" | ") { "\"${it.take(80)}\"" }}"
+        return when {
+            step.value != null -> Check(step.value in cells, "$shown with value \"${step.value}\"", actual)
+            step.contains != null -> Check(cells.any { it.contains(step.contains!!) }, "$shown containing \"${step.contains}\"", actual)
+            else -> Check(Regex(step.matches!!).let { r -> cells.any { r.containsMatchIn(it) } }, "$shown matching /${step.matches}/", actual)
         }
     }
 

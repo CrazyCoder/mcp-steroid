@@ -113,12 +113,13 @@ soft. Each expect has one subject:
 |---|---|---|
 | A target (`name`, `text`, `class`, `ref`, `nth`) | `is`: visible, hidden, enabled, disabled, checked, unchecked, focused, editable; `value` (exact); `contains`; `matches` (a regex); `count` (how many controls match, in the topmost window that has a match) | `{"action":"expect","name":"Apply","is":"disabled"}` |
 | A row of a list, tree, table or tabbed pane | `row` (or `index`) alone for present, with `is`: selected, expanded, collapsed | `{"action":"expect","name":"Settings categories","row":"Terminal","is":"selected"}` |
+| A table row's cells | `row` with `value` (one cell equals it), `contains` or `matches`, over the cells after the first, which `row` names | `{"action":"expect","class":"TreeTable","row":"Hard wrap at:","value":"90"}` |
 | `title`: a window | `is`: visible (default) or hidden | `{"action":"expect","title":"Rename","is":"hidden"}` |
 | `file`: a project file's text | `value`, `contains` or `matches`, over `line` N when given | `{"action":"expect","file":"src/A.kt","line":3,"contains":"newName"}` |
 | `file` with `caret` | The caret in the file's editor, as `line:column`, 1-based | `{"action":"expect","file":"src/A.kt","caret":"3:14"}` |
 | `notification` | A notification shown since the call started, or listed in the Notifications tool window, whose title or text contains this | `{"action":"expect","notification":"Indexing"}` |
 | `banner` | A banner above one of the project's open editors, of any kind, whose text contains this | `{"action":"expect","banner":"Module JDK is not defined","not":true}` |
-| `error` | An IDE error logged since the call started whose summary contains this; `""` matches any | `{"action":"expect","error":"","not":true}` |
+| `error` | An IDE error logged since the call started whose summary contains this; `""` or `true` matches any | `{"action":"expect","error":"","not":true}` |
 
 A check that fails says what it wanted and what it found, and for a target that matched nothing, the
 nearest controls. `{"action":"expect","error":"","not":true}` after the steps is the check for a report of
@@ -225,16 +226,18 @@ client sends a step to the Remote Development backend when:
   controls, the Commit tool window, a refactoring dialog; or
 - the step needs the project itself, which only the backend holds, and names no side: `write`, `code`,
   `goto`, an `expect` on a `file` or a `banner`, and `get` or `set` of an `inspection`. The file `goto` opens on the backend
-  shows in the client's editor.
+  shows in the client's editor, which then has the focus, so a `run` after it acts on that file.
 
 Everything else runs in the client: its windows, Settings dialog, tool windows and pictures. A step on the
 backend reports `on the backend:`, and the verdict covers both sides. A relative scenario path resolves against
-the backend's project folder. Three things differ by side:
+the backend's project folder. A client snapshot says so on a window whose controls the backend draws, such
+as a Rename dialog: its steps need `"side": "backend"`. Three things differ by side:
 
 - `get` and `set` of an `option`, `registry` or `advanced` setting reach the side the step runs on, and both
   sides keep their own values. Turning line numbers off in the client leaves the backend's Settings page
   showing them on. Pick the side the report is about.
 - An `expect` on `error` or `notification` sees the side it runs on: add `"side": "backend"` for the backend's.
+  Either way it counts from the start of the run, not of the step.
 - A backend endpoint refuses a step with `"side": "frontend"`, because it cannot reach the client.
 
 See [Split Mode](mcp-steroid://skill/split-mode) for what each side draws.

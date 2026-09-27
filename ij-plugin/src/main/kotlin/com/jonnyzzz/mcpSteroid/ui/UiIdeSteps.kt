@@ -70,7 +70,7 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
      * open Settings window of the project switches to the page instead.
      */
     suspend fun settings(step: UiStep): Opened {
-        val page = findPage(step.page!!)
+        val page = findPage(step.page!!, step.timeoutMs)
         val before = UiSettle.showingWindows()
         ApplicationManager.getApplication().invokeLater({
             if (page.id != null) ShowSettingsUtilImpl.showSettingsDialog(project, page.id, null)
@@ -95,8 +95,25 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         } == true
     }
 
-    /** The one Settings page [wanted] names. Several pages share a name, such as General: a path tells them apart. */
-    fun findPage(wanted: String): SettingsPage {
+    /**
+     * The one Settings page [wanted] names, waiting up to [timeoutMs] for it: a JetBrains Client lists the backend's
+     * pages only a moment after it connects. Several pages share a name, such as General: a path tells them apart.
+     */
+    suspend fun findPage(wanted: String, timeoutMs: Long): SettingsPage {
+        val started = TimeSource.Monotonic.markNow()
+        while (true) {
+            val (page, pages) = withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { matchPage(wanted) to pages() }
+            if (page != null) return page
+            if (started.elapsedNow().inWholeMilliseconds >= timeoutMs) {
+                val near = pages.filter { it.name.contains(wanted.trim(), ignoreCase = true) }.take(8)
+                throw UiStepFailure("no Settings page \"$wanted\" after $timeoutMs ms" + if (near.isEmpty()) "" else "; similar: ${near.joinToString("; ")}")
+            }
+            delay(POLL_MS)
+        }
+    }
+
+    /** The page [wanted] names, or null when none does; several that match fail. */
+    private fun matchPage(wanted: String): SettingsPage? {
         val pages = pages()
         val w = wanted.trim()
         val byId = pages.filter { it.id == w }
@@ -105,10 +122,7 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         val found = byId.ifEmpty { byPath }.ifEmpty { byName }
         return when (found.size) {
             1 -> found.single()
-            0 -> {
-                val near = pages.filter { it.name.contains(w, ignoreCase = true) }.take(8)
-                throw UiStepFailure("no Settings page \"$wanted\"" + if (near.isEmpty()) "" else "; similar: ${near.joinToString("; ")}")
-            }
+            0 -> null
             else -> throw UiStepFailure("${found.size} Settings pages are named \"$wanted\"; pass a path or an id: ${found.take(8).joinToString("; ")}")
         }
     }

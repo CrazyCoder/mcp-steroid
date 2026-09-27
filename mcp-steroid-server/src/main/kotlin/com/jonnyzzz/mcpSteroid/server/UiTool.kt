@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.mcp.McpToolBase
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.boolean
+import com.jonnyzzz.mcpSteroid.mcp.cliHidden
 import com.jonnyzzz.mcpSteroid.mcp.cliSynopsis
 import com.jonnyzzz.mcpSteroid.mcp.description
 import com.jonnyzzz.mcpSteroid.mcp.enumString
@@ -64,7 +65,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"hover", target, optional "row" or "index"}
         - {"action":"type", "text":"...", optional target}: types into the target, or the control that has
           the focus in the topmost window
-        - {"action":"fill", target, "text":"..."}: replaces a text field's text
+        - {"action":"fill", target, "text":"..."}: replaces a text field's text; with "row", sets that table row's
+          value cell, such as a Code Style option's value, and reads it back
           (in type and fill, "text" is the text to enter, so target the field by ref, name or class)
         - {"action":"press", "keys":"ENTER" or "ctrl+shift+A", optional target}: keymap shortcuts run
         - {"action":"check"|"uncheck", target}: clicks a checkbox only when its state differs
@@ -97,10 +99,11 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"expect", subject, check, optional "not":true, "soft":true, "bug":"..."}: checks what the IDE
           shows, retrying until it holds or "timeout_ms" passes; with "not", until it does not. Subjects and checks:
           a target with "is" (visible, hidden, enabled, disabled, checked, unchecked, focused, editable), "value",
-          "contains", "matches" (a regex), "count", or "row" with "is" selected, expanded or collapsed;
+          "contains", "matches" (a regex), "count", or "row" with "is" selected, expanded or collapsed, or with
+          "value", "contains" or "matches" for a table row's other cells;
           "title" (a window) with "is" visible or hidden; "file" with "value", "contains" or "matches", optionally
           on "line", or "caret":"line:column"; "banner":"text" above an open editor; "notification":"text" and
-          "error":"text" ("" for any), shown or logged since the call started. "soft" reports a failure and goes on; "bug" marks the check whose failure
+          "error":"text" ("" or true for any), shown or logged since the call started. "soft" reports a failure and goes on; "bug" marks the check whose failure
           means the reported bug is present
         - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
           or name, or switches the open Settings window to it
@@ -176,6 +179,16 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         .int()
         .registerToSchema()
 
+    val runAgeMs = InputSchemaElement.param("run_age_ms")
+        .description(
+            "Set by a JetBrains Client that sends a step to the backend: how many milliseconds ago its run started, " +
+                "so that the step's error and notification checks count from the run's start. Leave it out."
+        )
+        .cliSynopsis("internal: age of the Client run")
+        .int()
+        .cliHidden()
+        .registerToSchema()
+
     val snapshot = InputSchemaElement.param("snapshot")
         .description(
             "The snapshot in the response: 'tree' (the controls), 'full' (the controls with their screen " +
@@ -220,6 +233,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                 scenario = context[scenario],
                 fromStep = context[fromStep],
                 toStep = context[toStep],
+                runAgeMs = context[runAgeMs],
                 snapshot = context[snapshot],
                 maxNodes = context[maxNodes],
                 trace = context[trace],
@@ -242,6 +256,8 @@ data class UiParams(
     val scenario: String? = null,
     val fromStep: Int? = null,
     val toStep: Int? = null,
+    /** How long ago the JetBrains Client's run started that a forwarded step belongs to. */
+    val runAgeMs: Int? = null,
     val snapshot: UiSnapshotMode? = null,
     val maxNodes: Int = UiToolSpec.DEFAULT_MAX_NODES,
     val trace: Boolean = false,

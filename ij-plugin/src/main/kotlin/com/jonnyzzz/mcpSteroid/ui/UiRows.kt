@@ -6,6 +6,7 @@ import java.awt.Component
 import java.awt.Container
 import java.awt.Point
 import java.awt.Rectangle
+import javax.swing.AbstractButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JLabel
@@ -20,7 +21,15 @@ import javax.swing.text.JTextComponent
 import javax.swing.tree.TreePath
 
 /** One row of a list, tree, table or tabbed pane as a snapshot shows it. [expanded] is null for a list row or a tree leaf. */
-data class UiRow(val index: Int, val text: String, val depth: Int, val selected: Boolean, val expanded: Boolean?)
+/** A row as a snapshot lists it. [cells] are a table row's cells after its first, which [text] holds. */
+data class UiRow(
+    val index: Int,
+    val text: String,
+    val depth: Int,
+    val selected: Boolean,
+    val expanded: Boolean?,
+    val cells: List<String> = emptyList(),
+)
 
 /** The rows a snapshot lists for a component: the ones in view, and how many rows it has in all. */
 data class UiRowsView(val rows: List<UiRow>, val total: Int)
@@ -182,7 +191,7 @@ object UiRows {
             val depth = (path?.pathCount ?: 1) - if (c.isRootVisible) 1 else 2
             UiRow(i, treeRow(c, i), depth.coerceAtLeast(0), c.isRowSelected(i), if (leaf) null else c.isExpanded(i))
         }
-        is JTable -> UiRow(i, tableRow(c, i), 0, c.isRowSelected(i), null)
+        is JTable -> UiRow(i, tableRow(c, i), 0, c.isRowSelected(i), null, cells(c, i))
         is JTabbedPane -> UiRow(i, tabRow(c, i), 0, c.selectedIndex == i, null)
         else -> error("no rows in ${c.javaClass.name}")
     }
@@ -214,6 +223,23 @@ object UiRows {
         val leaf = tree.model.isLeaf(value)
         val shown = tree.cellRenderer?.getTreeCellRendererComponent(tree, value, false, tree.isExpanded(row), leaf, row, false)
         return shown?.let(::text) ?: tree.convertValueToText(value, false, tree.isExpanded(row), leaf, row, false)
+    }
+
+    /**
+     * The cells of a table row after its first, as the user sees them: the values beside the names of a Code Style
+     * or registry table. Empty for a row out of range and for a component that is not a table.
+     */
+    fun cells(c: Component, row: Int): List<String> {
+        val table = c as? JTable ?: return emptyList()
+        if (row !in 0 until table.rowCount) return emptyList()
+        return (1 until table.columnCount).map { column -> cell(table, row, column) }
+    }
+
+    private fun cell(table: JTable, row: Int, column: Int): String {
+        val shown = runCatching { table.prepareRenderer(table.getCellRenderer(row, column), row, column) }.getOrNull()
+        // A checkbox cell shows no text, only its state.
+        if (shown is AbstractButton && shown.text.isNullOrBlank()) return if (shown.isSelected) "[x]" else "[ ]"
+        return shown?.let(::text) ?: table.getValueAt(row, column)?.toString().orEmpty()
     }
 
     private fun tableRow(table: JTable, row: Int): String {

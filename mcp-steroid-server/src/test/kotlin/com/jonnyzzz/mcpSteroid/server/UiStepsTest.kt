@@ -50,7 +50,8 @@ class UiStepsTest {
 
     @Test
     fun `row and index go only with row steps, one of them, from 0`() {
-        assertTrue(fails("""[{"action":"fill","ref":"e1","text":"x","index":1}]""").contains("not fill"))
+        assertTrue(fails("""[{"action":"type","ref":"e1","text":"x","index":1}]""").contains("not type"))
+        assertEquals("Hard wrap at:", UiSteps.parse("""[{"action":"fill","ref":"e1","row":"Hard wrap at:","text":"90"}]""").single().row)
         assertTrue(fails("""[{"action":"select","ref":"e1","row":"a","index":1}]""").contains("not both"))
         assertTrue(fails("""[{"action":"click","ref":"e1","index":-1}]""").contains("0-based"))
         assertEquals("Java", UiSteps.parse("""[{"action":"hover","ref":"e1","row":"Java"}]""").single().row)
@@ -204,6 +205,15 @@ class UiStepsTest {
         assertEquals(3, file.line)
         assertEquals("foo", file.contains)
         assertEquals(3, UiSteps.parse("""[{"action":"expect","ref":"e4#3","is":"selected"}]""").single().index)
+        val cell = UiSteps.parse("""[{"action":"expect","name":"t","row":"Hard wrap at:","value":"90"}]""").single()
+        assertEquals("90", cell.value)
+        assertTrue(fails("""[{"action":"expect","name":"t","row":"a","value":"90","is":"selected"}]""").contains("drop is"))
+    }
+
+    @Test
+    fun `error true checks for any IDE error, as the empty text does`() {
+        assertEquals("", UiSteps.parse("""[{"action":"expect","error":true,"not":true}]""").single().error)
+        assertEquals("true", UiSteps.parse("""[{"action":"expect","error":"true"}]""").single().error)
     }
 
     @Test

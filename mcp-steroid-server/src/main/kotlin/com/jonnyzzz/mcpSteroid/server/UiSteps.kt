@@ -184,7 +184,7 @@ object UiSteps {
         UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT, UiAction.INSPECT, UiAction.SCROLL,
     )
     /** Actions that take a row of a list, tree, table or tabbed pane: "row", "index" or a row ref. */
-    private val ROW_ACTIONS = setOf(UiAction.SELECT, UiAction.INSPECT, UiAction.CLICK, UiAction.HOVER, UiAction.SCROLL, UiAction.EXPECT)
+    private val ROW_ACTIONS = setOf(UiAction.SELECT, UiAction.INSPECT, UiAction.CLICK, UiAction.HOVER, UiAction.SCROLL, UiAction.EXPECT, UiAction.FILL)
     private val ROW_REF = Regex("""(e\d+)#(\d+)""")
     private val CARET = Regex("""(\d+):(\d+)""")
 
@@ -278,7 +278,8 @@ object UiSteps {
             caret = obj.string("caret"),
             notification = obj.string("notification"),
             banner = obj.string("banner"),
-            error = obj.string("error"),
+            // true reads as any error, as "" does: a flag is the natural spelling, and no error summary is "true".
+            error = (obj["error"] as? JsonPrimitive)?.takeIf { !it.isString && it.booleanOrNull == true }?.let { "" } ?: obj.string("error"),
             page = obj.string("page"),
             registry = obj.string("registry"),
             advanced = obj.string("advanced"),
@@ -428,7 +429,7 @@ object UiSteps {
                     require(step.state == null && !textCheck && !rowNamed) { "count checks how many controls match; pass it alone" }
                     require(step.target.nth == null && step.target.ref == null) { "count counts the matches of a name, text, class or xpath, without nth or ref" }
                 }
-                require(!(rowNamed && textCheck)) { "a row is checked by its text in row; drop value, contains and matches" }
+                require(!(rowNamed && textCheck && step.state != null)) { "value, contains and matches check a table row's cells; drop is" }
             }
             step.title != null -> {
                 require(step.state == null || step.state == UiExpectState.VISIBLE || step.state == UiExpectState.HIDDEN) {

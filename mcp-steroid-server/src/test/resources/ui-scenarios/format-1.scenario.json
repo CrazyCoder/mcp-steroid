@@ -67,7 +67,11 @@
     {"action": "code", "code": "println(2)", "modal": "non_modal"},
     {"action": "code", "code": "println(3)", "modal": "unleashed"},
     {"action": "code", "code": "println(4)", "modal": "dialog"},
-    {"action": "screenshot", "save": "settings-page", "side": "frontend"}
+    {"action": "screenshot", "save": "settings-page", "side": "frontend"},
+    {"action": "fill", "class": "TreeTable", "row": "Hard wrap at:", "text": "90"},
+    {"action": "expect", "class": "TreeTable", "row": "Hard wrap at:", "value": "90"},
+    {"action": "expect", "class": "TreeTable", "row": "Hard wrap at:", "contains": "9"},
+    {"action": "expect", "error": "", "not": true}
   ],
   "cleanup": [
     {"action": "close"},

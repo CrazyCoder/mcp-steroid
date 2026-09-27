@@ -84,9 +84,13 @@ class UiToolHandlerIJ : UiToolHandler {
             else -> params.snapshot ?: UiSnapshotMode.DIFF
         }
         val trace = if (params.trace) UiTrace(project.executionStorage.resolveExecutionDir(executionId).resolve("trace")) else null
+        // A step a JetBrains Client sent here belongs to the Client's run, whose error and notification checks count
+        // from the run's start. The age is relative, so the two machines' clocks need not agree.
+        val runStartedMs = System.currentTimeMillis() - (params.runAgeMs ?: 0)
         val session = UiSession(project, params.windowId, params.maxNodes, trace, params.taskId,
             artifacts = project.executionStorage.resolveExecutionDir(executionId),
-            forward = bridge?.let { b -> { step -> forwardStep(b, project, params.taskId, step) } })
+            forward = bridge?.let { b -> { step -> forwardStep(b, project, params.taskId, step, runStartedMs) } },
+            startedMs = runStartedMs)
         // The steps' own waits bound the call, plus an allowance for delivery and settling per step.
         val budgetMs = (steps + cleanup).sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
         return try {
@@ -146,7 +150,7 @@ class UiToolHandlerIJ : UiToolHandler {
      * and returns what the backend reported for it. The backend's own verdict and recording lines are left out: the
      * scenario's verdict and recording are this call's.
      */
-    private suspend fun forwardStep(bridge: SplitFrontendBridge, project: Project, taskId: String, step: UiStep): String {
+    private suspend fun forwardStep(bridge: SplitFrontendBridge, project: Project, taskId: String, step: UiStep, runStartedMs: Long): String {
         val key = bridge.backendKeyFor(project) ?: throw UiStepFailure("the backend does not list this project, so the step cannot run there")
         // Without its intent the backend's label is exactly this, and its report line is what follows it. Without bug
         // and soft the backend judges nothing: a failed bug check there must read as a failed step here, where the
@@ -159,6 +163,7 @@ class UiToolHandlerIJ : UiToolHandler {
             put("steps", JsonArray(listOf(source)).toString())
             put("snapshot", "none")
             put("side", "backend")
+            put("run_age_ms", (System.currentTimeMillis() - runStartedMs).coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
         }
         val result = bridge.forward(ToolCallParams(name = "steroid_ui", arguments = args), object : McpProgressReporter {
             override fun report(message: String) = Unit

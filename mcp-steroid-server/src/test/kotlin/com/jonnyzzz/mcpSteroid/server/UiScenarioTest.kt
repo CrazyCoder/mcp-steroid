@@ -117,6 +117,18 @@ class UiScenarioTest {
             UiForwardedStep.label(expect), isError = false,
         )
         assertEquals(UiForwardedStep.Report(false, "expected A.kt containing \"x\""), failed)
+        val goto = UiStep(UiAction.GOTO, null, file = "A.kt")
+        val moved = UiForwardedStep.parse(
+            "${UiForwardedStep.label(goto)}: caret at A.kt:1:1; focus: MemoryUsagePanelImpl \"Memory Usage\" [ref=e2]\nPASSED: all 1 step(s)",
+            UiForwardedStep.label(goto), isError = false,
+        )
+        assertEquals(UiForwardedStep.Report(true, "caret at A.kt:1:1"), moved)
+        val code = UiStep(UiAction.CODE, null, code = "println(1)")
+        val ran = UiForwardedStep.parse(
+            "execution_id: e3 (9 ms)\n${UiForwardedStep.label(code)}: ran the code:\nexecution_id: e4\n1\nPASSED: all 1 step(s)",
+            UiForwardedStep.label(code), isError = false,
+        )
+        assertEquals(UiForwardedStep.Report(true, "ran the code:\n1"), ran)
         assertEquals(false, UiForwardedStep.parse("ERROR: unknown project", label, isError = true).passed)
     }
 

@@ -82,6 +82,8 @@ object UiForwardedStep {
 
     private val VERDICTS = UiVerdict.Kind.entries.map { it.name.replace('_', ' ') }
 
+    private const val FOCUS = "; focus: "
+
     fun label(step: UiStep): String = "step 1 ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
 
     /** [text] is the backend's response, [isError] its error flag, used only when the step's line is missing. */
@@ -91,7 +93,9 @@ object UiForwardedStep {
         val start = lines.indexOfFirst { it.startsWith("$label: ") || it.startsWith(failedLine) }
         if (start < 0) return Report(!isError, lines.filterNot { it.startsWith("execution_id:") }.joinToString("\n").trim())
         val more = lines.drop(start + 1).takeWhile { it.isNotBlank() && !it.startsWith("recorded:") && VERDICTS.none(it::startsWith) }
-        val first = lines[start].removePrefix(failedLine).removePrefix("$label: ")
+            .filterNot { it.startsWith("execution_id:") }
+        // The backend's keyboard focus is not where the user types in the JetBrains Client, so it is left out.
+        val first = lines[start].removePrefix(failedLine).removePrefix("$label: ").substringBeforeLast(FOCUS)
         return Report(!lines[start].startsWith(failedLine), (listOf(first) + more).joinToString("\n"))
     }
 }
