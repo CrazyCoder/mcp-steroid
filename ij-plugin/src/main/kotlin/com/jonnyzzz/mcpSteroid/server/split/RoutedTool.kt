@@ -11,7 +11,7 @@ import kotlinx.coroutines.CancellationException
 
 /**
  * Runs [delegate] locally or forwards the call to the backend, per [routeTool]. [FreezeMonitor.guard]
- * reports a UI freeze in the result, and answers a call that a freeze holds up.
+ * reports a UI freeze and the errors the IDE logged in the result, and answers a call that a freeze holds up.
  */
 class RoutedTool(
     private val delegate: McpTool,
@@ -20,7 +20,7 @@ class RoutedTool(
 ) : McpTool by delegate {
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val monitor = FreezeMonitor.getInstanceOrNull() ?: return route(context)
-        return monitor.guard(context.session) { route(context) }
+        return monitor.guard(context.session, reportsIdeErrors = delegate.name == EXECUTE_CODE) { route(context) }
     }
 
     private suspend fun route(context: ToolCallContext): ToolCallResult {
@@ -49,5 +49,9 @@ class RoutedTool(
         } catch (e: Exception) {
             ToolCallResult.errorResult("The backend is not connected or the call to it failed: ${e.message}")
         }
+    }
+
+    private companion object {
+        const val EXECUTE_CODE = "steroid_execute_code"
     }
 }

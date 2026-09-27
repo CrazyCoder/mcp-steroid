@@ -18,6 +18,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withTimeoutOrNull
+import org.jetbrains.annotations.TestOnly
 import java.lang.management.ManagementFactory
 import java.nio.file.Path
 import java.time.Instant
@@ -52,7 +53,7 @@ data class Freeze(
  * and dumps threads while it lasts; [FreezeListener] forwards those reports here. Each dump is read for
  * who holds the lock. A steroid_execute_code script that holds a read lock the UI waits for is cancelled.
  * [guard] puts the freeze in front of every tool result, and answers a call that is still waiting once
- * the freeze has been known for [EARLY_ANSWER_MS].
+ * the freeze has been known for [EARLY_ANSWER_MS]. It also carries the [IdeErrors] notice.
  */
 @Service(Service.Level.APP)
 class FreezeMonitor(private val scope: CoroutineScope) {
@@ -111,28 +112,38 @@ class FreezeMonitor(private val scope: CoroutineScope) {
         return render(freeze, now, RunningExecutions::forScriptClass)
     }
 
+    @TestOnly
+    internal var ideErrors: () -> IdeErrors? = IdeErrors::getInstanceOrNull
+
     /**
-     * Runs [call] and puts any freeze in front of its result. A call still running once a freeze has been
-     * known for [EARLY_ANSWER_MS] is answered with the freeze instead, and keeps running in the IDE.
+     * Runs [call] and puts any freeze, and the errors the IDE logged since [session]'s last call, in front
+     * of its result. A call still running once a freeze has been known for [EARLY_ANSWER_MS] is answered
+     * with the freeze instead, and keeps running in the IDE. [reportsIdeErrors] tells that the call's own
+     * result lists the errors logged while it ran, as steroid_execute_code does.
      */
-    suspend fun guard(session: Any, call: suspend () -> ToolCallResult): ToolCallResult {
+    suspend fun guard(session: Any, reportsIdeErrors: Boolean = false, call: suspend () -> ToolCallResult): ToolCallResult {
+        val errors = ideErrors()
+        val startedAtMs = System.currentTimeMillis()
+        fun notices() = listOfNotNull(noticeFor(session), errors?.noticeFor(session)).joinToString("").ifEmpty { null }
+
         val run = scope.async(currentCoroutineContext().minusKey(Job)) { call() }
         try {
             while (withTimeoutOrNull(POLL_MS) { run.join() } == null) {
                 val freeze = active ?: continue
                 if (System.currentTimeMillis() - freeze.detectedAtMs < EARLY_ANSWER_MS) continue
-                val notice = noticeFor(session) ?: continue
+                val notice = notices() ?: continue
                 return ToolCallResult(listOf(ContentItem.Text(notice + STILL_RUNNING)), isError = true)
             }
             val result = run.await()
-            val notice = noticeFor(session) ?: return result
+            if (reportsIdeErrors) errors?.reportedBy(session, startedAtMs, System.currentTimeMillis())
+            val notice = notices() ?: return result
             return result.copy(content = listOf(ContentItem.Text(notice)) + result.content)
         } catch (e: CancellationException) {
             run.cancel(e)
             // The caller's own cancellation propagates; a call cancelled inside the IDE, as a freeze
             // cancels the execution that holds its lock, is answered.
             currentCoroutineContext().ensureActive()
-            val text = (noticeFor(session) ?: "") + "The call was cancelled inside the IDE: ${e.message}"
+            val text = (notices() ?: "") + "The call was cancelled inside the IDE: ${e.message}"
             return ToolCallResult(listOf(ContentItem.Text(text)), isError = true)
         }
     }

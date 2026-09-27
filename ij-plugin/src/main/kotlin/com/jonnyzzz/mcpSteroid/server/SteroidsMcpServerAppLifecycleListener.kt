@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.server
 
 import com.intellij.ide.AppLifecycleListener
 import com.intellij.openapi.application.ApplicationManager
+import com.jonnyzzz.mcpSteroid.freeze.IdeErrors
 
 /**
  * Starts the MCP HTTP server as soon as the IDE is ready, before any project opens.
@@ -17,6 +18,7 @@ class SteroidsMcpServerAppLifecycleListener : AppLifecycleListener {
         // startServerIfNeeded() is blocking, so run off the EDT
         ApplicationManager.getApplication().executeOnPooledThread {
             UpstreamPluginGuard.run()
+            IdeErrors.getInstanceOrNull()
             val server = SteroidsMcpServer.getInstance()
             server.startServerIfNeeded()
             ServerUrlWriter.getInstance().writeServerUrlToUserHome(server.mcpUrl)
