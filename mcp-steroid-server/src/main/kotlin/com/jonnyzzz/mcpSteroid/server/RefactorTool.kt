@@ -114,7 +114,11 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
     val nth = intParam("nth", "Which occurrence of symbol outside comments, from 0.")
     val newName = stringParam("new_name", "rename: the new name.")
     val to = stringParam("to", "move: the target directory, absolute or relative to the project.")
-    val inspection = stringParam("inspection", "fix: the inspection's short name; omit it in a dry run to list problems. inspect: short names, comma-separated.")
+    val inspection = InputSchemaElement.param("inspection")
+        .description("fix: the inspection's short name; omit it in a dry run to list problems. inspect: short names, comma-separated.")
+        .cliSynopsis("inspection short name(s); inspect takes several, comma-separated")
+        .string()
+        .registerToSchema()
     val intentionName = stringParam("name", "intention: the intention's text.")
 
     val all = InputSchemaElement.param("all")

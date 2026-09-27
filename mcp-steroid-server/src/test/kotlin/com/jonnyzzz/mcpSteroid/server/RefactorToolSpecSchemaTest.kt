@@ -11,7 +11,7 @@ class RefactorToolSpecSchemaTest {
         assertToolSpecHasValidJsonSchema(spec)
         assertToolIdentity(spec, "steroid_refactor")
         assertRequiredExactly(schema, "project_name", "task_id", "reason", "op")
-        assertEnumProperty(schema, "op", "rename", "safe_delete", "move", "fix", "intention", "optimize_imports", "reformat", "usages")
+        assertEnumProperty(schema, "op", "rename", "safe_delete", "move", "fix", "intention", "optimize_imports", "reformat", "usages", "inspect")
         listOf("file", "symbol", "new_name", "to", "inspection", "name").forEach { assertStringProperty(schema, it) }
         listOf("line", "column", "nth").forEach { assertIntegerProperty(schema, it) }
         assertBooleanProperty(schema, "all")
