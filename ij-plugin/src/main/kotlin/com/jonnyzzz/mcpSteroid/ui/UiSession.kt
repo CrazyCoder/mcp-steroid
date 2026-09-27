@@ -86,6 +86,11 @@ class UiSession(
     taskId: String = "",
     /** Where a screenshot step saves its picture: the call's execution folder. */
     private val artifacts: Path? = null,
+    /**
+     * In a JetBrains Client, runs one step on the Remote Development backend and returns its report line, throwing
+     * [UiStepFailure] when it fails there. Null in a regular IDE and on the backend, where every step runs here.
+     */
+    private val forward: (suspend (UiStep) -> String)? = null,
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput()
@@ -137,7 +142,13 @@ class UiSession(
                 portableRow = null
                 portableFields.clear()
                 val outcome = try {
-                    Result.success(if (step.action == UiAction.EXPECT) expect.run(step) else runStep(step))
+                    Result.success(
+                        when {
+                            forward != null && runsOnBackend(step) -> forward.invoke(step)
+                            step.action == UiAction.EXPECT -> expect.run(step)
+                            else -> runStep(step)
+                        }
+                    )
                 } catch (e: UiStepFailure) {
                     Result.failure(e)
                 } catch (e: UiBarrierTimeout) {
@@ -179,6 +190,17 @@ class UiSession(
             else -> UiSnapshotDiff.diff(before.orEmpty(), render(withBounds = false)).ifEmpty { "(the snapshot did not change)" }
         }
         return UiSessionResult(reports, failure, snapshot, outcomes, recorded)
+    }
+
+    /**
+     * Whether a JetBrains Client sends [step] to the backend: its `side` when it names one, else the steps that need the
+     * project itself, which only the backend holds: files, the editor at a file, scripts and the inspection profile.
+     */
+    private fun runsOnBackend(step: UiStep): Boolean = when (step.side) {
+        "backend" -> true
+        "frontend" -> false
+        else -> step.action in BACKEND_HOME || step.action == UiAction.EXPECT && step.file != null ||
+            (step.action == UiAction.GET || step.action == UiAction.SET) && step.inspection != null
     }
 
     /**
@@ -886,6 +908,11 @@ class UiSession(
         /** Steps that only read, which a recording of what to replay leaves out. */
         private val NOT_RECORDED = setOf(UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.GET)
         private val TEXT_INPUT = setOf(UiAction.TYPE, UiAction.FILL)
+        /**
+         * Steps that a JetBrains Client sends to the backend unless their side says otherwise. A client cannot find a
+         * project file by its path, so goto opens it on the backend, whose editor the client shows.
+         */
+        private val BACKEND_HOME = setOf(UiAction.WRITE, UiAction.CODE, UiAction.GOTO)
         private const val POLL_MS = 100L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L

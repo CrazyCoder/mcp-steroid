@@ -138,6 +138,11 @@ data class UiStep(
     val hide: Boolean = false,
     /** On a screenshot step: the picture's file name, without folder or extension. Required there. */
     val save: String? = null,
+    /**
+     * Split Mode: `backend` runs the step on the Remote Development backend, where the project, its files and the
+     * windows the backend draws are; the call's own side otherwise. Ignored in a regular IDE.
+     */
+    val side: String? = null,
     val command: String? = null,
     val code: String? = null,
     val modal: String? = null,
@@ -166,8 +171,9 @@ object UiSteps {
         "action", "button", "count", "modifiers", "offset_x", "offset_y", "keys", "row", "index", "for", "title", "timeout_ms",
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "error",
-        "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save",
+        "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
     )
+    val SIDES = setOf("frontend", "backend")
     private val SAVE_NAME = Regex("[A-Za-z0-9._-]{1,80}")
     private val BUTTONS = setOf("left", "right", "middle")
     /** Actions whose "text" is what they enter, look for in the editor or write, not a target. */
@@ -280,6 +286,7 @@ object UiSteps {
             tab = obj.string("tab"),
             hide = obj.boolean("hide") ?: false,
             save = obj.string("save"),
+            side = obj.string("side"),
             command = obj.string("command"),
             code = obj.string("code"),
             modal = obj.string("modal"),
@@ -319,6 +326,7 @@ object UiSteps {
             if (step.action != UiAction.SET) require(step.value == null) { "value goes with expect and set, not $action" }
         }
         if (step.modal != null) require(step.action == UiAction.CODE) { "modal goes with code, not $action" }
+        step.side?.let { require(it in SIDES) { "unknown side '$it'; use frontend or backend" } }
         if (step.tab != null || step.hide) require(step.action == UiAction.TOOLWINDOW) { "tab and hide go with toolwindow, not $action" }
         step.save?.let {
             require(step.action == UiAction.SCREENSHOT) { "save goes with screenshot, not $action" }

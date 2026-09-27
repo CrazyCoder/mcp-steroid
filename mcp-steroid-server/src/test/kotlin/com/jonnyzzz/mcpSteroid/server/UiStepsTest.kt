@@ -249,6 +249,13 @@ class UiStepsTest {
     }
 
     @Test
+    fun `a step takes the side it runs on in Split Mode`() {
+        assertEquals("backend", UiSteps.parse("""[{"action":"expect","name":"OK","side":"backend"}]""").single().side)
+        assertNull(UiSteps.parse("""[{"action":"close"}]""").single().side)
+        assertTrue(fails("""[{"action":"close","side":"server"}]""").contains("unknown side"))
+    }
+
+    @Test
     fun `a step keeps the object it was written as`() {
         val step = UiSteps.parse("""[{"action":"click","ref":"e3","intent":"open it"}]""").single()
         assertEquals(setOf("action", "ref", "intent"), step.source!!.keys)

@@ -4,8 +4,17 @@ package com.jonnyzzz.mcpSteroid.server
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
+import com.jonnyzzz.mcpSteroid.mcp.ContentItem
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
+import com.jonnyzzz.mcpSteroid.server.split.SPLIT_FRONTEND_BRIDGE_EP
+import com.jonnyzzz.mcpSteroid.server.split.SplitFrontendBridge
+import com.jonnyzzz.mcpSteroid.server.split.SplitRole
+import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
+import com.jonnyzzz.mcpSteroid.ui.UiStepFailure
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.ui.UiSession
 import com.jonnyzzz.mcpSteroid.ui.UiSessionResult
@@ -40,12 +49,23 @@ class UiToolHandlerIJ : UiToolHandler {
         )
         project.executionStorage.writeCodeExecutionData(executionId, "reason.txt", params.reason)
         val builder = ToolCallResult.builder()
+        val role = currentSplitRole()
+        val bridge = if (role == SplitRole.FRONTEND) SPLIT_FRONTEND_BRIDGE_EP.extensionList.firstOrNull() else null
+        runCatching { bridge?.refreshProjectKeys() }
         val scenario: UiScenario?
         val allSteps: List<UiStep>
         try {
             require(params.scenario == null || params.steps.isNullOrBlank()) { "pass steps or scenario, not both" }
-            scenario = params.scenario?.let { loadScenario(project, it) }
+            // A JetBrains Client's own project folder is a synthetic one under its config: the backend's is the project's.
+            val base = bridge?.backendPathFor(project) ?: project.basePath
+            scenario = params.scenario?.let { loadScenario(base, it) }
             allSteps = scenario?.steps ?: params.steps?.trim()?.takeIf { it.isNotEmpty() }?.let(UiSteps::parse).orEmpty()
+            if (role == SplitRole.BACKEND) {
+                val clientSteps = allSteps.withIndex().filter { it.value.side == "frontend" }.map { it.index + 1 }
+                require(clientSteps.isEmpty()) {
+                    "step(s) ${clientSteps.joinToString()} ask for side frontend, but this is the backend's endpoint: replay through the JetBrains Client's endpoint"
+                }
+            }
         } catch (e: IllegalArgumentException) {
             return builder.addTextContent("ERROR: ${e.message}").markAsError().build()
         }
@@ -65,7 +85,8 @@ class UiToolHandlerIJ : UiToolHandler {
         }
         val trace = if (params.trace) UiTrace(project.executionStorage.resolveExecutionDir(executionId).resolve("trace")) else null
         val session = UiSession(project, params.windowId, params.maxNodes, trace, params.taskId,
-            artifacts = project.executionStorage.resolveExecutionDir(executionId))
+            artifacts = project.executionStorage.resolveExecutionDir(executionId),
+            forward = bridge?.let { b -> { step -> forwardStep(b, project, params.taskId, step) } })
         // The steps' own waits bound the call, plus an allowance for delivery and settling per step.
         val budgetMs = (steps + cleanup).sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
         return try {
@@ -120,8 +141,36 @@ class UiToolHandlerIJ : UiToolHandler {
         }
     }
 
-    private suspend fun loadScenario(project: Project, path: String): UiScenario {
-        val file = Path.of(path).let { p -> if (p.isAbsolute) p else project.basePath?.let { Path.of(it).resolve(p) } ?: p }
+    /**
+     * Runs [step] on the Remote Development backend through the Split Mode bridge, as a steroid_ui call of one step,
+     * and returns what the backend reported for it. The backend's own verdict and recording lines are left out: the
+     * scenario's verdict and recording are this call's.
+     */
+    private suspend fun forwardStep(bridge: SplitFrontendBridge, project: Project, taskId: String, step: UiStep): String {
+        val key = bridge.backendKeyFor(project) ?: throw UiStepFailure("the backend does not list this project, so the step cannot run there")
+        // Without its intent the backend's label is exactly this, and its report line is what follows it. Without bug
+        // and soft the backend judges nothing: a failed bug check there must read as a failed step here, where the
+        // verdict is made.
+        val source = JsonObject((step.source ?: throw UiStepFailure("the step has no source to send")) - setOf("intent", "bug", "soft"))
+        val args = buildJsonObject {
+            put("project_name", key)
+            put("task_id", taskId)
+            put("reason", "a step the JetBrains Client sent to the backend" + (step.intent?.let { ": $it" } ?: ""))
+            put("steps", JsonArray(listOf(source)).toString())
+            put("snapshot", "none")
+            put("side", "backend")
+        }
+        val result = bridge.forward(ToolCallParams(name = "steroid_ui", arguments = args), object : McpProgressReporter {
+            override fun report(message: String) = Unit
+        })
+        val text = result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+        val report = UiForwardedStep.parse(text, UiForwardedStep.label(step), result.isError)
+        if (!report.passed) throw UiStepFailure("on the backend: ${report.text}")
+        return "on the backend: ${report.text}"
+    }
+
+    private suspend fun loadScenario(base: String?, path: String): UiScenario {
+        val file = Path.of(path).let { p -> if (p.isAbsolute) p else base?.let { Path.of(it).resolve(p) } ?: p }
         val text = withContext(Dispatchers.IO) {
             require(Files.isRegularFile(file)) { "no scenario file at $file" }
             Files.readString(file)

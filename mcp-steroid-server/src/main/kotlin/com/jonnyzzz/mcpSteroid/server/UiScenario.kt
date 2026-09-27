@@ -68,6 +68,30 @@ data class UiScenario(
     }
 }
 
+/**
+ * The report of one step that a JetBrains Client ran on the backend as a steroid_ui call of that step alone. The
+ * backend's response names it `step 1 <action> <target>`, as [label] does, then reports it on that line and the
+ * lines after it, and ends with its own verdict and recording lines, which the client leaves out.
+ */
+object UiForwardedStep {
+    data class Report(val passed: Boolean, val text: String)
+
+    private val VERDICTS = UiVerdict.Kind.entries.map { it.name.replace('_', ' ') }
+
+    fun label(step: UiStep): String = "step 1 ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
+
+    /** [text] is the backend's response, [isError] its error flag, used only when the step's line is missing. */
+    fun parse(text: String, label: String, isError: Boolean): Report {
+        val lines = text.lines()
+        val failedLine = "FAILED $label failed: "
+        val start = lines.indexOfFirst { it.startsWith("$label: ") || it.startsWith(failedLine) }
+        if (start < 0) return Report(!isError, lines.filterNot { it.startsWith("execution_id:") }.joinToString("\n").trim())
+        val more = lines.drop(start + 1).takeWhile { it.isNotBlank() && !it.startsWith("recorded:") && VERDICTS.none(it::startsWith) }
+        val first = lines[start].removePrefix(failedLine).removePrefix("$label: ")
+        return Report(!lines[start].startsWith(failedLine), (listOf(first) + more).joinToString("\n"))
+    }
+}
+
 /** How one step of a run ended. [index] is the step's 1-based number in the list it came from. */
 data class UiStepOutcome(val index: Int, val step: UiStep, val passed: Boolean, val message: String)
 

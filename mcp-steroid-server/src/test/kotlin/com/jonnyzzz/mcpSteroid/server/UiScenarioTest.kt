@@ -93,6 +93,24 @@ class UiScenarioTest {
     }
 
     @Test
+    fun `a forwarded step's report is its own line and what follows, without the backend's verdict`() {
+        val get = UiStep(UiAction.GET, null, option = "line numbers")
+        val label = UiForwardedStep.label(get)
+        val passed = UiForwardedStep.parse(
+            "execution_id: e1 (5 ms)\n$label: 1 option(s) match \"line numbers\":\n  \"Show line numbers\" = true\nPASSED: all 1 step(s)\nrecorded: 1 step(s)",
+            label, isError = false,
+        )
+        assertEquals(UiForwardedStep.Report(true, "1 option(s) match \"line numbers\":\n  \"Show line numbers\" = true"), passed)
+        val expect = UiStep(UiAction.EXPECT, null, file = "A.kt")
+        val failed = UiForwardedStep.parse(
+            "IDE ERRORS: one\nexecution_id: e2 (9 ms)\nFAILED ${UiForwardedStep.label(expect)} failed: expected A.kt containing \"x\"\nFAILED at step 1: the check did not hold",
+            UiForwardedStep.label(expect), isError = false,
+        )
+        assertEquals(UiForwardedStep.Report(false, "expected A.kt containing \"x\""), failed)
+        assertEquals(false, UiForwardedStep.parse("ERROR: unknown project", label, isError = true).passed)
+    }
+
+    @Test
     fun `a run that stops before its bug check is incomplete`() {
         assertEquals(UiVerdict.Kind.INCOMPLETE, UiVerdict.of(listOf(click, bugCheck), listOf(ok(1, click))).kind)
     }

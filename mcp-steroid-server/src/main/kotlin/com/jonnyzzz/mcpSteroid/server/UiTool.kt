@@ -115,7 +115,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does
         - {"action":"screenshot", optional target, "save":"name"}: saves a picture of the target's window, or of
           the topmost one, to the execution folder, for a visual review
-        Any step takes "intent": what it is for, which its report echoes and a repair of the step follows.
+        Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In
+        Split Mode any step takes "side":"backend" to run on the Remote Development backend from a JetBrains
+        Client call; write, code, goto, file expects and inspection settings go there by default.
 
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]

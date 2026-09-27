@@ -217,10 +217,26 @@ These follow the practices of Playwright and other UI test tools:
 
 ## Split Mode
 
-In Split Mode a `steroid_ui` call runs on one side, the JetBrains Client by default. Steps that drive
-windows belong there. Settings, files, inspections and `code` steps act on the backend, where the project
-lives: run them in a separate call with `side` set to `backend`, or split the scenario at that point with
-`from_step` and `to_step`. See [Split Mode](mcp-steroid://skill/split-mode).
+In Split Mode, replay a scenario through the JetBrains Client's endpoint. Each step runs on one side, and the
+client sends a step to the Remote Development backend when:
+
+- the step says `"side": "backend"`, as a step on a window the backend draws needs: a host Settings page's
+  controls, the Commit tool window, a refactoring dialog; or
+- the step needs the project itself, which only the backend holds, and names no side: `write`, `code`,
+  `goto`, an `expect` on a `file`, and `get` or `set` of an `inspection`. The file `goto` opens on the backend
+  shows in the client's editor.
+
+Everything else runs in the client: its windows, Settings dialog, tool windows and pictures. A step on the
+backend reports `on the backend:`, and the verdict covers both sides. A relative scenario path resolves against
+the backend's project folder. Three things differ by side:
+
+- `get` and `set` of an `option`, `registry` or `advanced` setting reach the side the step runs on, and both
+  sides keep their own values. Turning line numbers off in the client leaves the backend's Settings page
+  showing them on. Pick the side the report is about.
+- An `expect` on `error` or `notification` sees the side it runs on: add `"side": "backend"` for the backend's.
+- A backend endpoint refuses a step with `"side": "frontend"`, because it cannot reach the client.
+
+See [Split Mode](mcp-steroid://skill/split-mode) for what each side draws.
 
 ## Extending the format
 
