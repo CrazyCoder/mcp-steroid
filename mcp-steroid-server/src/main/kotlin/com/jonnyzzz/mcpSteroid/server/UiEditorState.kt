@@ -24,8 +24,13 @@ object UiEditorState {
     private const val SELECTED = "; selected "
     private const val NONE = "none"
     private val COUNT = Regex("""^(.*) \((\d+) editors\)$""")
+    private const val KEEPS = "the backend keeps "
+    private const val COUNTS = "the backend counts "
 
     fun sessionLabel(id: String): String = SESSION + id
+
+    /** Whether a [mismatches] line is about a file the backend records more of than the Client shows. */
+    fun isStuck(mismatch: String): Boolean = mismatch.startsWith(KEEPS) || mismatch.startsWith(COUNTS)
 
     /** One line per side, such as `editors of the IDE: src/A.kt | docs/B.md (2 editors); selected src/A.kt`. */
     fun render(sides: List<UiEditorSide>): String = sides.joinToString("\n") { side ->
@@ -61,13 +66,13 @@ object UiEditorState {
             for (file in session.files) {
                 val there = shown(file)?.editors ?: 0
                 if (file.editors > maxOf(there, 1)) {
-                    out += "the backend keeps ${file.editors} editors of ${file.path} for the JetBrains Client, which shows $there; opening it may show nothing"
+                    out += "${KEEPS}${file.editors} editors of ${file.path} for the JetBrains Client, which shows $there; opening it may show nothing"
                 }
             }
         }
         val session = sessions.singleOrNull() ?: return out
         for (file in session.files) {
-            if (shown(file) == null) out += "the backend counts ${file.path} as open in the JetBrains Client, which shows no editor of it"
+            if (shown(file) == null) out += "${COUNTS}${file.path} as open in the JetBrains Client, which shows no editor of it"
         }
         for (file in client.files) {
             val known = session.files.any { it.path == file.path } || session.files.any { it.name == file.name }

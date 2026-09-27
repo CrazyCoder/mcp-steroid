@@ -197,10 +197,12 @@ class UiToolHandlerIJ : UiToolHandler {
         val told = toldMismatches.put(taskId, mismatches).orEmpty()
         val fresh = mismatches - told
         if (fresh.isEmpty()) return null
+        // Only a file the backend records more of than the Client shows is stuck; a click on its tab frees it.
+        val stuck = fresh.any { UiEditorState.isStuck(it) }
         return "EDITOR STATE: the JetBrains Client and the backend disagree about the open editors:\n" +
             fresh.joinToString("\n") { "- $it" } +
-            "\nA file the Client shows no editor of opens again once its tab is clicked; " +
-            "{\"action\":\"get\",\"editors\":true} lists both sides."
+            (if (stuck) "\nA file the Client shows no editor of opens again once its tab is clicked." else "") +
+            "\n{\"action\":\"get\",\"editors\":true} lists both sides."
     }
 
     private suspend fun loadScenario(base: String?, path: String): UiScenario {

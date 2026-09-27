@@ -238,7 +238,7 @@ client sends a step to the Remote Development backend when:
 - the step says `"side": "backend"`, as a step on a window the backend draws needs: a host Settings page's
   controls, the Commit tool window, a refactoring dialog; or
 - the step needs the project itself, which only the backend holds, and names no side: `write`, `code`,
-  `goto`, an `expect` on a `file` or a `banner`, and `get` or `set` of an `inspection`. The file `goto` opens on the backend
+  `goto`, an `expect` on a `file` or a `banner`, `get` or `set` of an `inspection`, and `get` of a `file`. The file `goto` opens on the backend
   shows in the client's editor, which then has the focus, so a `run` after it acts on that file. The
   `goto` fails when the client shows no editor of the file.
 

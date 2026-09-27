@@ -40,6 +40,7 @@ class UiEditorStateTest {
         assertTrue(found.any { it.contains("counts docs/headings.md as open") })
         assertTrue(found.any { it.contains("counts envs/b/.env as open") })
         assertTrue(found.any { it.contains("shows notes.txt, which the backend does not count") })
+        assertEquals(3, found.count(UiEditorState::isStuck), "a Client-only tab is not stuck: " + found.joinToString("\n"))
         // With two Client sessions, which one is this Client's is unknown: only extra editors are told.
         val two = UiEditorState.mismatches(client, listOf(session, session.copy(label = UiEditorState.sessionLabel("AAAA"))))
         assertTrue(two.all { it.contains("keeps 2 editors") }, two.joinToString("\n"))
