@@ -287,25 +287,30 @@ class McpSessionManager {
     private val log = thisLogger()
     private val sessions = ConcurrentHashMap<String, McpSession>()
 
+    /** Unknown ids a client sent, such as ones from before an IDE restart, to the session created for each. */
+    private val aliases = ConcurrentHashMap<String, String>()
+
     init {
         log.info("[MCP SessionManager] Initialized (new instance - all previous sessions are invalidated)")
     }
 
     /**
-     * Create a new session.
+     * Create a new session. [unknownId] is the id the client sent that no session has; the client's later
+     * requests with it reach this session, since a client may keep sending that id.
      */
-    fun createSession(): McpSession {
+    fun createSession(unknownId: String? = null): McpSession {
         val session = McpSession()
         sessions[session.id] = session
+        if (unknownId != null) aliases[unknownId] = session.id
         log.info("[MCP SessionManager] Created session: ${session.id} (total active: ${sessions.size})")
         return session
     }
 
     /**
-     * Get an existing session by ID.
+     * Get an existing session by its ID, or by the unknown ID it was created for.
      */
     fun getSession(id: String): McpSession? {
-        val session = sessions[id]
+        val session = sessions[id] ?: aliases[id]?.let { sessions[it] }
         if (session == null) {
             log.debug("[MCP SessionManager] Session not found: $id (active sessions: ${sessions.keys.joinToString(", ").ifEmpty { "none" }})")
         }
@@ -316,8 +321,9 @@ class McpSessionManager {
      * Remove and close a session.
      */
     fun removeSession(id: String) {
-        val removed = sessions.remove(id)
+        val removed = sessions.remove(id) ?: aliases[id]?.let { sessions.remove(it) }
         if (removed != null) {
+            aliases.values.removeIf { it == removed.id }
             removed.close()
             log.info("[MCP SessionManager] Removed session: $id (remaining: ${sessions.size})")
         } else {
@@ -340,6 +346,7 @@ class McpSessionManager {
         val count = sessions.size
         sessions.values.forEach { it.close() }
         sessions.clear()
+        aliases.clear()
         log.info("[MCP SessionManager] Closed and forgot all sessions (previous count: $count)")
         return count
     }

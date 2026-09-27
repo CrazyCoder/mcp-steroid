@@ -156,7 +156,7 @@ object McpHttpTransport {
             } else {
                 log.info("[MCP] Unknown session ID: $sessionId (likely IDE was restarted)")
                 log.info("[MCP] Creating new session for client (User-Agent: $userAgent)")
-                Triple(server.sessionManager.createSession(), true, UNKNOWN_SESSION_NOTICE)
+                Triple(server.sessionManager.createSession(unknownId = sessionId), true, UNKNOWN_SESSION_NOTICE)
             }
         } else {
             log.info("[MCP] No session ID provided, creating new session")

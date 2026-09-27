@@ -355,6 +355,26 @@ class McpHttpTransportTest {
     }
 
     @Test
+    fun `a client that keeps sending an unknown session id stays in one session`() = runBlocking {
+        val request = """{"jsonrpc":"2.0","id":1,"method":"tools/list"}"""
+        suspend fun post() = client.post("http://localhost:$port/mcp") {
+            contentType(ContentType.Application.Json)
+            accept(ContentType.Application.Json)
+            header(McpHttpTransport.SESSION_HEADER, "stale-session-id")
+            setBody(request)
+        }
+
+        val first = post()
+        val created = first.headers[McpHttpTransport.SESSION_HEADER]
+        assertNotNull(created)
+        val again = post()
+        assertEquals(HttpStatusCode.OK, again.status)
+        assertNull(again.headers[McpHttpTransport.SESSION_HEADER], "no further session is created")
+        assertNull(again.headers[McpHttpTransport.SESSION_NOTICE_HEADER])
+        assertEquals(created, mcpServer.sessionManager.getSession("stale-session-id")?.id)
+    }
+
+    @Test
     fun `test DELETE terminates session`() = runBlocking {
         // First, create a session by sending an initialization request.
         val initRequest = buildJsonObject {
