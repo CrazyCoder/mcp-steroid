@@ -27,6 +27,9 @@ data class UiScenario(
 ) {
     companion object {
         const val FORMAT_VERSION = 1
+
+        /** Format 1 only grows, so a name this reader does not know may come from a newer plugin. */
+        private const val NEWER = " A scenario written for a newer MCP Steroid can use steps and fields this version does not know; update the plugin to replay it"
         private val FIELDS = setOf("scenario", "title", "issue", "description", "ide", "project", "steps", "cleanup")
 
         fun parse(json: String): UiScenario {
@@ -37,10 +40,10 @@ data class UiScenario(
             }
             val obj = root as? JsonObject ?: throw IllegalArgumentException("a scenario is a JSON object with title and steps")
             val unknown = obj.keys - FIELDS
-            require(unknown.isEmpty()) { "unknown scenario field(s) ${unknown.joinToString()}; known fields: ${FIELDS.sorted().joinToString()}" }
+            require(unknown.isEmpty()) { "unknown scenario field(s) ${unknown.joinToString()}; known fields: ${FIELDS.sorted().joinToString()}.$NEWER" }
             val version = (obj["scenario"] as? JsonPrimitive)?.intOrNull
                 ?: throw IllegalArgumentException("a scenario starts with \"scenario\": $FORMAT_VERSION, its format version")
-            require(version == FORMAT_VERSION) { "scenario format $version is not known; this IDE reads format $FORMAT_VERSION" }
+            require(version == FORMAT_VERSION) { "scenario format $version is not known; this IDE reads format $FORMAT_VERSION. Update MCP Steroid to replay a newer format" }
             fun text(key: String): String? = obj[key]?.let {
                 (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw IllegalArgumentException("$key must be a string")
             }
@@ -50,7 +53,8 @@ data class UiScenario(
                 return try {
                     UiSteps.parse(array)
                 } catch (e: IllegalArgumentException) {
-                    throw IllegalArgumentException("$key: ${e.message}", e)
+                    val newer = if (e.message.orEmpty().contains("unknown ")) ".$NEWER" else ""
+                    throw IllegalArgumentException("$key: ${e.message}$newer", e)
                 }
             }
             val steps = steps("steps")

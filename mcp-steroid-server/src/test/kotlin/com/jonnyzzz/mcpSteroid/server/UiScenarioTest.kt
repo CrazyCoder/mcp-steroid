@@ -43,6 +43,16 @@ class UiScenarioTest {
         assertTrue(fails("""{"scenario":1,"title":"t","steps":[{"action":"close"}],"cleanup":[{"action":"click"}]}""").contains("cleanup: step 1"))
     }
 
+    @Test
+    fun `an unknown name suggests a newer plugin, and a wrong step does not`() {
+        val newer = "written for a newer MCP Steroid"
+        assertTrue(fails("""{"scenario":1,"title":"t","steps":[{"action":"tap"}]}""").contains(newer))
+        assertTrue(fails("""{"scenario":1,"title":"t","steps":[{"action":"close","shadow":1}]}""").contains(newer))
+        assertTrue(fails("""{"scenario":1,"title":"t","tags":[],"steps":[{"action":"close"}]}""").contains(newer))
+        assertTrue(fails("""{"scenario":2,"title":"t","steps":[{"action":"close"}]}""").contains("Update MCP Steroid"))
+        assertTrue(!fails("""{"scenario":1,"title":"t","steps":[{"action":"click"}]}""").contains(newer))
+    }
+
     private val click = UiStep(UiAction.CLICK, UiTarget(name = "OK"), intent = "confirm")
     private val bugCheck = UiStep(UiAction.EXPECT, UiTarget(name = "A"), bug = "A is lost")
     private val softCheck = UiStep(UiAction.EXPECT, UiTarget(name = "B"), soft = true)

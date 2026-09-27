@@ -239,13 +239,33 @@ the backend's project folder. Three things differ by side:
 
 See [Split Mode](mcp-steroid://skill/split-mode) for what each side draws.
 
+## Compatibility contract
+
+A scenario file is evidence that is kept with an issue and replayed months later, so the format changes only
+by growing. Within format 1:
+
+- A released step, field, value or verdict is never removed or renamed.
+- A released step keeps its meaning and its defaults. A step that parsed when it was released keeps parsing.
+- A new step, field or value is optional, and a scenario that does not use it behaves as before.
+
+Every MCP Steroid version replays every format 1 scenario written for it or for an older version. An older
+version refuses a scenario that uses a newer step or field, because unknown names fail. The error then says
+that the scenario can come from a newer MCP Steroid and that the plugin needs an update. It never skips a step
+it does not know.
+
+`scenario` goes up only for a change that an older reader would misread, and only when no additive change can
+do the same job. A new format keeps the old one readable: the reader accepts both versions.
+
+`UiScenarioFormatTest` holds the contract. Its fixture, `ui-scenarios/format-1.scenario.json` in the server
+tests, uses every released step, field and value. Removing or renaming one fails the parse, and adding one fails
+the coverage check until the fixture uses it. The fixture takes new lines only: editing or deleting a line to
+make the test pass is a breaking change.
+
 ## Extending the format
 
-The format is meant to grow. A new step, field or check is added in `UiSteps` (parsing and validation, with
-a message that names the problem), `UiSession` or one of the classes it dispatches to (`UiExpect`, `UiConfig`,
-`UiIdeSteps`), the step list of the `steroid_ui` tool description, and this recipe. Because unknown fields
-fail, an IDE with an older plugin refuses a scenario that uses a newer step instead of skipping it. Raise
-`scenario` only for a change an older reader would misread; a new step is not one.
+A new step, field or check is added in `UiSteps` (parsing and validation, with a message that names the
+problem), `UiSession` or one of the classes it dispatches to (`UiExpect`, `UiConfig`, `UiIdeSteps`), the step
+list of the `steroid_ui` tool description, this recipe, and a line in the format fixture.
 
 # See also
 

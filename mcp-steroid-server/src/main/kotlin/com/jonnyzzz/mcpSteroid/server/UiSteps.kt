@@ -169,7 +169,7 @@ object UiSteps {
     val MODALS = setOf("smart_non_modal", "non_modal", "unleashed", "dialog")
 
     private val TARGET_FIELDS = setOf("ref", "name", "text", "class", "xpath", "nth")
-    private val FIELDS = TARGET_FIELDS + setOf(
+    internal val FIELDS = TARGET_FIELDS + setOf(
         "action", "button", "count", "modifiers", "offset_x", "offset_y", "keys", "row", "index", "for", "title", "timeout_ms",
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
@@ -177,7 +177,7 @@ object UiSteps {
     )
     val SIDES = setOf("frontend", "backend")
     private val SAVE_NAME = Regex("[A-Za-z0-9._-]{1,80}")
-    private val BUTTONS = setOf("left", "right", "middle")
+    internal val BUTTONS = setOf("left", "right", "middle")
     /** Actions whose "text" is what they enter, look for in the editor or write, not a target. */
     private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO, UiAction.WRITE)
     private val NEEDS_TARGET = setOf(
