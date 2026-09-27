@@ -9,8 +9,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 
 /**
- * A reproduction scenario: a JSON file of steroid_ui steps with what they are for, which steroid_ui replays with
- * `scenario`. The format is described for agents in `mcp-steroid://ide/ui-scenarios`; a field added here goes there too.
+ * A scenario: a JSON file of steroid_ui steps with what they are for, which steroid_ui replays with `scenario`. It
+ * can reproduce a bug, check a feature, take pictures for a visual review, or set the IDE up. The format is described
+ * for agents in `mcp-steroid://ide/ui-scenarios`; a field added here goes there too.
  */
 data class UiScenario(
     val title: String,
@@ -71,11 +72,13 @@ data class UiScenario(
 data class UiStepOutcome(val index: Int, val step: UiStep, val passed: Boolean, val message: String)
 
 /**
- * What a run of steps means for the bug it reproduces. A step with `bug` is a bug check: it states the correct
- * behavior, so it fails while the bug is present. Any other failure means the steps could not get to the check.
+ * What a run of steps means. Two kinds of failure are told apart for every scenario: a check that did not hold (an
+ * expect, which found the IDE behaving otherwise) and a step that could not be done (anything else, which usually
+ * means the UI changed and the step needs repair). A scenario that reproduces a bug marks the check that fails while
+ * the bug is present with `bug`, and its verdict says whether the bug reproduced.
  */
 object UiVerdict {
-    enum class Kind { REPRODUCED, NOT_REPRODUCED, BROKEN, INCOMPLETE, PASSED, FAILED }
+    enum class Kind { PASSED, FAILED, BROKEN, INCOMPLETE, REPRODUCED, NOT_REPRODUCED }
 
     data class Verdict(val kind: Kind, val line: String)
 
@@ -91,23 +94,16 @@ object UiVerdict {
         }
         val softFailures = outcomes.filter { !it.passed && it.step.soft }
         val failure = outcomes.lastOrNull()?.takeIf { !it.passed && !it.step.soft }
-        val checked = outcomes.filter { it.step.bug != null && it.passed }
+        val checked = outcomes.count { it.step.bug != null && it.passed }
         val soft = if (softFailures.isEmpty()) "" else "; ${softFailures.size} soft check(s) failed: steps ${softFailures.joinToString { it.index.toString() }}"
+        val repair = failure?.step?.intent?.let { ". Repair the step so that it does what it is for: $it" } ?: ". Repair the step"
         return when {
-            failure != null && checked.size < bugSteps -> Verdict(
-                Kind.BROKEN,
-                "BROKEN at step ${failure.index}: the steps did not reach the bug check" +
-                    (failure.step.intent?.let { ". Repair the step so that it does what it is for: $it" } ?: ". Repair the step") + soft,
-            )
-            failure != null && bugSteps > 0 -> Verdict(
-                Kind.NOT_REPRODUCED,
-                "NOT REPRODUCED: the bug check(s) passed, then step ${failure.index} failed$soft",
-            )
-            failure != null -> Verdict(Kind.FAILED, "FAILED at step ${failure.index}$soft")
-            checked.size < bugSteps -> Verdict(
-                Kind.INCOMPLETE,
-                "INCOMPLETE: the run stopped before ${bugSteps - checked.size} bug check(s)$soft",
-            )
+            failure != null && checked < bugSteps -> Verdict(Kind.BROKEN, "BROKEN at step ${failure.index}: the steps did not reach the bug check$repair$soft")
+            failure != null && bugSteps > 0 -> Verdict(Kind.NOT_REPRODUCED, "NOT REPRODUCED: the bug check(s) passed, then step ${failure.index} failed$soft")
+            failure != null && failure.step.action == UiAction.EXPECT ->
+                Verdict(Kind.FAILED, "FAILED at step ${failure.index}: the check did not hold" + (failure.step.intent?.let { " ($it)" } ?: "") + soft)
+            failure != null -> Verdict(Kind.BROKEN, "BROKEN at step ${failure.index}: the step could not be done$repair$soft")
+            checked < bugSteps -> Verdict(Kind.INCOMPLETE, "INCOMPLETE: the run stopped before ${bugSteps - checked} bug check(s)$soft")
             bugSteps > 0 -> Verdict(Kind.NOT_REPRODUCED, "NOT REPRODUCED: every bug check passed$soft")
             else -> Verdict(Kind.PASSED, "PASSED: all ${outcomes.size} step(s)$soft")
         }

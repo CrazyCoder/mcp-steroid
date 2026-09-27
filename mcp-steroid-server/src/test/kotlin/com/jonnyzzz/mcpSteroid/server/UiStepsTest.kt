@@ -237,6 +237,17 @@ class UiStepsTest {
     }
 
     @Test
+    fun `screenshot takes an optional target and a plain file name`() {
+        val step = UiSteps.parse("""[{"action":"screenshot","name":"Settings categories","save":"settings-tree"}]""").single()
+        assertEquals(UiAction.SCREENSHOT, step.action)
+        assertEquals("settings-tree", step.save)
+        assertEquals(UiTarget(name = "Settings categories"), step.target)
+        assertNull(UiSteps.parse("""[{"action":"screenshot"}]""").single().target)
+        assertTrue(fails("""[{"action":"screenshot","save":"../up"}]""").contains("plain file name"))
+        assertTrue(fails("""[{"action":"click","name":"OK","save":"x"}]""").contains("save goes with screenshot"))
+    }
+
+    @Test
     fun `a step keeps the object it was written as`() {
         val step = UiSteps.parse("""[{"action":"click","ref":"e3","intent":"open it"}]""").single()
         assertEquals(setOf("action", "ref", "intent"), step.source!!.keys)

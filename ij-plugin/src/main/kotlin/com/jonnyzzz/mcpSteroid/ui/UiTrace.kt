@@ -27,15 +27,23 @@ class UiTrace(private val dir: Path) {
     /** Paints [window] into `NN-<suffix>.png` and returns the file name. Call on the EDT. */
     fun picture(window: Window, index: Int, suffix: String): String {
         val name = "%02d-%s.png".format(index, suffix)
-        val image = ImageUtil.createImage(window.width.coerceAtLeast(1), window.height.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
-        val g = image.createGraphics()
-        try {
-            window.printAll(g)
-        } finally {
-            g.dispose()
-        }
-        Files.newOutputStream(dir.resolve(name)).use { ImageIO.write(image, "png", it) }
+        paint(window, dir.resolve(name))
         return name
+    }
+
+    companion object {
+        /** Paints [window] as it shows, without the rest of the screen, into the PNG [file]. Call on the EDT. */
+        fun paint(window: Window, file: Path) {
+            val image = ImageUtil.createImage(window.width.coerceAtLeast(1), window.height.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
+            val g = image.createGraphics()
+            try {
+                window.printAll(g)
+            } finally {
+                g.dispose()
+            }
+            Files.createDirectories(file.parent)
+            Files.newOutputStream(file).use { ImageIO.write(image, "png", it) }
+        }
     }
 
     fun record(index: Int, label: String, line: String, failed: Boolean, snapshot: String, before: String?, after: String?, startedMs: Long, durationMs: Long) {

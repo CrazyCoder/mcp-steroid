@@ -61,9 +61,9 @@ interactive control in the topmost window that has one, and when two remain, add
 ref. While a modal dialog shows, only that dialog and its popups are searched. Add `"trace": true` to record a picture before and after
 each step for a reproduction.
 
-To check what the IDE shows (`expect`), change settings without opening their dialogs (`get` and `set`), and
-save the steps as a scenario that replays with a verdict, read
-[reproduction scenarios](mcp-steroid://ide/ui-scenarios).
+To check what the IDE shows (`expect`), change settings without opening their dialogs (`get` and `set`), save
+pictures for a visual review (`screenshot`), and keep the steps as a scenario that replays with a verdict, read
+[IDE scenarios](mcp-steroid://ide/ui-scenarios).
 
 ## See the UI with refs
 
@@ -258,7 +258,7 @@ window that holds it. Each call closes one window, so call it once per window yo
 
 # See also
 
-- [Record, check and replay bug reproductions with steroid_ui scenarios](mcp-steroid://ide/ui-scenarios)
+- [Record, check and replay IDE scenarios with steroid_ui](mcp-steroid://ide/ui-scenarios)
 - [Split Mode: what runs on the client and what runs on the backend](mcp-steroid://skill/split-mode)
 - [Discover IDE actions at caret](mcp-steroid://ide/action-discovery)
 - [Open Project (With Dialog Handling)](mcp-steroid://open-project/open-with-dialogs)

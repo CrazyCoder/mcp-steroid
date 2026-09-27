@@ -34,6 +34,7 @@ enum class UiAction(val wire: String) {
     WRITE("write"),
     PERF("perf"),
     CODE("code"),
+    SCREENSHOT("screenshot"),
 }
 
 enum class UiWaitCondition(val wire: String) {
@@ -135,6 +136,8 @@ data class UiStep(
     val tab: String? = null,
     /** On a toolwindow step: hide the tool window instead of showing it. */
     val hide: Boolean = false,
+    /** On a screenshot step: the picture's file name, without folder or extension. */
+    val save: String? = null,
     val command: String? = null,
     val code: String? = null,
     val modal: String? = null,
@@ -163,8 +166,9 @@ object UiSteps {
         "action", "button", "count", "modifiers", "offset_x", "offset_y", "keys", "row", "index", "for", "title", "timeout_ms",
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "error",
-        "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide",
+        "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save",
     )
+    private val SAVE_NAME = Regex("[A-Za-z0-9._-]{1,80}")
     private val BUTTONS = setOf("left", "right", "middle")
     /** Actions whose "text" is what they enter, look for in the editor or write, not a target. */
     private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO, UiAction.WRITE)
@@ -275,6 +279,7 @@ object UiSteps {
             field = obj.string("field"),
             tab = obj.string("tab"),
             hide = obj.boolean("hide") ?: false,
+            save = obj.string("save"),
             command = obj.string("command"),
             code = obj.string("code"),
             modal = obj.string("modal"),
@@ -315,6 +320,10 @@ object UiSteps {
         }
         if (step.modal != null) require(step.action == UiAction.CODE) { "modal goes with code, not $action" }
         if (step.tab != null || step.hide) require(step.action == UiAction.TOOLWINDOW) { "tab and hide go with toolwindow, not $action" }
+        step.save?.let {
+            require(step.action == UiAction.SCREENSHOT) { "save goes with screenshot, not $action" }
+            require(SAVE_NAME.matches(it) && !it.startsWith(".")) { "save is a plain file name of letters, digits, '.', '_' and '-', such as \"settings-appearance\"" }
+        }
         if (step.action != UiAction.GET && step.action != UiAction.SET) {
             val config = listOfNotNull(
                 step.registry?.let { "registry" }, step.advanced?.let { "advanced" }, step.option?.let { "option" },

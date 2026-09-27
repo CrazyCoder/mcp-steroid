@@ -61,7 +61,7 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 | Resource | Operation | Description |
 |----------|-----------|-------------|
 | `mcp-steroid://ide/ui-driving` | Drive UI Controls | Snapshot windows with refs, then click, type, select rows and close dialogs with steroid_ui or script helpers |
-| `mcp-steroid://ide/ui-scenarios` | Reproduction Scenarios | Record a bug reproduction as steroid_ui steps, check it with expect, change settings without dialogs, and replay it after a fix |
+| `mcp-steroid://ide/ui-scenarios` | IDE Scenarios | Script a repeatable IDE procedure as steroid_ui steps (a bug reproduction, a feature check, a visual review, a setup), check it with expect, change settings without dialogs, and replay it for a verdict |
 
 ## Usage
 

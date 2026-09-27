@@ -64,7 +64,8 @@ class UiToolHandlerIJ : UiToolHandler {
             else -> params.snapshot ?: UiSnapshotMode.DIFF
         }
         val trace = if (params.trace) UiTrace(project.executionStorage.resolveExecutionDir(executionId).resolve("trace")) else null
-        val session = UiSession(project, params.windowId, params.maxNodes, trace, params.taskId)
+        val session = UiSession(project, params.windowId, params.maxNodes, trace, params.taskId,
+            artifacts = project.executionStorage.resolveExecutionDir(executionId))
         // The steps' own waits bound the call, plus an allowance for delivery and settling per step.
         val budgetMs = (steps + cleanup).sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
         return try {

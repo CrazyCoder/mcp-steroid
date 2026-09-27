@@ -113,6 +113,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
         - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does
+        - {"action":"screenshot", optional target, "save":"name"}: saves a picture of the target's window, or of
+          the topmost one, to the execution folder, for a visual review
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows.
 
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
@@ -123,9 +125,11 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         reproduction needs. To only change code, and leave the user's windows alone, use steroid_refactor.
 
         Every call with steps records them to the task's recording file, named in the response, with refs
-        replaced by names so that they replay in another session. A reproduction is a scenario file of such
-        steps: `scenario` replays it and ends with a verdict, REPRODUCED, NOT REPRODUCED or BROKEN. Read
-        mcp-steroid://ide/ui-scenarios before recording or replaying one.
+        replaced by names so that they replay in another session. A scenario file of such steps is any
+        repeatable IDE procedure: a bug reproduction, a feature check, a visual review, a setup. `scenario`
+        replays it and ends with a verdict: PASSED, FAILED (a check did not hold), BROKEN (a step could not
+        be done), or REPRODUCED and NOT REPRODUCED for a bug check. Read mcp-steroid://ide/ui-scenarios before
+        recording or replaying one.
 
         A click that opens a modal dialog returns while the dialog is up, and the report names it. A step
         that runs an action or presses a button named with an ellipsis ("Settings…") waits up to 10 s for

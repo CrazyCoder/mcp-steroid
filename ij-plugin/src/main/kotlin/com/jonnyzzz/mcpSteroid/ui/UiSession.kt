@@ -83,6 +83,8 @@ class UiSession(
     private val maxNodes: Int,
     private val trace: UiTrace? = null,
     taskId: String = "",
+    /** Where a screenshot step saves its picture: the call's execution folder. */
+    private val artifacts: java.nio.file.Path? = null,
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput()
@@ -263,6 +265,7 @@ class UiSession(
         UiAction.SETTINGS -> withEffects {
             ideSteps.settings(step).also { o -> o.id?.let { portableFields["page"] = it } }.line
         }
+        UiAction.SCREENSHOT -> screenshotStep(step)
         UiAction.EXPECT -> error("an expect runs in run()")
         else -> withEffects { actStep(step) }
     }
@@ -326,7 +329,7 @@ class UiSession(
             UiAction.PERF -> ideSteps.perf(step)
             UiAction.TOOLWINDOW -> ideSteps.toolWindow(step)
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
-            UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS -> error("not an input step")
+            UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
         }
     }
 
@@ -572,6 +575,24 @@ class UiSession(
                 UiSettle.settle(quietMs = 300, maxMs = step.timeoutMs)
                 "the windows settled ${took()}"
             }
+        }
+    }
+
+    /**
+     * Saves a picture of the window that holds the target, or of the topmost window, as `<save>.png` in the call's
+     * execution folder, for a visual review: the agent reads the file, or a person compares it with an earlier run.
+     */
+    private suspend fun screenshotStep(step: UiStep): String {
+        val dir = artifacts ?: throw UiStepFailure("screenshot has no folder to save to in this call")
+        val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
+        UiSettle.settle()
+        return withContext(edtAny) {
+            val window = node?.let { it.component as? Window ?: SwingUtilities.getWindowAncestor(it.component) }
+                ?: scopeWindows().firstOrNull() ?: throw UiStepFailure("no window is showing")
+            val name = (step.save ?: "screenshot-${System.currentTimeMillis()}") + ".png"
+            val file = dir.resolve("screenshots").resolve(name)
+            UiTrace.paint(window, file)
+            "saved ${window.width}x${window.height} picture of ${describeWindow(window)} to $file"
         }
     }
 

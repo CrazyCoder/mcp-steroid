@@ -1,25 +1,37 @@
-IDE: Record, check and replay bug reproductions with steroid_ui scenarios
+IDE: Record, check and replay IDE scenarios with steroid_ui
 
-Reproduce a reported bug with steroid_ui steps, state the correct behavior with expect, save the steps as a scenario file, and replay it after the fix for a verdict.
+Script any repeatable IDE procedure as steroid_ui steps: reproduce a bug, check a feature, take pictures for a visual review, or set the IDE up; replay it anywhere for a verdict.
 
 # When to use this recipe
 
-Use it when a user's report says how to make the IDE misbehave and the reproduction must be repeatable: by
-another agent, on another IDE build, or after the fix to confirm it. A scenario is a JSON file of `steroid_ui`
-steps. Each step carries what it is for, and one or more `expect` steps state the behavior the report expected.
-`steroid_ui` replays the file in one call and ends with a verdict.
+A scenario is a JSON file of `steroid_ui` steps that another agent, another IDE build or a later run can
+repeat exactly. Each step carries what it is for, so a step the UI outgrew can be repaired by its purpose.
+`steroid_ui` replays the file in one call and ends with a verdict. Use one whenever a procedure in the IDE is
+worth doing more than once:
+
+| Kind | What it holds | Its verdict |
+|---|---|---|
+| Reproduction | The steps of a user's report, and a check marked `bug` that states the behavior the report expected | `REPRODUCED` while the bug is present, `NOT REPRODUCED` once it is fixed |
+| Check | Steps that exercise a feature, and `expect` steps that state what it must do, as an acceptance or regression test | `PASSED`, or `FAILED` at the check that did not hold |
+| Visual review | Steps that bring the IDE to each state worth seeing, and `screenshot` steps that save a picture of it | `PASSED`, with the pictures listed in the report for review |
+| Routine | Steps that set the IDE up or walk through a feature: a test environment, the settings a task needs, a demo | `PASSED` |
+
+The kinds mix freely: a reproduction can take pictures, a check can start with a setup. Whatever the kind, a
+step that cannot be done at all gives `BROKEN`, which means the scenario needs repair, not that the IDE is at
+fault.
 
 Read [Drive UI controls](mcp-steroid://ide/ui-driving) first for targets, refs, snapshots and the input steps.
-This recipe adds what a reproduction needs on top: checks, setup without dialogs, recording and replay.
+This recipe adds what a scenario needs on top: checks, setup without dialogs, pictures, recording and replay.
 
 ## The workflow
 
-1. **Set up** the state the report depends on with `set`, `write` and `settings` steps, not by clicking through
-   dialogs: a setting set directly is the same on every replay.
-2. **Reproduce** the report with `steroid_ui` steps, one call at a time, reading each response. Give every
-   step an `intent`, in the words of the report: "open the Rename dialog", "type the new name".
-3. **Check** the outcome with `expect` steps that state the *correct* behavior. The one that fails while the
-   bug is present gets `"bug"`: a sentence that names the bug. When it fails, the bug reproduced.
+1. **Set up** the state the procedure depends on with `set`, `write` and `settings` steps, not by clicking
+   through dialogs: a setting set directly is the same on every replay.
+2. **Do it** with `steroid_ui` steps, one call at a time, reading each response. Give every step an `intent`,
+   in plain words: "open the Rename dialog", "type the new name".
+3. **Check** the outcome with `expect` steps that state the *correct* behavior, and save the states worth
+   seeing with `screenshot`. In a reproduction, the check that fails while the bug is present gets `"bug"`: a
+   sentence that names the bug.
 4. **Save** the scenario. Every `steroid_ui` call with steps appends them to the task's recording file, named
    in the response (`recorded: ... to <file>`), with refs already replaced by names, captions or classes, row
    indexes by row text, Settings pages by their id and option names by their full name. The lines of that
@@ -27,8 +39,9 @@ This recipe adds what a reproduction needs on top: checks, setup without dialogs
    `cleanup` that puts the IDE back.
 5. **Replay** it with `steroid_ui` and `scenario` set to the file's path. Replay it once right away: a scenario
    that does not replay in a fresh call is not done.
-6. **After the fix**, replay it again. `NOT REPRODUCED` confirms the fix. `BROKEN` means the steps no longer get
-   to the check, usually because the UI changed: repair the failing step by its `intent`, and replay.
+6. **Replay it again** whenever it matters: after a fix (`NOT REPRODUCED` confirms it), on a new IDE build, or
+   before a release. `BROKEN` means a step no longer works, usually because the UI changed: repair the failing
+   step by its `intent`, and replay.
 
 ## The scenario file
 
@@ -59,10 +72,10 @@ This recipe adds what a reproduction needs on top: checks, setup without dialogs
 |---|---|---|
 | `scenario` | yes | The format version, `1`. A version this IDE does not know fails the replay instead of running it half-understood |
 | `title` | yes | What the scenario shows, as an issue title would say it |
-| `issue` | no | The issue it reproduces, such as `IDEA-123456` |
+| `issue` | no | The issue it reproduces or checks, such as `IDEA-123456` |
 | `ide` | no | The IDE build it was recorded or last repaired on, as `IU-262.10968.63`. A replay on another build says so, as a hint that a failing step may need repair rather than that the bug is back |
 | `project` | no | What must be open: a project, a file layout, a plugin. The steps do not open projects |
-| `description` | no | The report in a few sentences, for the next agent |
+| `description` | no | What the scenario is about in a few sentences, such as the report it reproduces, for the next agent |
 | `steps` | yes | The steps, in order |
 | `cleanup` | no | Steps that run after the others whether they passed or failed. Each cleanup step runs even when the one before it failed, so a `close` with nothing open stops nothing |
 
@@ -77,13 +90,16 @@ intent and ends with one verdict:
 
 | Verdict | Meaning |
 |---|---|
-| `REPRODUCED at step N: <bug>` | A bug check failed: the bug is present. Its report says what the IDE showed instead |
+| `PASSED` | Every step was done and every check held |
+| `FAILED at step N` | A check did not hold: the IDE behaves otherwise than the scenario says it should. The step's report says what it found |
+| `BROKEN at step N` | A step could not be done, or in a reproduction, the steps did not reach the bug check. Repair the step by its intent |
+| `REPRODUCED at step N: <bug>` | A bug check failed: the bug is present |
 | `NOT REPRODUCED` | Every bug check passed: the bug is fixed, or the scenario no longer reaches it |
-| `BROKEN at step N` | A step before the bug check failed: the scenario could not get there. Repair the step by its intent. The call is marked as an error |
 | `INCOMPLETE` | `to_step` stopped the run before a bug check |
-| `PASSED` or `FAILED at step N` | The steps have no bug check |
 
-A `bug` check also works in a plain `steps` call, which is how a reproduction is checked before it is saved.
+`FAILED` and `BROKEN` mark the call as an error; `REPRODUCED` does not, because showing the bug is what a
+reproduction is for. A `bug` check also works in a plain `steps` call, which is how a reproduction is checked
+before it is saved.
 
 ## expect: check what the IDE shows
 
@@ -134,6 +150,18 @@ Other setup steps:
   does, for setup that no step covers, and fails the step when the script fails. Its default `modal` closes
   open dialogs, so pass `non_modal` or `dialog` in the middle of a dialog flow.
 
+## Pictures for a visual review
+
+`{"action":"screenshot","save":"appearance-page"}` saves a picture of the topmost window as
+`screenshots/appearance-page.png` in the call's execution folder, and the step's report gives the full path.
+With a target, such as `{"action":"screenshot","name":"Settings categories","save":"tree"}`, it pictures the
+window that holds the target. It paints only that window, never the rest of the screen, and lets the UI
+settle first. Read the saved file to review it, or keep it next to the scenario to compare with a later run.
+Name each picture after the state it shows, so a replay's pictures line up with the earlier ones.
+
+Use pictures for what text cannot check: layout, icons, colors, clipping, a theme. For anything a snapshot
+shows, an `expect` is the stronger check, because it fails on its own.
+
 ## Editor steps from the Performance Testing plugin
 
 `{"action":"perf","command":"..."}` runs playback commands of the Performance Testing plugin, which
@@ -176,8 +204,9 @@ These follow the practices of Playwright and other UI test tools:
   with either spelling of an ellipsis. Avoid `xpath` and `nth` where a name or a class tells controls apart.
 - **Never sleep.** Steps wait for their target, `select` for its row, a step that opens a window for the
   window, and `expect` retries. A fixed delay is either too short on a slow machine or wasted on a fast one.
-- **State the correct behavior, once.** The bug check says what should happen, so the same file reports
-  `REPRODUCED` before the fix and `NOT REPRODUCED` after it. Keep to one bug check per reported problem.
+- **State the correct behavior.** A check says what should happen, never what goes wrong, so the same file
+  reports `REPRODUCED` before a fix and `NOT REPRODUCED` after it, or `FAILED` on the build that broke it.
+  Keep to one bug check per reported problem.
 - **Set up by value, not by clicks.** A `set` step pins a setting the bug depends on whatever the machine had.
   Clicks are for the part of the report that is about the UI.
 - **Leave the IDE as you found it.** Restore every `set` in `cleanup`, and close what the steps opened.

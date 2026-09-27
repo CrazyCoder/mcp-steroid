@@ -72,10 +72,21 @@ class UiScenarioTest {
         assertTrue(v.line.contains("step 1") && v.line.contains("confirm"), v.line)
     }
 
+    private val check = UiStep(UiAction.EXPECT, UiTarget(name = "Apply"), intent = "Apply is enabled")
+
     @Test
-    fun `steps without a bug check pass or fail, and soft failures are counted`() {
+    fun `without a bug check, a check that fails is FAILED and a step that cannot be done is BROKEN`() {
+        val failed = UiVerdict.of(listOf(click, check), listOf(ok(1, click), bad(2, check)))
+        assertEquals(UiVerdict.Kind.FAILED, failed.kind)
+        assertEquals("FAILED at step 2: the check did not hold (Apply is enabled)", failed.line)
+        val broken = UiVerdict.of(listOf(click, check), listOf(bad(1, click)))
+        assertEquals(UiVerdict.Kind.BROKEN, broken.kind)
+        assertTrue(broken.line.contains("could not be done") && broken.line.contains("confirm"), broken.line)
+    }
+
+    @Test
+    fun `steps without a bug check pass, and soft failures are counted`() {
         assertEquals(UiVerdict.Kind.PASSED, UiVerdict.of(listOf(click), listOf(ok(1, click))).kind)
-        assertEquals(UiVerdict.Kind.FAILED, UiVerdict.of(listOf(click), listOf(bad(1, click))).kind)
         val soft = UiVerdict.of(listOf(softCheck, click), listOf(bad(1, softCheck), ok(2, click)))
         assertEquals(UiVerdict.Kind.PASSED, soft.kind)
         assertTrue(soft.line.contains("1 soft check(s) failed: steps 1"), soft.line)
