@@ -12,6 +12,7 @@ import com.intellij.codeInspection.ex.InspectionManagerEx
 import com.intellij.codeInspection.ex.InspectionProfileImpl
 import com.intellij.codeInspection.ex.InspectionToolWrapper
 import com.intellij.codeInspection.ex.InspectionToolsSupplier
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.WriteIntentReadAction
 import com.intellij.openapi.application.readAction
@@ -19,6 +20,8 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.InvalidDataException
+import com.intellij.openapi.util.WriteExternalException
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiFile
@@ -70,8 +73,9 @@ class UnknownInspectionsException(val unknown: List<String>, val similar: List<S
 class BatchInspection(private val project: Project) {
 
     /**
-     * Inspects [scope] with the current profile, or with only the [inspections] given by short name (and the
-     * inspections they depend on). Past [timeout] the run is cancelled and returns what it found so far.
+     * Inspects [scope] with the current profile, or with only the [inspections] given by short name; the
+     * inspections they depend on run too, and their problems are left out. Past [timeout] the run is cancelled
+     * and returns what it found so far.
      *
      * An inspection that crashes on a file makes the engine drop that file's other results, so the files a crash
      * hit are inspected again without the crashed inspections, up to [MAX_CRASH_ROUNDS] times.
@@ -81,9 +85,10 @@ class BatchInspection(private val project: Project) {
             throw IllegalStateException("the project has no modules, so the IDE cannot inspect it")
         }
         val deadline = TimeSource.Monotonic.markNow() + timeout
+        fun remaining() = (-deadline.elapsedNow()).coerceAtLeast(Duration.ZERO)
         val names = inspections?.takeIf { it.isNotEmpty() }
         val crashed = LinkedHashMap<String, String>()
-        var round = runOnce(scope, names?.let { restrictedProfile(it) }, (-deadline.elapsedNow()).coerceAtLeast(Duration.ZERO))
+        var round = runOnce(scope, names?.let { restrictedProfile(it) }, remaining())
         var problems = round.problems
         var rounds = 0
         while (round.finished && round.crashes.isNotEmpty() && rounds++ < MAX_CRASH_ROUNDS) {
@@ -92,10 +97,11 @@ class BatchInspection(private val project: Project) {
             val left = (names ?: enabledInspections()).filter { it !in crashed }
             problems = readAction { problems.filter { fileOf(it) !in files } }
             if (files.isEmpty() || left.isEmpty()) break
-            round = runOnce(AnalysisScope(project, files), restrictedProfile(left), (-deadline.elapsedNow()).coerceAtLeast(Duration.ZERO))
+            round = runOnce(AnalysisScope(project, files), restrictedProfile(left), remaining())
             problems = problems + round.problems
         }
         round.crashes.forEach { crashed.putIfAbsent(it.tool, it.error) }
+        if (names != null) problems = problems.filter { it.shortName in names }
         return BatchInspectionResult(problems, round.finished, scope.fileCount, crashed)
     }
 
@@ -138,7 +144,9 @@ class BatchInspection(private val project: Project) {
         }
     }
 
-    private fun fileOf(problem: FoundProblem): VirtualFile? = problem.descriptor.psiElement?.containingFile?.virtualFile
+    /** The file [problem] is in, the host file for a problem in injected code, as the engine names a crash's file. Read action. */
+    private fun fileOf(problem: FoundProblem): VirtualFile? =
+        problem.descriptor.psiElement?.takeIf { it.isValid }?.let { InjectedLanguageManager.getInstance(project).getTopLevelFile(it) }?.virtualFile
 
     private suspend fun enabledInspections(): List<String> = readAction {
         InspectionProjectProfileManager.getInstance(project).currentProfile.getAllEnabledInspectionTools(project).map { it.tool.shortName }
@@ -177,9 +185,11 @@ class BatchInspection(private val project: Project) {
         for (wrapper in wrappers) {
             model.enableTool(wrapper.shortName, project)
             val settings = Element("toCopy")
-            runCatching {
+            try {
                 wrapper.tool.writeSettings(settings)
                 model.getInspectionTool(wrapper.shortName, project)?.tool?.readSettings(settings)
+            } catch (_: WriteExternalException) {
+            } catch (_: InvalidDataException) {
             }
         }
         model

@@ -65,6 +65,18 @@ class BatchInspectionTest : BasePlatformTestCase() {
         }
     }
 
+    fun `test a named inspection runs when the profile disables it`() {
+        val other = OtherStubInspection()
+        myFixture.enableInspections(HealthyStubInspection(), other)
+        myFixture.disableInspections(other)
+        val file = sourceFile()
+        val batch = BatchInspection(project)
+        timeoutRunBlocking(60.seconds) {
+            assertEquals(listOf("HealthyStubInspection"), batch.run(batch.scopeOf(listOf(file))).problems.map { it.shortName })
+            assertEquals(listOf("OtherStubInspection"), batch.run(batch.scopeOf(listOf(file)), listOf("OtherStubInspection")).problems.map { it.shortName })
+        }
+    }
+
     fun `test an unknown inspection name fails with similar names`() {
         myFixture.enableInspections(HealthyStubInspection())
         val file = sourceFile()

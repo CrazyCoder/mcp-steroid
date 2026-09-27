@@ -385,7 +385,7 @@ class RefactorEngine(private val project: Project) {
     }
 
     private suspend fun problems(target: Target, shortName: String): List<ProblemDescriptor> =
-        inspect(target, listOf(shortName)).filter { it.first == shortName }.map { it.second }
+        inspect(target, listOf(shortName)).map { it.second }
 
     /**
      * What the current profile, or only the inspections [shortNames], report on the target's file, by position,
