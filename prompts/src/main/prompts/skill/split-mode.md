@@ -20,6 +20,19 @@ project work to the backend.
 `steroid_list_projects` is always answered by the process that holds the projects, so through the client's
 endpoint it shows only the `backend` entry. Use `steroid_list_windows` to tell the setups apart.
 
+## Both sides need the same MCP Steroid version
+
+When the JetBrains Client connects, its plugin sync compares the plugins on both sides. A plugin that runs on
+both sides with different versions, or is loaded on only one, is disabled on both, and the backend unloads
+it. The client log then has `PairedPluginStateEnforcer - Disabling paired plugins ... mcp-steroid ->
+[VERSION_MISMATCH]` or `[NOT_LOADED_ON_CLIENT]`, and the plugin stays disabled on the next start.
+
+So install the same build on both sides before the client connects. The client loads its plugins from the
+`frontend` folder of the plugins directory, and keeps its disabled plugins in `disabled_plugins_frontend.txt`
+in the config directory. A client started by `idea64 splitMode <project>` uses the default directories even
+when the backend runs with a custom `idea.properties`. After a mismatch, remove
+`io.github.crazycoder.mcp-steroid` from that file and from the backend's `disabled_plugins.txt`.
+
 Inside a script, ask the platform:
 
 ```kotlin
