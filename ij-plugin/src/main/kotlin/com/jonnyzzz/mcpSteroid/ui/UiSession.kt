@@ -437,23 +437,29 @@ class UiSession(
         if (!table.editCellAt(index, column)) throw UiStepFailure("row #$index \"${rows[index]}\" of ${describe(node)} did not start editing")
         val editor = table.editorComponent ?: throw UiStepFailure("row #$index \"${rows[index]}\" of ${describe(node)} opened no editor")
         val text = step.text!!
-        when {
-            editor is JComboBox<*> -> {
-                val item = (0 until editor.itemCount).firstOrNull { UiComponentFacts.clean(editor.getItemAt(it).toString()) == text }
-                    ?: throw UiStepFailure("the cell's list has no item \"$text\"; items: " + (0 until minOf(editor.itemCount, 20)).joinToString { editor.getItemAt(it).toString() })
-                editor.selectedIndex = item
+        try {
+            when {
+                editor is JComboBox<*> -> {
+                    val item = (0 until editor.itemCount).firstOrNull { UiComponentFacts.clean(editor.getItemAt(it).toString()) == text }
+                        ?: throw UiStepFailure("the cell's list has no item \"$text\"; items: " + (0 until minOf(editor.itemCount, 20)).joinToString { editor.getItemAt(it).toString() })
+                    editor.selectedIndex = item
+                }
+                editor is AbstractButton -> editor.isSelected = when (text.lowercase()) {
+                    in CHECKED_WORDS -> true
+                    in UNCHECKED_WORDS -> false
+                    else -> throw UiStepFailure("the cell is a checkbox: fill it with true or false, not \"$text\"")
+                }
+                else -> {
+                    val field = editor as? JTextComponent ?: UIUtil.findComponentOfType(editor as? JComponent, JTextComponent::class.java)
+                        ?: throw UiStepFailure("the cell's editor ${UiComponentFacts.simpleClassName(editor)} takes no text")
+                    field.text = text
+                    (editor as? JSpinner)?.commitEdit()
+                }
             }
-            editor is AbstractButton -> editor.isSelected = when (text.lowercase()) {
-                in CHECKED_WORDS -> true
-                in UNCHECKED_WORDS -> false
-                else -> throw UiStepFailure("the cell is a checkbox: fill it with true or false, not \"$text\"")
-            }
-            else -> {
-                val field = editor as? JTextComponent ?: UIUtil.findComponentOfType(editor as? JComponent, JTextComponent::class.java)
-                    ?: throw UiStepFailure("the cell's editor ${UiComponentFacts.simpleClassName(editor)} takes no text")
-                field.text = text
-                (editor as? JSpinner)?.commitEdit()
-            }
+        } catch (e: UiStepFailure) {
+            // A value the cell does not take leaves it as it was, not half edited.
+            table.cellEditor?.cancelCellEditing()
+            throw e
         }
         if (table.isEditing && table.cellEditor?.stopCellEditing() == false) {
             table.cellEditor?.cancelCellEditing()
