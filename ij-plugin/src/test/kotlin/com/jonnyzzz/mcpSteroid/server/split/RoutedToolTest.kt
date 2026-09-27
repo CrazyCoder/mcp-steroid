@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.server.split
 
 import com.intellij.openapi.project.Project
+import com.jonnyzzz.mcpSteroid.freeze.FreezeMonitor
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpSession
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
@@ -17,6 +18,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 
 class RoutedToolTest {
@@ -52,6 +55,20 @@ class RoutedToolTest {
         ToolCallContext(ToolCallParams(name = name), McpSession(), reporter)
 
     private fun text(r: ToolCallResult) = (r.content.single() as ContentItem.Text).text
+
+    // Errors other tests logged into the shared test application would lead every result here.
+    private val monitor = FreezeMonitor.getInstanceOrNull()
+    private val ideErrors = monitor?.ideErrors
+
+    @Before
+    fun hideIdeErrors() {
+        monitor?.ideErrors = { null }
+    }
+
+    @After
+    fun restoreIdeErrors() {
+        if (ideErrors != null) monitor?.ideErrors = ideErrors
+    }
 
     @Test
     fun `split frontend forwards a backend tool and relays progress`() = runBlocking {

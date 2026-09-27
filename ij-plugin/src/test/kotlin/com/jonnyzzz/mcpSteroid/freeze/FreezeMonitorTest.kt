@@ -116,7 +116,7 @@ class FreezeMonitorTest {
     fun `a call cancelled inside the IDE is answered, not thrown`() = runBlocking {
         val scope = CoroutineScope(SupervisorJob())
         try {
-            val result = FreezeMonitor(scope).guard(Any()) { throw kotlinx.coroutines.CancellationException("the UI froze") }
+            val result = FreezeMonitor(scope).also { it.ideErrors = { null } }.guard(Any()) { throw kotlinx.coroutines.CancellationException("the UI froze") }
             assertTrue(result.isError)
             assertEquals("The call was cancelled inside the IDE: the UI froze", (result.content.single() as ContentItem.Text).text)
         } finally {
@@ -138,7 +138,7 @@ class FreezeMonitorTest {
     fun `a call a freeze holds up is answered early, and an ended freeze is told once per session`() = runBlocking {
         val scope = CoroutineScope(SupervisorJob())
         try {
-            val monitor = FreezeMonitor(scope)
+            val monitor = FreezeMonitor(scope).also { it.ideErrors = { null } }
             val session = Any()
             val ok = ToolCallResult(listOf(ContentItem.Text("ok")))
             assertEquals(ok, monitor.guard(session) { ok })
