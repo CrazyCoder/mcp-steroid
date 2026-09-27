@@ -124,6 +124,14 @@ those artifacts.
    verifier reports any internal-API usage on a primary target, replace it with a public
    alternative before continuing — **do not ship.**
 
+   **MCP Steroid Plus (the CrazyCoder fork) does not apply 5b.** The fork is not published on
+   the Marketplace, and its compile-free steps (`steroid_ui` get/set, banners, playback) need
+   platform internals that have no public replacement. For the fork, the gate is 5a: the
+   verifier must report `Compatible.` on the previous, the current and the next (EAP) major
+   version, which is the set in `McpSteroidIdeTargets.verifierTargets`. The build's
+   `failureLevel` already leaves internal-API usages out. Contain each internal call so a
+   change in a later build fails only the feature that uses it, never every tool call.
+
    **Secondary EAP-target exception (0.101/0.102 precedent):** a *forward-looking EAP*
    target in the verification set may report internal usages when the EAP newly marks an
    API internal and no public replacement exists on BOTH the shipping and the EAP version.
