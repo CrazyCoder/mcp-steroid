@@ -220,7 +220,7 @@ class UiSession(
         // The backend moved its caret, but the user sees no editor: every step after this one would act elsewhere.
         val shown = editor ?: throw UiStepFailure(
             "the backend opened $file, but the JetBrains Client shows no editor of $name after $EDITOR_WAIT_MS ms; " +
-                "a tab the Client restored when it connected shows its editor only once the tab is clicked: " +
+                "a tab the Client restored when it connected can show its editor only once the tab is clicked: " +
                 "{\"action\":\"click\",\"name\":\"$name\",\"class\":\"EditorTabLabel\"}"
         )
         withContext(edtAny) { IdeFocusManager.getInstance(project).requestFocus(shown.contentComponent, true) }
