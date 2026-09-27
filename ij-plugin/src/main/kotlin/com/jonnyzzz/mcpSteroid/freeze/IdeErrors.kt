@@ -51,6 +51,9 @@ class IdeErrors(private val scope: CoroutineScope) {
         while (errors.size > MAX_KEPT) errors.removeFirst()
     }
 
+    /** The errors logged at [fromMs] or later, oldest first. */
+    fun since(fromMs: Long): List<IdeError> = synchronized(errors) { errors.filter { it.atMs >= fromMs } }
+
     /**
      * Records that a call of [session] listed the errors logged from [fromMs] to [toMs] in its own result.
      * Errors are matched by the time they were logged: one logged just before the call returns can reach

@@ -163,6 +163,86 @@ class UiStepsTest {
     }
 
     @Test
+    fun `expect reads its subject, check and flags`() {
+        val step = UiSteps.parse("""[{"action":"expect","name":"Size:","value":"12.0","not":true,"soft":true,"intent":"font size kept"}]""").single()
+        assertEquals(UiAction.EXPECT, step.action)
+        assertEquals(UiTarget(name = "Size:"), step.target)
+        assertEquals("12.0", step.value)
+        assertTrue(step.negate && step.soft)
+        assertEquals("font size kept", step.intent)
+        val state = UiSteps.parse("""[{"action":"expect","name":"Show line numbers","is":"checked"}]""").single()
+        assertEquals(UiExpectState.CHECKED, state.state)
+        val count = UiSteps.parse("""[{"action":"expect","class":"JButton","count":0}]""").single()
+        assertEquals(0, count.expectCount)
+        assertEquals(1, count.count)
+    }
+
+    @Test
+    fun `expect takes exactly one subject`() {
+        assertTrue(fails("""[{"action":"expect"}]""").contains("needs one subject"))
+        assertTrue(fails("""[{"action":"expect","name":"OK","title":"Settings"}]""").contains("not a target and title"))
+        assertEquals("Settings", UiSteps.parse("""[{"action":"expect","title":"Settings","is":"hidden"}]""").single().title)
+        assertEquals("", UiSteps.parse("""[{"action":"expect","error":"","not":true}]""").single().error)
+        assertEquals("Indexing", UiSteps.parse("""[{"action":"expect","notification":"Indexing"}]""").single().notification)
+    }
+
+    @Test
+    fun `expect checks fit their subject`() {
+        assertTrue(fails("""[{"action":"expect","name":"t","is":"selected"}]""").contains("add row or index"))
+        assertTrue(fails("""[{"action":"expect","name":"t","row":"Editor","is":"checked"}]""").contains("row states"))
+        assertTrue(fails("""[{"action":"expect","name":"t","count":2,"is":"visible"}]""").contains("pass it alone"))
+        assertTrue(fails("""[{"action":"expect","name":"t","value":"a","contains":"b"}]""").contains("one of value"))
+        assertTrue(fails("""[{"action":"expect","name":"t","matches":"("}]""").contains("regular expression"))
+        assertTrue(fails("""[{"action":"expect","title":"S","value":"x"}]""").contains("is=visible or is=hidden only"))
+        assertTrue(fails("""[{"action":"expect","file":"A.kt"}]""").contains("needs value, contains, matches or caret"))
+        assertTrue(fails("""[{"action":"expect","file":"A.kt","caret":"3"}]""").contains("line:column"))
+        assertTrue(fails("""[{"action":"expect","error":"NPE","is":"visible"}]""").contains("text alone"))
+        val file = UiSteps.parse("""[{"action":"expect","file":"A.kt","line":3,"contains":"foo"}]""").single()
+        assertEquals(3, file.line)
+        assertEquals("foo", file.contains)
+        assertEquals(3, UiSteps.parse("""[{"action":"expect","ref":"e4#3","is":"selected"}]""").single().index)
+    }
+
+    @Test
+    fun `expect flags stay on expect, and bug goes with expect and code`() {
+        assertTrue(fails("""[{"action":"click","name":"OK","soft":true}]""").contains("soft goes with expect"))
+        assertTrue(fails("""[{"action":"click","name":"OK","not":true}]""").contains("not goes with expect"))
+        assertTrue(fails("""[{"action":"click","name":"OK","is":"checked"}]""").contains("go(es) with expect"))
+        assertTrue(fails("""[{"action":"click","name":"OK","bug":"x"}]""").contains("bug goes with expect and code"))
+        assertTrue(fails("""[{"action":"expect","name":"OK","bug":"x","soft":true}]""").contains("cannot be soft"))
+        assertEquals("rename breaks", UiSteps.parse("""[{"action":"code","code":"check(false)","bug":"rename breaks"}]""").single().bug)
+    }
+
+    @Test
+    fun `settings, set, write, perf and code read their fields`() {
+        assertEquals("Editor > General", UiSteps.parse("""[{"action":"settings","page":"Editor > General"}]""").single().page)
+        assertTrue(fails("""[{"action":"settings"}]""").contains("needs a page"))
+        val registry = UiSteps.parse("""[{"action":"set","registry":"ide.a","value":true}]""").single()
+        assertEquals("ide.a", registry.registry)
+        assertEquals("true", registry.value)
+        assertTrue(fails("""[{"action":"set","registry":"a","advanced":"b","value":"1"}]""").contains("exactly one"))
+        assertTrue(fails("""[{"action":"set","registry":"a"}]""").contains("needs a value"))
+        val write = UiSteps.parse("""[{"action":"write","file":"src/A.kt","text":""}]""").single()
+        assertEquals("", write.text)
+        assertNull(write.target)
+        assertTrue(fails("""[{"action":"write","file":"A.kt"}]""").contains("needs text"))
+        val perf = UiSteps.parse("""[{"action":"perf","command":"%openFile A.kt"}]""").single()
+        assertEquals(UiSteps.LONG_DEFAULT_TIMEOUT_MS, perf.timeoutMs)
+        val code = UiSteps.parse("""[{"action":"code","code":"println(1)","modal":"dialog","timeout_ms":900000}]""").single()
+        assertEquals("dialog", code.modal)
+        assertEquals(UiSteps.LONG_MAX_TIMEOUT_MS, code.timeoutMs)
+        assertTrue(fails("""[{"action":"code","code":"x","modal":"any"}]""").contains("unknown modal"))
+        assertTrue(fails("""[{"action":"click","name":"a","modal":"dialog"}]""").contains("modal goes with code"))
+        assertTrue(fails("""[{"action":"click","name":"a","value":"x"}]""").contains("value goes with"))
+    }
+
+    @Test
+    fun `a step keeps the object it was written as`() {
+        val step = UiSteps.parse("""[{"action":"click","ref":"e3","intent":"open it"}]""").single()
+        assertEquals(setOf("action", "ref", "intent"), step.source!!.keys)
+    }
+
+    @Test
     fun `input that is not an array of objects fails`() {
         assertTrue(fails("""{"action":"click"}""").contains("JSON array"))
         assertTrue(fails("""[1]""").contains("object"))

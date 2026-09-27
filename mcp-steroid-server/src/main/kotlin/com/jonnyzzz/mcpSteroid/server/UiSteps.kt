@@ -6,6 +6,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
@@ -25,6 +26,14 @@ enum class UiAction(val wire: String) {
     RUN("run"),
     INSPECT("inspect"),
     SCROLL("scroll"),
+    EXPECT("expect"),
+    SETTINGS("settings"),
+    GET("get"),
+    SET("set"),
+    TOOLWINDOW("toolwindow"),
+    WRITE("write"),
+    PERF("perf"),
+    CODE("code"),
 }
 
 enum class UiWaitCondition(val wire: String) {
@@ -33,6 +42,21 @@ enum class UiWaitCondition(val wire: String) {
     ENABLED("enabled"),
     WINDOW("window"),
     IDLE("idle"),
+}
+
+/** The state an expect step checks with "is". The row states need a "row" or an "index". */
+enum class UiExpectState(val wire: String, val ofRow: Boolean = false) {
+    VISIBLE("visible"),
+    HIDDEN("hidden"),
+    ENABLED("enabled"),
+    DISABLED("disabled"),
+    CHECKED("checked"),
+    UNCHECKED("unchecked"),
+    FOCUSED("focused"),
+    EDITABLE("editable"),
+    SELECTED("selected", ofRow = true),
+    EXPANDED("expanded", ofRow = true),
+    COLLAPSED("collapsed", ofRow = true),
 }
 
 /** What a step acts on. Every given field must match; [nth] picks one of several matches, from 0. */
@@ -78,6 +102,44 @@ data class UiStep(
     /** Which occurrence a goto symbol or text means, from 0; a target carries its own. */
     val nth: Int = 0,
     val timeoutMs: Long = UiSteps.DEFAULT_TIMEOUT_MS,
+    /** What the step is for, in the words of the report it reproduces. Echoed in the step's report. */
+    val intent: String? = null,
+    /** On an expect or code step: the bug that is present when the step fails. */
+    val bug: String? = null,
+    /** On an expect step: a failure is reported and the run goes on. */
+    val soft: Boolean = false,
+    /** On an expect step: the check must not hold. */
+    val negate: Boolean = false,
+    val state: UiExpectState? = null,
+    val value: String? = null,
+    val contains: String? = null,
+    val matches: String? = null,
+    /** On an expect step: how many controls the target matches. */
+    val expectCount: Int? = null,
+    /** On an expect step with a file: the caret as `line:column`, both 1-based. */
+    val caret: String? = null,
+    val notification: String? = null,
+    val error: String? = null,
+    val page: String? = null,
+    val registry: String? = null,
+    val advanced: String? = null,
+    /** A get or set of an option as Search Everywhere lists it, such as "Show line numbers". */
+    val option: String? = null,
+    /** A get or set of an inspection in the project's current profile, by its short name. */
+    val inspection: String? = null,
+    /** A get or set of a persistent settings component by its state name, such as "EditorSettings". */
+    val component: String? = null,
+    /** The option of [component] a get reads or a set changes. */
+    val field: String? = null,
+    /** On a toolwindow step: the content tab to select. */
+    val tab: String? = null,
+    /** On a toolwindow step: hide the tool window instead of showing it. */
+    val hide: Boolean = false,
+    val command: String? = null,
+    val code: String? = null,
+    val modal: String? = null,
+    /** The step as it was written, which a recording rewrites into a portable step. */
+    val source: JsonObject? = null,
 )
 
 /**
@@ -89,20 +151,30 @@ object UiSteps {
     const val DEFAULT_TIMEOUT_MS = 5_000L
     const val MAX_TIMEOUT_MS = 60_000L
 
+    /** Steps that compile or run a playback script take longer than a UI step. */
+    const val LONG_DEFAULT_TIMEOUT_MS = 60_000L
+    const val LONG_MAX_TIMEOUT_MS = 600_000L
+    private val LONG_ACTIONS = setOf(UiAction.PERF, UiAction.CODE)
+
+    val MODALS = setOf("smart_non_modal", "non_modal", "unleashed", "dialog")
+
     private val TARGET_FIELDS = setOf("ref", "name", "text", "class", "xpath", "nth")
     private val FIELDS = TARGET_FIELDS + setOf(
         "action", "button", "count", "modifiers", "offset_x", "offset_y", "keys", "row", "index", "for", "title", "timeout_ms",
         "file", "line", "column", "symbol", "id", "pages",
+        "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "error",
+        "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide",
     )
     private val BUTTONS = setOf("left", "right", "middle")
-    /** Actions whose "text" is what they enter or look for in the editor, not a target. */
-    private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO)
+    /** Actions whose "text" is what they enter, look for in the editor or write, not a target. */
+    private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO, UiAction.WRITE)
     private val NEEDS_TARGET = setOf(
         UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT, UiAction.INSPECT, UiAction.SCROLL,
     )
     /** Actions that take a row of a list, tree, table or tabbed pane: "row", "index" or a row ref. */
-    private val ROW_ACTIONS = setOf(UiAction.SELECT, UiAction.INSPECT, UiAction.CLICK, UiAction.HOVER, UiAction.SCROLL)
+    private val ROW_ACTIONS = setOf(UiAction.SELECT, UiAction.INSPECT, UiAction.CLICK, UiAction.HOVER, UiAction.SCROLL, UiAction.EXPECT)
     private val ROW_REF = Regex("""(e\d+)#(\d+)""")
+    private val CARET = Regex("""(\d+):(\d+)""")
 
     /**
      * [step] with a row ref such as `e12#3` split into its control's ref and the row index, as a snapshot lists row #3
@@ -126,13 +198,15 @@ object UiSteps {
             throw IllegalArgumentException("steps is not valid JSON: ${e.message}", e)
         }
         val array = root as? JsonArray ?: throw IllegalArgumentException("steps must be a JSON array of step objects")
-        return array.mapIndexed { i, element ->
-            val obj = element as? JsonObject ?: throw IllegalArgumentException("step ${i + 1} must be an object")
-            try {
-                parseStep(obj)
-            } catch (e: IllegalArgumentException) {
-                throw IllegalArgumentException("step ${i + 1}: ${e.message}", e)
-            }
+        return parse(array)
+    }
+
+    fun parse(array: JsonArray): List<UiStep> = array.mapIndexed { i, element ->
+        val obj = element as? JsonObject ?: throw IllegalArgumentException("step ${i + 1} must be an object")
+        try {
+            parseStep(obj)
+        } catch (e: IllegalArgumentException) {
+            throw IllegalArgumentException("step ${i + 1}: ${e.message}", e)
         }
     }
 
@@ -148,13 +222,14 @@ object UiSteps {
             text = obj.string("text").takeIf { action !in TEXT_IS_INPUT },
             cls = obj.string("class"),
             xpath = obj.string("xpath"),
-            nth = obj.int("nth"),
+            nth = obj.int("nth").takeIf { action != UiAction.GOTO },
         ).takeIf { it.ref != null || it.name != null || it.text != null || it.cls != null || it.xpath != null }
+        val long = action in LONG_ACTIONS
         val step = UiStep(
             action = action,
             target = target,
             button = obj.string("button"),
-            count = obj.int("count") ?: 1,
+            count = obj.int("count").takeIf { action != UiAction.EXPECT } ?: 1,
             modifiers = obj.string("modifiers"),
             offsetX = obj.int("offset_x"),
             offsetY = obj.int("offset_y"),
@@ -173,8 +248,37 @@ object UiSteps {
             column = obj.int("column"),
             symbol = obj.string("symbol"),
             id = obj.string("id"),
-            nth = obj.int("nth") ?: 0,
-            timeoutMs = (obj.long("timeout_ms") ?: DEFAULT_TIMEOUT_MS).coerceIn(0, MAX_TIMEOUT_MS),
+            nth = obj.int("nth").takeIf { action == UiAction.GOTO } ?: 0,
+            timeoutMs = (obj.long("timeout_ms") ?: if (long) LONG_DEFAULT_TIMEOUT_MS else DEFAULT_TIMEOUT_MS)
+                .coerceIn(0, if (long) LONG_MAX_TIMEOUT_MS else MAX_TIMEOUT_MS),
+            intent = obj.string("intent"),
+            bug = obj.string("bug"),
+            soft = obj.boolean("soft") ?: false,
+            negate = obj.boolean("not") ?: false,
+            state = obj.string("is")?.let { wanted ->
+                UiExpectState.entries.firstOrNull { it.wire == wanted }
+                    ?: throw IllegalArgumentException("unknown state '$wanted'; use one of ${UiExpectState.entries.joinToString { it.wire }}")
+            },
+            value = obj.string("value"),
+            contains = obj.string("contains"),
+            matches = obj.string("matches"),
+            expectCount = obj.int("count").takeIf { action == UiAction.EXPECT },
+            caret = obj.string("caret"),
+            notification = obj.string("notification"),
+            error = obj.string("error"),
+            page = obj.string("page"),
+            registry = obj.string("registry"),
+            advanced = obj.string("advanced"),
+            option = obj.string("option"),
+            inspection = obj.string("inspection"),
+            component = obj.string("component"),
+            field = obj.string("field"),
+            tab = obj.string("tab"),
+            hide = obj.boolean("hide") ?: false,
+            command = obj.string("command"),
+            code = obj.string("code"),
+            modal = obj.string("modal"),
+            source = obj,
         )
         val split = withRowRef(step)
         validate(split)
@@ -195,6 +299,29 @@ object UiSteps {
             require(step.action == UiAction.SCROLL) { "pages goes with scroll, not $action" }
             require(step.row == null && step.index == null) { "scroll takes pages or a row, not both" }
         }
+        if (step.bug != null) {
+            require(step.action == UiAction.EXPECT || step.action == UiAction.CODE) { "bug goes with expect and code, not $action" }
+            require(step.bug.isNotBlank()) { "bug names the bug a failure shows, such as \"the old name stays in the import\"" }
+        }
+        if (step.action != UiAction.EXPECT) {
+            require(!step.soft) { "soft goes with expect, not $action" }
+            require(!step.negate) { "not goes with expect, not $action" }
+            val expectOnly = listOfNotNull(
+                step.state?.let { "is" }, step.contains?.let { "contains" }, step.matches?.let { "matches" },
+                step.caret?.let { "caret" }, step.notification?.let { "notification" }, step.error?.let { "error" },
+            )
+            require(expectOnly.isEmpty()) { "${expectOnly.joinToString()} go(es) with expect, not $action" }
+            if (step.action != UiAction.SET) require(step.value == null) { "value goes with expect and set, not $action" }
+        }
+        if (step.modal != null) require(step.action == UiAction.CODE) { "modal goes with code, not $action" }
+        if (step.tab != null || step.hide) require(step.action == UiAction.TOOLWINDOW) { "tab and hide go with toolwindow, not $action" }
+        if (step.action != UiAction.GET && step.action != UiAction.SET) {
+            val config = listOfNotNull(
+                step.registry?.let { "registry" }, step.advanced?.let { "advanced" }, step.option?.let { "option" },
+                step.inspection?.let { "inspection" }, step.component?.let { "component" }, step.field?.let { "field" },
+            )
+            require(config.isEmpty()) { "${config.joinToString()} go(es) with get and set, not $action" }
+        }
         when (step.action) {
             UiAction.FILL, UiAction.TYPE -> require(step.text != null) { "$action needs text" }
             UiAction.PRESS -> require(!step.keys.isNullOrBlank()) { "press needs keys, such as \"ENTER\" or \"ctrl+shift+A\"" }
@@ -213,7 +340,90 @@ object UiSteps {
                 step.column?.let { require(it >= 1) { "column is 1-based, was $it" } }
             }
             UiAction.RUN -> require(!step.id.isNullOrBlank()) { "run needs an action id, such as \"RenameElement\"" }
+            UiAction.EXPECT -> validateExpect(step)
+            UiAction.SETTINGS -> require(!step.page.isNullOrBlank()) {
+                "settings needs a page: its id, its name as the Settings tree shows it, or a path such as \"Editor > General\""
+            }
+            UiAction.GET, UiAction.SET -> {
+                val kinds = listOfNotNull(step.registry, step.advanced, step.option, step.inspection, step.component)
+                require(kinds.size == 1) { "$action needs exactly one of registry, advanced, option, inspection or component" }
+                if (step.field != null) require(step.component != null) { "field goes with component" }
+                if (step.action == UiAction.SET) {
+                    require(step.value != null) { "set needs a value" }
+                    if (step.component != null) require(!step.field.isNullOrBlank()) { "set on a component needs the field to change" }
+                }
+            }
+            UiAction.TOOLWINDOW -> {
+                require(!step.id.isNullOrBlank()) { "toolwindow needs the tool window's id, such as \"Project\" or \"Problems View\"" }
+                require(!(step.hide && step.tab != null)) { "hide a tool window or select its tab, not both" }
+            }
+            UiAction.WRITE -> {
+                require(!step.file.isNullOrBlank()) { "write needs a file" }
+                require(step.text != null) { "write needs text, the whole new content of the file" }
+            }
+            UiAction.PERF -> require(!step.command.isNullOrBlank()) { "perf needs a command, such as \"%openFile src/A.kt\"" }
+            UiAction.CODE -> {
+                require(!step.code.isNullOrBlank()) { "code needs code, the Kotlin body steroid_execute_code runs" }
+                step.modal?.let { require(it in MODALS) { "unknown modal '$it'; use one of ${MODALS.joinToString()}" } }
+            }
             else -> Unit
+        }
+    }
+
+    /**
+     * An expect step checks one subject: a control (a target), a window ("title"), a file's text or caret ("file"), a
+     * notification or an IDE error. Each subject takes its own checks.
+     */
+    private fun validateExpect(step: UiStep) {
+        val subjects = listOfNotNull(
+            step.target?.let { "a target" }, step.title?.let { "title" }, step.file?.let { "file" },
+            step.notification?.let { "notification" }, step.error?.let { "error" },
+        )
+        require(subjects.size == 1) {
+            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, notification or error"
+            else "expect checks one subject, not ${subjects.joinToString(" and ")}"
+        }
+        require(listOfNotNull(step.value, step.contains, step.matches).size <= 1) { "pass one of value, contains or matches" }
+        step.matches?.let {
+            try {
+                Regex(it)
+            } catch (e: IllegalArgumentException) {
+                throw IllegalArgumentException("matches is not a valid regular expression: ${e.message}")
+            }
+        }
+        require(!(step.soft && step.bug != null)) { "a bug check stops the run when it fails, so it cannot be soft" }
+        val textCheck = step.value != null || step.contains != null || step.matches != null
+        when {
+            step.target != null -> {
+                require(step.caret == null && step.line == null) { "caret and line go with a file" }
+                val rowNamed = step.row != null || step.index != null
+                step.state?.let {
+                    if (it.ofRow) require(rowNamed) { "is=${it.wire} checks a row: add row or index" }
+                    else require(!rowNamed) { "is=${it.wire} checks the control; the row states are selected, expanded and collapsed" }
+                }
+                step.expectCount?.let {
+                    require(it >= 0) { "count is 0 or more, was $it" }
+                    require(step.state == null && !textCheck && !rowNamed) { "count checks how many controls match; pass it alone" }
+                    require(step.target.nth == null && step.target.ref == null) { "count counts the matches of a name, text, class or xpath, without nth or ref" }
+                }
+                require(!(rowNamed && textCheck)) { "a row is checked by its text in row; drop value, contains and matches" }
+            }
+            step.title != null -> {
+                require(step.state == null || step.state == UiExpectState.VISIBLE || step.state == UiExpectState.HIDDEN) {
+                    "a window is visible or hidden"
+                }
+                require(!textCheck && step.caret == null && step.line == null) { "a window takes is=visible or is=hidden only" }
+            }
+            step.file != null -> {
+                require(step.state == null) { "a file takes value, contains, matches or caret, not is" }
+                require(textCheck || step.caret != null) { "expect on a file needs value, contains, matches or caret" }
+                require(!(textCheck && step.caret != null)) { "check the text or the caret, not both" }
+                step.caret?.let { require(CARET.matches(it)) { "caret is line:column, both 1-based, such as \"3:14\"" } }
+                step.line?.let { require(it >= 1) { "line is 1-based, was $it" } }
+            }
+            else -> require(step.state == null && !textCheck && step.caret == null && step.line == null) {
+                "a notification or an error is matched by its text alone; add \"not\":true to expect none"
+            }
         }
     }
 
@@ -230,5 +440,9 @@ object UiSteps {
 
     private fun JsonObject.long(key: String): Long? = primitive(key)?.let {
         it.longOrNull ?: throw IllegalArgumentException("$key must be a whole number, was ${it.content}")
+    }
+
+    private fun JsonObject.boolean(key: String): Boolean? = primitive(key)?.let {
+        it.booleanOrNull ?: throw IllegalArgumentException("$key must be true or false, was ${it.content}")
     }
 }

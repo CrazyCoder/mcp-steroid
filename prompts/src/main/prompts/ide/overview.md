@@ -61,6 +61,7 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 | Resource | Operation | Description |
 |----------|-----------|-------------|
 | `mcp-steroid://ide/ui-driving` | Drive UI Controls | Snapshot windows with refs, then click, type, select rows and close dialogs with steroid_ui or script helpers |
+| `mcp-steroid://ide/ui-scenarios` | Reproduction Scenarios | Record a bug reproduction as steroid_ui steps, check it with expect, change settings without dialogs, and replay it after a fix |
 
 ## Usage
 
@@ -88,7 +89,7 @@ that go beyond LSP capabilities. Each example is a complete script for `steroid_
 - Code Hygiene: `verify-after-edit`, `jps-build-errors`, `module-inspection-sweep`, `optimize-imports`, `inspect-and-fix`, `inspection-summary`, `find-duplicates`
 - Navigation & Generation: `generate-override`, `hierarchy-search`, `call-hierarchy`, `generate-constructor`
 - Project Intelligence: `project-dependencies`, `project-structure`, `project-search`, `run-configuration`
-- IDE UI: `ui-driving`
+- IDE UI: `ui-driving`, `ui-scenarios`
 
 See `mcp-steroid://ide/<id>` for specific examples (e.g., `mcp-steroid://ide/extract-method`)
 

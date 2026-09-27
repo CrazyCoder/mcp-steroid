@@ -94,6 +94,26 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           and puts the caret there, or selects the snippet. The file is absolute or relative to the project
         - {"action":"run", "id":"RenameElement"}: runs an IDE action by id where the focus is, after a goto in the
           editor. Reports a disabled action, an unknown id with similar ids, and an in-place template to type into
+        - {"action":"expect", subject, check, optional "not":true, "soft":true, "bug":"..."}: checks what the IDE
+          shows, retrying until it holds or "timeout_ms" passes; with "not", until it does not. Subjects and checks:
+          a target with "is" (visible, hidden, enabled, disabled, checked, unchecked, focused, editable), "value",
+          "contains", "matches" (a regex), "count", or "row" with "is" selected, expanded or collapsed;
+          "title" (a window) with "is" visible or hidden; "file" with "value", "contains" or "matches", optionally
+          on "line", or "caret":"line:column"; "notification":"text" and "error":"text" ("" for any), shown or
+          logged since the call started. "soft" reports a failure and goes on; "bug" marks the check whose failure
+          means the reported bug is present
+        - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
+          or name, or switches the open Settings window to it
+        - {"action":"toolwindow", "id":"Project", optional "tab":"...", or "hide":true}
+        - {"action":"get"|"set", one of "registry":"key", "advanced":"id", "option":"name", "inspection":"ShortName",
+          "component":"StateName" with "field", and "value" for set}: reads or changes a setting without a dialog.
+          "option" is an on/off option as Search Everywhere lists it (get with part of the name lists matches);
+          "inspection" takes on, off or a severity; "component" is a persistent settings component by its state
+          name, get alone shows its saved XML. A set reports the value before and after
+        - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project
+        - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
+        - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does
+        Any step takes "intent": what it is for, which its report echoes and a repair of the step follows.
 
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]
@@ -101,6 +121,11 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                   {"action":"run","id":"ChangeSignature"}], then fill and click in the dialog it opens.
         goto and run work the way a user does: they open files, move the caret and show dialogs, which a
         reproduction needs. To only change code, and leave the user's windows alone, use steroid_refactor.
+
+        Every call with steps records them to the task's recording file, named in the response, with refs
+        replaced by names so that they replay in another session. A reproduction is a scenario file of such
+        steps: `scenario` replays it and ends with a verdict, REPRODUCED, NOT REPRODUCED or BROKEN. Read
+        mcp-steroid://ide/ui-scenarios before recording or replaying one.
 
         A click that opens a modal dialog returns while the dialog is up, and the report names it. A step
         that runs an action or presses a button named with an ellipsis ("Settings…") waits up to 10 s for
@@ -122,6 +147,27 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         .description("JSON array of steps to run in order. Omit it for a snapshot only.")
         .cliSynopsis("JSON array of steps; omit it for a snapshot")
         .string()
+        .registerToSchema()
+
+    val scenario = InputSchemaElement.param("scenario")
+        .description(
+            "Path of a scenario file to replay, absolute or relative to the project: a JSON object with title and " +
+                "steps, described in mcp-steroid://ide/ui-scenarios. Replaces steps."
+        )
+        .cliSynopsis("scenario file to replay")
+        .string()
+        .registerToSchema()
+
+    val fromStep = InputSchemaElement.param("from_step")
+        .description("The first step to run, 1-based; the steps before it are skipped.")
+        .cliSynopsis("first step to run (1-based)")
+        .int()
+        .registerToSchema()
+
+    val toStep = InputSchemaElement.param("to_step")
+        .description("The last step to run, 1-based. A scenario's cleanup runs only when its last step does.")
+        .cliSynopsis("last step to run (1-based)")
+        .int()
         .registerToSchema()
 
     val snapshot = InputSchemaElement.param("snapshot")
@@ -165,6 +211,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                 reason = context[reason],
                 windowId = context[windowId],
                 steps = context[steps],
+                scenario = context[scenario],
+                fromStep = context[fromStep],
+                toStep = context[toStep],
                 snapshot = context[snapshot],
                 maxNodes = context[maxNodes],
                 trace = context[trace],
@@ -184,6 +233,9 @@ data class UiParams(
     val reason: String,
     val windowId: String? = null,
     val steps: String? = null,
+    val scenario: String? = null,
+    val fromStep: Int? = null,
+    val toStep: Int? = null,
     val snapshot: UiSnapshotMode? = null,
     val maxNodes: Int = UiToolSpec.DEFAULT_MAX_NODES,
     val trace: Boolean = false,

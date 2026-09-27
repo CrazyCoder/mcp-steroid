@@ -20,8 +20,11 @@ import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiSnapshotMode
+import com.intellij.openapi.util.Disposer
 import com.jonnyzzz.mcpSteroid.server.UiStep
+import com.jonnyzzz.mcpSteroid.server.UiStepOutcome
 import com.jonnyzzz.mcpSteroid.server.UiSteps
+import kotlinx.serialization.json.JsonObject
 import com.jonnyzzz.mcpSteroid.server.UiTarget
 import com.jonnyzzz.mcpSteroid.server.UiWaitCondition
 import com.jonnyzzz.mcpSteroid.vision.WindowIdUtil
@@ -59,23 +62,43 @@ class UiStepFailure(message: String) : RuntimeException(message)
 
 data class UiStepReport(val index: Int, val line: String)
 
-data class UiSessionResult(val reports: List<UiStepReport>, val failure: String?, val snapshot: String)
+data class UiSessionResult(
+    val reports: List<UiStepReport>,
+    val failure: String?,
+    val snapshot: String,
+    /** How each step that ran ended, in order, for the verdict of a reproduction. */
+    val outcomes: List<UiStepOutcome> = emptyList(),
+    /** The steps that ran, rewritten to replay in another session: refs replaced by names, row indexes by row text. */
+    val recorded: List<JsonObject> = emptyList(),
+)
 
 /**
  * Runs steroid_ui steps in order against the project's windows, or against one window. Each step finds its target
  * inside the IDE, waiting up to its timeout, acts through [UiInput], lets the windows settle and reports what the
- * action did. The first failure stops the run.
+ * action did. The first failure stops the run, except a soft expect's, which is reported and passed over.
  */
 class UiSession(
     private val project: Project,
     private val windowId: String?,
     private val maxNodes: Int,
     private val trace: UiTrace? = null,
+    taskId: String = "",
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput()
     private val editorSteps = UiEditorSteps(project)
+    private val ideSteps = UiIdeSteps(project, taskId)
+    private val config = UiConfig(project)
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
+
+    /** When the session started: an expect on errors or notifications counts the ones since then. */
+    private val startedMs = System.currentTimeMillis()
+
+    /** The step that runs, and what a replay of it names instead of its refs, row indexes, page names and option names. */
+    private var current: UiStep? = null
+    private var portableTarget: UiTarget? = null
+    private var portableRow: String? = null
+    private val portableFields = mutableMapOf<String, String>()
 
     /** The windows after the previous step, to report the ones that opened or closed between two steps. */
     private var windowsAfterLastStep: Set<Window>? = null
@@ -83,53 +106,101 @@ class UiSession(
     /** Set by a click on a button whose text ends with an ellipsis, which by convention opens a dialog. */
     private var clickOpensWindow = false
 
-    suspend fun run(steps: List<UiStep>, mode: UiSnapshotMode): UiSessionResult {
+    /**
+     * Runs [steps], numbered from [firstIndex] in the reports, as a scenario run from a later step numbers them, and
+     * named [labelPrefix], as a scenario's cleanup steps are.
+     */
+    suspend fun run(steps: List<UiStep>, mode: UiSnapshotMode, firstIndex: Int = 1, labelPrefix: String = "step"): UiSessionResult {
         val before = if (mode == UiSnapshotMode.DIFF) render(withBounds = false) else null
         val reports = mutableListOf<UiStepReport>()
+        val outcomes = mutableListOf<UiStepOutcome>()
+        val recorded = mutableListOf<JsonObject>()
         var failure: String? = null
         var failedStep: UiStep? = null
         val runStarted = TimeSource.Monotonic.markNow()
-        for ((i, step) in steps.withIndex()) {
-            val label = "step ${i + 1} ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
-            val stepStarted = runStarted.elapsedNow().inWholeMilliseconds
-            val pictureBefore = tracePicture(i + 1, "before")
-            val meanwhile = meanwhile()
-            val outcome = try {
-                Result.success(runStep(step))
-            } catch (e: UiStepFailure) {
-                Result.failure(e)
-            } catch (e: UiBarrierTimeout) {
-                Result.failure(e)
-            } catch (e: IllegalArgumentException) {
-                Result.failure(e)
-            } catch (e: IllegalStateException) {
-                Result.failure(e)
+        val disposable = Disposer.newDisposable("steroid_ui session")
+        val notifications = UiNotificationLog(project, disposable)
+        val expect = UiExpect(project, startedMs, notifications, ::matchForExpect, ::describe)
+        try {
+            for ((i, step) in steps.withIndex()) {
+                val index = firstIndex + i
+                val label = "$labelPrefix $index ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}" +
+                    (step.intent?.let { " ($it)" }.orEmpty())
+                val stepStarted = runStarted.elapsedNow().inWholeMilliseconds
+                val pictureBefore = tracePicture(index, "before")
+                val meanwhile = meanwhile()
+                current = step
+                portableTarget = null
+                portableRow = null
+                portableFields.clear()
+                val outcome = try {
+                    Result.success(if (step.action == UiAction.EXPECT) expect.run(step) else runStep(step))
+                } catch (e: UiStepFailure) {
+                    Result.failure(e)
+                } catch (e: UiBarrierTimeout) {
+                    Result.failure(e)
+                } catch (e: IllegalArgumentException) {
+                    Result.failure(e)
+                } catch (e: IllegalStateException) {
+                    Result.failure(e)
+                } finally {
+                    current = null
+                }
+                val line = meanwhile + outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
+                trace?.let { t ->
+                    val pictureAfter = tracePicture(index, "after")
+                    t.record(index, label, line, outcome.isFailure, render(withBounds = true), pictureBefore, pictureAfter,
+                        stepStarted, runStarted.elapsedNow().inWholeMilliseconds - stepStarted)
+                }
+                outcomes += UiStepOutcome(index, step, outcome.isSuccess, line)
+                if (outcome.isFailure && !step.soft) {
+                    failure = "$label failed: $line"
+                    failedStep = step
+                    break
+                }
+                if (step.action !in NOT_RECORDED) step.source?.let { recorded += portable(step, it) }
+                windowsAfterLastStep = UiSettle.showingWindows()
+                reports += UiStepReport(index, if (outcome.isSuccess) "$label: $line" else "$label: SOFT FAILED: $line")
             }
-            val line = meanwhile + outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
-            trace?.let { t ->
-                val pictureAfter = tracePicture(i + 1, "after")
-                t.record(i + 1, label, line, outcome.isFailure, render(withBounds = true), pictureBefore, pictureAfter,
-                    stepStarted, runStarted.elapsedNow().inWholeMilliseconds - stepStarted)
-            }
-            if (outcome.isFailure) {
-                failure = "$label failed: $line"
-                failedStep = step
-                break
-            }
-            windowsAfterLastStep = UiSettle.showingWindows()
-            reports += UiStepReport(i + 1, "$label: $line")
+        } finally {
+            Disposer.dispose(disposable)
         }
         val snapshot = when {
             failure != null && windowId != null && withContext(edtAny) { listedWindows().isEmpty() } -> ""
-            // A goto or run failure names what went wrong in the code or the action; the windows add nothing.
-            failure != null && failedStep?.action in EDITOR_ACTIONS -> ""
+            // A failure outside the windows names what went wrong in the code, the action or the setting; the windows add nothing.
+            failure != null && failedStep?.let(::showsNoWindow) == true -> ""
             failure != null -> render(withBounds = false, scopeOnly = true, topOnly = true)
             mode == UiSnapshotMode.TREE -> render(withBounds = false)
             mode == UiSnapshotMode.FULL -> render(withBounds = true)
             mode == UiSnapshotMode.NONE -> ""
             else -> UiSnapshotDiff.diff(before.orEmpty(), render(withBounds = false)).ifEmpty { "(the snapshot did not change)" }
         }
-        return UiSessionResult(reports, failure, snapshot)
+        return UiSessionResult(reports, failure, snapshot, outcomes, recorded)
+    }
+
+    /**
+     * A step whose failure the windows do not explain. A failed bug check already says what it found, which is the
+     * evidence of the bug.
+     */
+    private fun showsNoWindow(step: UiStep): Boolean =
+        step.action in NO_WINDOW_ACTIONS || step.bug != null || step.action == UiAction.EXPECT && step.target == null && step.title == null
+
+    /** [source], the step as written, with what this run found for its refs, row indexes and names. */
+    private fun portable(step: UiStep, source: JsonObject): JsonObject =
+        UiPortable.rewrite(source, portableTarget, portableRow, portableFields, textIsInput = step.action in TEXT_INPUT)
+
+    /** An expect's match, which also finds the portable target of a ref, as [resolve] does for the other steps. */
+    private suspend fun matchForExpect(target: UiTarget): UiMatch {
+        val m = match(target)
+        if (target.ref != null && m is UiMatch.One) notePortable(target, m.node)
+        return m
+    }
+
+    /** Remembers the target a replay of the current step uses for [target], a ref that found [node]. */
+    private suspend fun notePortable(target: UiTarget, node: UiNode) {
+        if (target.ref == null || current?.target?.ref != target.ref || portableTarget != null) return
+        val textIsInput = current?.action in TEXT_INPUT
+        portableTarget = withContext(edtAny) { UiPortable.stableTarget(node, scopeModels().map { it.root }, textIsInput) }
     }
 
     /**
@@ -185,6 +256,14 @@ class UiSession(
         UiAction.RUN -> withEffects { actStep(step) }.let {
             if (inplaceActive()) "$it; started an in-place template: type the value, then press ENTER" else it
         }
+        UiAction.GET -> config.get(step).line
+        UiAction.SET -> config.set(step).also { o -> o.option?.let { portableFields["option"] = it } }.line
+        UiAction.WRITE -> ideSteps.write(step)
+        UiAction.CODE -> ideSteps.code(step)
+        UiAction.SETTINGS -> withEffects {
+            ideSteps.settings(step).also { o -> o.id?.let { portableFields["page"] = it } }.line
+        }
+        UiAction.EXPECT -> error("an expect runs in run()")
         else -> withEffects { actStep(step) }
     }
 
@@ -244,7 +323,10 @@ class UiSession(
             UiAction.CLOSE -> closeStep(step)
             UiAction.GOTO -> editorSteps.goto(step)
             UiAction.RUN -> editorSteps.run(step, actionComponent(), ::inplaceActive)
-            UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT -> error("not an action step")
+            UiAction.PERF -> ideSteps.perf(step)
+            UiAction.TOOLWINDOW -> ideSteps.toolWindow(step)
+            UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
+            UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS -> error("not an input step")
         }
     }
 
@@ -283,20 +365,32 @@ class UiSession(
 
     /**
      * The row "row" or "index" of [step] names in [node]'s list, tree, table or tabbed pane, or null when the step
-     * names none. A tree path whose parents are collapsed, such as `Editor > Code Style > Java`, expands them.
+     * names none. A tree path whose parents are collapsed, such as `Editor > Code Style > Java`, expands them. A row
+     * that is not there yet is waited for up to the step's timeout: a list filled asynchronously, such as the Settings
+     * tree filtering to what was just typed into its search, shows its rows some time after the step before it.
      */
     private suspend fun pickRow(node: UiNode, step: UiStep): RowPick? {
         if (step.row == null && step.index == null) return null
         val c = node.component
-        val rows = withContext(edtAny) { UiRows.rows(c) }
-            ?: throw UiStepFailure("${describe(node)} has no rows; rows are in lists, trees, tables, tabbed panes and combo boxes")
         val wanted = step.row
-        val index = step.index ?: withContext(edtAny) { UiRows.find(c, rows, wanted!!) }
-        if (index in rows.indices) return RowPick(index, rows[index], emptyList())
-        if (wanted != null && c is JTree && UiRows.PATH_SEPARATOR in wanted) return expandPath(c, wanted, step.timeoutMs)
-        val shown = rows.withIndex().take(20).joinToString("; ") { (i, row) -> "#$i $row" }
-        throw UiStepFailure("no row ${wanted?.let { "\"$it\"" } ?: "#$index"} in ${describe(node)}; rows: $shown" +
-            if (rows.size > 20) "; +${rows.size - 20} more" else "")
+        val started = TimeSource.Monotonic.markNow()
+        while (true) {
+            val late = started.elapsedNow().inWholeMilliseconds >= step.timeoutMs
+            val rows = withContext(edtAny) { UiRows.rows(c) }
+                ?: throw UiStepFailure("${describe(node)} has no rows; rows are in lists, trees, tables, tabbed panes and combo boxes")
+            val index = step.index ?: withContext(edtAny) { UiRows.find(c, rows, wanted!!) }
+            if (index in rows.indices) {
+                if (step.index != null && current === step) withContext(edtAny) { UiPortable.stableRow(c, rows, index) }?.let { portableRow = it }
+                return RowPick(index, rows[index], emptyList())
+            }
+            if (wanted != null && c is JTree && UiRows.PATH_SEPARATOR in wanted) return expandPath(c, wanted, step.timeoutMs)
+            if (late) {
+                val shown = rows.withIndex().take(20).joinToString("; ") { (i, row) -> "#$i $row" }
+                throw UiStepFailure("no row ${wanted?.let { "\"$it\"" } ?: "#$index"} in ${describe(node)} after ${step.timeoutMs} ms; rows: $shown" +
+                    if (rows.size > 20) "; +${rows.size - 20} more" else "")
+            }
+            delay(POLL_MS)
+        }
     }
 
     /**
@@ -581,7 +675,10 @@ class UiSession(
             last = match(target)
             when (val m = last) {
                 is UiMatch.One -> {
-                    if (!requireEnabled || withContext(edtAny) { m.node.component.isEnabled }) return m.node
+                    if (!requireEnabled || withContext(edtAny) { m.node.component.isEnabled }) {
+                        notePortable(target, m.node)
+                        return m.node
+                    }
                 }
                 is UiMatch.Many -> throw UiStepFailure(
                     "${m.matches.size} controls match; add nth, a class or a ref: " +
@@ -756,7 +853,14 @@ class UiSession(
     }
 
     companion object {
-        private val EDITOR_ACTIONS = setOf(UiAction.GOTO, UiAction.RUN)
+        /** Steps whose failure is about code, an action, a setting or a file, not about what the windows show. */
+        private val NO_WINDOW_ACTIONS = setOf(
+            UiAction.GOTO, UiAction.RUN, UiAction.GET, UiAction.SET, UiAction.WRITE, UiAction.CODE, UiAction.PERF, UiAction.TOOLWINDOW,
+            UiAction.SETTINGS,
+        )
+        /** Steps that only read, which a recording of what to replay leaves out. */
+        private val NOT_RECORDED = setOf(UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.GET)
+        private val TEXT_INPUT = setOf(UiAction.TYPE, UiAction.FILL)
         private const val POLL_MS = 100L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L
