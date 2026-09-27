@@ -2,9 +2,6 @@
 package com.jonnyzzz.mcpSteroid.refactor
 
 import com.intellij.codeInsight.daemon.HighlightDisplayKey
-import com.jonnyzzz.mcpSteroid.inspection.BatchInspection
-import com.jonnyzzz.mcpSteroid.inspection.UnknownInspectionsException
-import kotlin.time.Duration.Companion.seconds
 import com.intellij.codeInsight.intention.IntentionAction
 import com.intellij.codeInsight.intention.IntentionManager
 import com.intellij.codeInsight.intention.impl.ShowIntentionActionsHandler
@@ -51,10 +48,13 @@ import com.intellij.refactoring.safeDelete.SafeDeleteProcessor
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessorDelegate
 import com.intellij.refactoring.safeDelete.usageInfo.SafeDeleteReferenceUsageInfo
 import com.intellij.usageView.UsageInfo
+import com.jonnyzzz.mcpSteroid.inspection.BatchInspection
+import com.jonnyzzz.mcpSteroid.inspection.UnknownInspectionsException
 import com.jonnyzzz.mcpSteroid.server.RefactorOp
 import com.jonnyzzz.mcpSteroid.server.RefactorParams
 import com.jonnyzzz.mcpSteroid.ui.CodeLocation
 import com.jonnyzzz.mcpSteroid.ui.UiStepFailure
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -105,7 +105,7 @@ class RefactorEngine(private val project: Project) {
             val lines = result.problems.mapNotNull { (name, problem) ->
                 val psiFile = problemFile(problem) ?: return@mapNotNull null
                 val severity = severity(psiFile, name, problem)
-                Triple(scopeProblemLine(psiFile, problem, name, severity), severity, name)
+                Triple(problemLine(psiFile, problem, name, severity), severity, name)
             }.distinctBy { it.first }
             lines.partition { params.all || it.second >= HighlightSeverity.WEAK_WARNING }
         }
@@ -124,12 +124,16 @@ class RefactorEngine(private val project: Project) {
         }
     }
 
-    /** `path:line: [name] SEVERITY description [fix: ...]` for a problem anywhere in the project. Read action. */
-    private fun scopeProblemLine(psiFile: PsiFile, problem: ProblemDescriptor, shortName: String, severity: HighlightSeverity): String {
+    /**
+     * `path:line: SEVERITY description [fix: ...]` for a problem in [psiFile], the host file, with the inspection's short
+     * name when [named]. Read action.
+     */
+    private fun problemLine(psiFile: PsiFile, problem: ProblemDescriptor, shortName: String, severity: HighlightSeverity, named: Boolean = true): String {
         val document = PsiDocumentManager.getInstance(project).getDocument(psiFile)
         val line = document?.let { it.getLineNumber(problemOffset(problem).coerceIn(0, it.textLength)) + 1 } ?: (problem.lineNumber + 1)
         val path = psiFile.virtualFile?.let { CodeLocation.shortPath(project, it) } ?: psiFile.name
-        return "$path:$line: [$shortName] ${severity.name} " +
+        return "$path:$line: " + (if (named) "[$shortName] " else "") + severity.name + " " +
+            // As the Problems view renders it: #ref becomes the reported code, #loc goes.
             plainText(ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)) +
             (problem.fixes?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
     }
@@ -426,15 +430,9 @@ class RefactorEngine(private val project: Project) {
             ?: HighlightSeverity.WARNING
     }
 
-    /** `path:line: SEVERITY description [fix: ...]`, with the inspection's short name when [named]. Read action. */
-    private fun problemLine(target: Target, problem: ProblemDescriptor, shortName: String, named: Boolean): String {
-        val line = target.document.getLineNumber(problemOffset(problem).coerceIn(0, target.document.textLength)) + 1
-        return "${CodeLocation.shortPath(project, target.file)}:$line: " + (if (named) "[$shortName] " else "") +
-            severity(target.psiFile, shortName, problem).name + " " +
-            // As the Problems view renders it: #ref becomes the reported code, #loc goes.
-            plainText(ProblemDescriptorUtil.renderDescriptionMessage(problem, problem.psiElement)) +
-            (problem.fixes?.takeIf { it.isNotEmpty() }?.joinToString(prefix = " [fix: ", postfix = "]") { it.name } ?: " [no fix]")
-    }
+    /** [problemLine] for a problem in the target's file. Read action. */
+    private fun problemLine(target: Target, problem: ProblemDescriptor, shortName: String, named: Boolean): String =
+        problemLine(target.psiFile, problem, shortName, severity(target.psiFile, shortName, problem), named)
 
     private suspend fun fix(params: RefactorParams): String {
         val target = target(params)

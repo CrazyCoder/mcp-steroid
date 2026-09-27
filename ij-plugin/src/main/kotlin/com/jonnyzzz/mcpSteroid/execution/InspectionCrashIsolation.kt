@@ -9,7 +9,7 @@ import com.intellij.codeInspection.ProblemDescriptor
  *
  * @property toolId the inspection short name (same key space as the result map), or
  *   [InspectionRunResult.SWEEP_FAILURE_ID] when the failure was file-level rather than tool-level
- *   (GitHub issue #69 — e.g. PsiInvalidElementAccessException raised outside any single tool).
+ *   (GitHub issue #69): the file has no PSI, or the run did not finish in time.
  * @property error the exception class name and message, e.g.
  *   "java.lang.IllegalStateException: Cannot compute containing PSI ..."
  */

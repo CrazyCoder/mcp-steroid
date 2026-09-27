@@ -8,6 +8,7 @@ import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInspection.ProblemDescriptor
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.psi.PsiManager
@@ -499,7 +500,8 @@ class McpScriptContextImpl(
         val problems = readAction {
             val profile = InspectionProjectProfileManager.getInstance(project).currentProfile
             result.problems.filter { (shortName, problem) ->
-                val psiFile = problem.psiElement?.takeIf { it.isValid }?.containingFile ?: return@filter false
+                // The host file: named scopes in the profile match it, not an injected fragment such as a regular expression.
+                val psiFile = problem.psiElement?.takeIf { it.isValid }?.let { InjectedLanguageManager.getInstance(project).getTopLevelFile(it) } ?: return@filter false
                 val severity = HighlightDisplayKey.find(shortName)?.let { profile.getErrorLevel(it, psiFile).severity } ?: HighlightSeverity.WARNING
                 inspections != null || includeInfoSeverity || severity.myVal >= HighlightSeverity.WEAK_WARNING.myVal
             }.groupBy({ it.shortName }, { it.descriptor })
