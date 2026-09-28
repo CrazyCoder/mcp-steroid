@@ -32,6 +32,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.jetbrains.annotations.TestOnly
 import java.util.WeakHashMap
 
 /** A problem the editor highlights in an open file, as its error stripe and the Problems tool window show it. */
@@ -70,7 +71,7 @@ class IdeEditorProblems {
         try {
             withTimeoutOrNull(REFRESH_MS) {
                 val before = current
-                current = ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.flatMap { project ->
+                current = openProjects().filterNot { it.isDisposed }.flatMap { project ->
                     // A file still being analyzed keeps its last reading, so that its errors are not told as gone and new.
                     val reading = read(project, HighlightSeverity.ERROR)
                     reading.problems.filter { it.file !in reading.unfinished } +
@@ -89,6 +90,9 @@ class IdeEditorProblems {
 
     @Volatile
     private var failureLogged = false
+
+    @TestOnly
+    internal var openProjects: () -> List<Project> = { ProjectManager.getInstance().openProjects.toList() }
 
     /**
      * The open files' errors, as a notice, when one of them is new to [session]; every current error is then told. An

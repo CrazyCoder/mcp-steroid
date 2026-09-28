@@ -82,6 +82,8 @@ class IdeEditorProblemsTest {
     fun `a refresh that cannot read the editors keeps the last reading instead of failing the call`() {
         val problems = IdeEditorProblems()
         problems.current = listOf(typeError)
+        // As a missing platform class would; set here, since another test may have started an IDE in this JVM.
+        problems.openProjects = { throw NoClassDefFoundError("com/intellij/openapi/project/ProjectManager") }
         runBlocking { problems.refresh() }
         assertEquals(listOf(typeError), problems.current)
     }

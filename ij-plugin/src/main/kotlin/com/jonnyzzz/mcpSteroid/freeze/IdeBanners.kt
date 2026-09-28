@@ -28,6 +28,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.jetbrains.annotations.TestOnly
 import java.awt.Color
 import java.util.WeakHashMap
 
@@ -57,7 +58,7 @@ class IdeBanners {
     suspend fun refresh() {
         try {
             withTimeoutOrNull(REFRESH_MS) {
-                current = ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.flatMap { read(it) }
+                current = openProjects().filterNot { it.isDisposed }.flatMap { read(it) }
             }
         } catch (e: CancellationException) {
             throw e
@@ -71,6 +72,9 @@ class IdeBanners {
 
     @Volatile
     private var failureLogged = false
+
+    @TestOnly
+    internal var openProjects: () -> List<Project> = { ProjectManager.getInstance().openProjects.toList() }
 
     /** The banners [session] has not been told about, as a notice, and marks every current banner as told. */
     fun noticeFor(session: Any): String? {

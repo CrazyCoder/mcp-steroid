@@ -28,9 +28,10 @@ class IdeBannersTest {
 
     @Test
     fun `a refresh that cannot read the banners keeps the last reading instead of failing the call`() {
-        // No IDE runs in this test, so reading the open projects throws, as a missing platform class would.
         val banners = IdeBanners()
         banners.current = listOf(jdkA)
+        // As a missing platform class would; set here, since another test may have started an IDE in this JVM.
+        banners.openProjects = { throw NoClassDefFoundError("com/intellij/openapi/project/ProjectManager") }
         runBlocking { banners.refresh() }
         assertEquals(listOf(jdkA), banners.current)
     }
