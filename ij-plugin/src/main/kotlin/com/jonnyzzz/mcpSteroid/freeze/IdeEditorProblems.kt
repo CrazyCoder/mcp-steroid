@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.freeze
 
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeWithMe.asContextElement
 import com.intellij.lang.annotation.HighlightSeverity
@@ -22,11 +23,13 @@ import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.jonnyzzz.mcpSteroid.server.split.SplitRole
 import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.WeakHashMap
@@ -40,7 +43,7 @@ data class EditorProblem(val project: String, val file: String, val line: Int, v
  * warnings and other severities with them.
  *
  * The problems are the editor's own: what its code analysis found the last time it ran on the file, read without
- * running it again. A file still being analyzed keeps its last reading. In Split Mode the backend reads them: the
+ * running it again. For the notice, a file still being analyzed keeps its last reading. In Split Mode the backend reads them: the
  * JetBrains Client's copy of the highlighting has no descriptions.
  */
 @Service(Service.Level.APP)
@@ -49,6 +52,9 @@ class IdeEditorProblems {
     @Volatile
     internal var current: List<EditorProblem> = emptyList()
     private val seen = WeakHashMap<Any, Set<Key>>()
+
+    /** What [read] found, and the files whose analysis has not finished, whose problems may be incomplete. */
+    class Reading(val problems: List<EditorProblem>, val unfinished: Set<String>)
 
     /** What makes an error the same one after lines above it moved it. */
     private data class Key(val project: String, val file: String, val text: String)
@@ -65,7 +71,10 @@ class IdeEditorProblems {
             withTimeoutOrNull(REFRESH_MS) {
                 val before = current
                 current = ProjectManager.getInstance().openProjects.filterNot { it.isDisposed }.flatMap { project ->
-                    read(project, HighlightSeverity.ERROR, keep = before.filter { it.project == project.name })
+                    // A file still being analyzed keeps its last reading, so that its errors are not told as gone and new.
+                    val reading = read(project, HighlightSeverity.ERROR)
+                    reading.problems.filter { it.file !in reading.unfinished } +
+                        before.filter { it.project == project.name && it.file in reading.unfinished }
                 }
             }
         } catch (e: CancellationException) {
@@ -99,6 +108,7 @@ class IdeEditorProblems {
         const val MAX_FILES = 3
         const val MAX_LISTED = 100
         private const val REFRESH_MS = 1_000L
+        private const val SETTLE_POLL_MS = 250L
         private const val MAX_TEXT = 200
 
         /** The severities a get takes, from the most severe. */
@@ -113,19 +123,20 @@ class IdeEditorProblems {
 
         /**
          * The problems of [min] severity and above in [project]'s open files, or in [only] of them, in file and line
-         * order. A file whose analysis has not finished gives what [keep] holds for it. In Split Mode each JetBrains
-         * Client session's open files are read under its own client id, as [IdeBanners.read] does.
+         * order. The editor analyzes a file while its tab shows, so a tab behind another stays unfinished. In Split
+         * Mode each JetBrains Client session's open files are read under its own client id, as [IdeBanners.read] does.
          */
-        suspend fun read(project: Project, min: HighlightSeverity, keep: List<EditorProblem> = emptyList(), only: VirtualFile? = null): List<EditorProblem> {
+        suspend fun read(project: Project, min: HighlightSeverity, only: VirtualFile? = null): Reading {
             val files = only?.let(::listOf) ?: openFiles(project)
             return readAction {
-                if (project.isDisposed) return@readAction emptyList()
+                if (project.isDisposed) return@readAction Reading(emptyList(), emptySet())
                 val daemon = DaemonCodeAnalyzerEx.getInstanceEx(project)
-                files.flatMap { file ->
+                val unfinished = HashSet<String>()
+                val problems = files.flatMap { file ->
                     val path = shortPath(project, file)
                     val document = FileDocumentManager.getInstance().getDocument(file) ?: return@flatMap emptyList()
                     val psi = PsiManager.getInstance(project).findFile(file) ?: return@flatMap emptyList()
-                    if (!daemon.isErrorAnalyzingFinished(psi)) return@flatMap keep.filter { it.file == path }
+                    if (!finished(daemon, psi)) unfinished += path
                     val found = ArrayList<EditorProblem>()
                     DaemonCodeAnalyzerEx.processHighlights(document, project, min, 0, document.textLength) { info: HighlightInfo ->
                         val text = info.description?.trim()?.takeIf { it.isNotEmpty() }
@@ -141,19 +152,50 @@ class IdeEditorProblems {
                     }
                     found.distinct().sortedWith(compareBy({ it.line }, { it.column }))
                 }
+                Reading(problems, unfinished)
             }
         }
 
         /** The files open in [project]'s editors, for every JetBrains Client session in Split Mode. */
-        suspend fun openFiles(project: Project): List<VirtualFile> {
+        suspend fun openFiles(project: Project): List<VirtualFile> = perSession(project) { it.openFiles.toList() }
+
+        /** The files whose tabs show, the ones the editor analyzes, for every JetBrains Client session in Split Mode. */
+        suspend fun shownFiles(project: Project): List<VirtualFile> = perSession(project) { it.selectedFiles.toList() }
+
+        private suspend fun perSession(project: Project, files: (FileEditorManager) -> List<VirtualFile>): List<VirtualFile> {
             val sessions = runCatching { ClientSessionsManager.getProjectSessions(project, ClientKind.ALL) }.getOrDefault(emptyList())
             val contexts = sessions.map { it.clientId.asContextElement() }.ifEmpty { listOf(null) }
             return contexts.flatMap { client ->
                 val context = Dispatchers.EDT + ModalityState.any().asContextElement()
                 withContext(if (client == null) context else context + client) {
-                    if (project.isDisposed) emptyList() else FileEditorManager.getInstance(project).openFiles.toList()
+                    if (project.isDisposed) emptyList() else files(FileEditorManager.getInstance(project))
                 }
             }.distinct()
+        }
+
+        /**
+         * [read], after waiting up to [timeoutMs] for the analysis of the shown files among them to finish: a get right
+         * after an edit or a start would otherwise find the file not analyzed yet. A tab behind another is not waited for.
+         */
+        suspend fun readSettled(project: Project, min: HighlightSeverity, only: VirtualFile?, timeoutMs: Long): Reading {
+            val started = System.currentTimeMillis()
+            while (true) {
+                val reading = read(project, min, only)
+                val shown = shownFiles(project).mapTo(HashSet()) { shortPath(project, it) }
+                if (reading.unfinished.none { it in shown } || System.currentTimeMillis() - started >= timeoutMs) return reading
+                delay(SETTLE_POLL_MS)
+            }
+        }
+
+        /**
+         * Whether every analysis pass of [psi] finished. The error pass alone ends before a language service, such as
+         * TypeScript's, adds its errors, which the editor shows as "Analyzing…" meanwhile. The full check is marked for
+         * tests, so the error pass stands in on a build that lacks it. Read action.
+         */
+        private fun finished(daemon: DaemonCodeAnalyzerEx, psi: PsiFile): Boolean = try {
+            (daemon as? DaemonCodeAnalyzerImpl)?.isAllAnalysisFinished(psi) ?: daemon.isErrorAnalyzingFinished(psi)
+        } catch (_: LinkageError) {
+            daemon.isErrorAnalyzingFinished(psi)
         }
 
         private fun severityName(s: HighlightSeverity): String =
@@ -184,14 +226,23 @@ class IdeEditorProblems {
             append('\n')
         }
 
-        /** The problems a get lists, as `path:line:column: SEVERITY text`, at most [MAX_LISTED] of them. */
-        fun renderList(problems: List<EditorProblem>, min: String, scope: String): String {
-            if (problems.isEmpty()) return "no problem of $min severity or above in $scope"
-            val bySeverity = problems.groupingBy { it.severity }.eachCount().entries.joinToString { "${it.key.lowercase()} ${it.value}" }
-            return buildString {
+        /**
+         * The problems a get lists, as `path:line:column: SEVERITY text`, at most [MAX_LISTED] of them, and the files
+         * whose analysis has not finished, whose lists may be incomplete.
+         */
+        fun renderList(reading: Reading, min: String, scope: String): String = buildString {
+            val problems = reading.problems
+            if (problems.isEmpty()) {
+                append("no problem of $min severity or above in $scope")
+            } else {
+                val bySeverity = problems.groupingBy { it.severity }.eachCount().entries.joinToString { "${it.key.lowercase()} ${it.value}" }
                 append("${problems.size} problem(s) of $min severity or above in $scope ($bySeverity):")
                 for (p in problems.take(MAX_LISTED)) append("\n${p.file}:${p.line}:${p.column}: ${p.severity} ${p.text}")
                 if (problems.size > MAX_LISTED) append("\n… and ${problems.size - MAX_LISTED} more; name one file or raise the severity")
+            }
+            if (reading.unfinished.isNotEmpty()) {
+                append("\nnot analyzed to the end, so possibly incomplete: ${reading.unfinished.sorted().joinToString()}. ")
+                append("The editor analyzes a file while its tab shows: select the tab with a goto, then get again.")
             }
         }
     }

@@ -49,16 +49,28 @@ class IdeEditorProblemsTest {
         assertEquals(IdeEditorProblems.MAX_FILES + 1, notice.lines().count { it.startsWith("- ") })
     }
 
+    private fun reading(problems: List<EditorProblem>, unfinished: Set<String> = emptySet()) = IdeEditorProblems.Reading(problems, unfinished)
+
     @Test
     fun `a list counts each severity and stops at its limit`() {
         val warning = comma.copy(severity = "WARNING", text = "Unused variable")
         assertEquals(
             "2 problem(s) of warning severity or above in src/a.ts (error 1, warning 1):\nsrc/a.ts:1:7: ERROR ${typeError.text}\nsrc/a.ts:5:12: WARNING Unused variable",
-            IdeEditorProblems.renderList(listOf(typeError, warning), "warning", "src/a.ts"),
+            IdeEditorProblems.renderList(reading(listOf(typeError, warning)), "warning", "src/a.ts"),
         )
         val many = (1..IdeEditorProblems.MAX_LISTED + 5).map { typeError.copy(line = it) }
-        assertTrue(IdeEditorProblems.renderList(many, "error", "the open files").endsWith("… and 5 more; name one file or raise the severity"))
-        assertEquals("no problem of error severity or above in src/a.ts", IdeEditorProblems.renderList(emptyList(), "error", "src/a.ts"))
+        assertTrue(IdeEditorProblems.renderList(reading(many), "error", "the open files").endsWith("… and 5 more; name one file or raise the severity"))
+        assertEquals("no problem of error severity or above in src/a.ts", IdeEditorProblems.renderList(reading(emptyList()), "error", "src/a.ts"))
+    }
+
+    @Test
+    fun `a list names the files not analyzed to the end instead of reporting them clean`() {
+        val list = IdeEditorProblems.renderList(reading(emptyList(), setOf("src/b.ts")), "error", "src/b.ts")
+        assertEquals(
+            "no problem of error severity or above in src/b.ts\nnot analyzed to the end, so possibly incomplete: src/b.ts. " +
+                "The editor analyzes a file while its tab shows: select the tab with a goto, then get again.",
+            list,
+        )
     }
 
     @Test
