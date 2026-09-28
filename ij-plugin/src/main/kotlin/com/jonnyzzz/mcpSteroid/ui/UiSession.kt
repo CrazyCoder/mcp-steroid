@@ -780,37 +780,53 @@ class UiSession(
         } else {
             withContext(edtAny) { scopeWindows().firstOrNull { it !== projectFrame() } }
         } ?: throw UiStepFailure("there is no dialog, popup or separate window to close")
-        val closed = withContext(edtAny) {
-            val inside = (window as? RootPaneContainer)?.rootPane
-                ?.let { UIUtil.findComponentsOfType(it, JComponent::class.java).lastOrNull() }
+        val windowsBefore = UiSettle.showingWindows()
+        val (way, closed) = withContext(edtAny) {
+            val root = (window as? RootPaneContainer)?.rootPane
+            val inside = root?.let { UIUtil.findComponentsOfType(it, JComponent::class.java).lastOrNull() }
             val dialog = inside?.let { DialogWrapper.findInstance(it) }
             val popup = inside?.let { PopupUtil.getPopupContainerFor(it) }
-            val title = windowTitle(window)
-            when {
-                dialog != null -> {
-                    ApplicationManager.getApplication().invokeLater({ dialog.doCancelAction() }, ModalityState.any())
+            val way = UiWindows.closeWay(
+                UiWindows.kind(window),
+                isProjectFrame = window === projectFrame(),
+                hasDialogWrapper = dialog != null,
+                hasPopup = popup != null,
+                hasMenu = inside != null && UIUtil.findComponentOfType(root, JPopupMenu::class.java) != null,
+            ) ?: throw UiStepFailure("the IDE window itself does not close; name a dialog, popup or separate window")
+            val app = ApplicationManager.getApplication()
+            way to when (way) {
+                UiWindows.CloseWay.CANCEL_DIALOG -> {
+                    app.invokeLater({ dialog!!.doCancelAction() }, ModalityState.any())
                     "cancelled the dialog"
                 }
-                popup != null -> {
-                    ApplicationManager.getApplication().invokeLater({ popup.cancel() }, ModalityState.any())
+                UiWindows.CloseWay.CANCEL_POPUP -> {
+                    app.invokeLater({ popup!!.cancel() }, ModalityState.any())
                     "cancelled the popup"
                 }
-                // A separate window such as Settings closes as by its title bar's close button.
-                window is Frame && window !== projectFrame() -> {
-                    ApplicationManager.getApplication().invokeLater(
-                        { window.dispatchEvent(WindowEvent(window, WindowEvent.WINDOW_CLOSING)) }, ModalityState.any(),
-                    )
-                    "asked the window to close"
-                }
                 // A context menu or a main menu is a Swing menu, which closes with its submenus, as ESCAPE does.
-                inside != null && UIUtil.findComponentOfType((window as? RootPaneContainer)?.rootPane, JPopupMenu::class.java) != null -> {
+                UiWindows.CloseWay.CLOSE_MENU -> {
                     MenuSelectionManager.defaultManager().clearSelectedPath()
                     "closed the menu and its submenus"
                 }
-                else -> throw UiStepFailure("window \"$title\" is not a dialog, popup or separate window the IDE can close")
+                // A window no DialogWrapper holds, such as the separate or floating Settings window, closes as by its
+                // title bar's close button.
+                UiWindows.CloseWay.REQUEST_CLOSE -> {
+                    app.invokeLater({ window.dispatchEvent(WindowEvent(window, WindowEvent.WINDOW_CLOSING)) }, ModalityState.any())
+                    "asked the window to close"
+                }
             }
         }
         UiSettle.barrier()
+        // A menu closes in place and may leave its window showing. Any other window must go, or open another, such as
+        // a confirmation: a window that ignores the request would otherwise read as closed.
+        if (way != UiWindows.CloseWay.CLOSE_MENU) {
+            val started = TimeSource.Monotonic.markNow()
+            while (withContext(edtAny) { window.isShowing } && UiSettle.showingWindows().none { it !in windowsBefore } &&
+                started.elapsedNow().inWholeMilliseconds < CLOSE_WAIT_MS) delay(POLL_MS)
+            if (withContext(edtAny) { window.isShowing } && UiSettle.showingWindows().none { it !in windowsBefore }) {
+                throw UiStepFailure("$closed, and window \"${withContext(edtAny) { windowTitle(window) }}\" is still open; click its Cancel or Close button")
+            }
+        }
         return closed
     }
 
@@ -1235,11 +1251,7 @@ class UiSession(
     }
 
     private fun describeWindow(w: Window): String {
-        val kind = when (w) {
-            is Frame -> "frame"
-            is Dialog -> if (w.isModal) "modal dialog" else "dialog"
-            else -> "popup"
-        }
+        val kind = UiWindows.kind(w).label.let { if ((w as? Dialog)?.isModal == true) "modal $it" else it }
         val title = windowTitle(w)?.takeIf { it.isNotBlank() }?.let { " \"$it\"" } ?: firstText(w)?.let { " showing \"$it\"" }
         return "$kind ${WindowIdUtil.compute(w, w)}" + title.orEmpty()
     }
@@ -1264,11 +1276,7 @@ class UiSession(
     private fun header(window: Window, model: UiModelResult) = UiWindowHeader(
         windowId = WindowIdUtil.compute(window, window),
         title = windowTitle(window),
-        kind = when (window) {
-            is Frame -> "frame"
-            is Dialog -> "dialog"
-            else -> "popup"
-        },
+        kind = UiWindows.kind(window).label,
         modal = (window as? Dialog)?.isModal == true,
         source = model.source,
         note = listOfNotNull(model.note, backendDrawnNote(window)).joinToString("; ").ifEmpty { null },

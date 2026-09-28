@@ -5,12 +5,42 @@ import com.intellij.ide.DataManager
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.project.Project
 import com.intellij.util.ui.UIUtil
+import java.awt.Dialog
+import java.awt.Frame
 import java.awt.Window
 import javax.swing.JToolTip
 import javax.swing.RootPaneContainer
 
-/** Which windows belong to a project, in the order a snapshot lists them. */
+/** Which windows belong to a project, in the order a snapshot lists them, and how each kind of window closes. */
 object UiWindows {
+    /** The kinds of window a snapshot and a step report name. */
+    enum class Kind(val label: String) { FRAME("frame"), DIALOG("dialog"), POPUP("popup") }
+
+    fun kind(w: Window): Kind = when (w) {
+        is Frame -> Kind.FRAME
+        is Dialog -> Kind.DIALOG
+        else -> Kind.POPUP
+    }
+
+    /** How a close step closes a window, innermost first: the IDE's own cancel where it has one. */
+    enum class CloseWay { CANCEL_DIALOG, CANCEL_POPUP, CLOSE_MENU, REQUEST_CLOSE }
+
+    /**
+     * How to close a window of [kind]. Only the project frame has no way: every other window, of any [Kind], is asked
+     * to close as by its title bar's close button when the IDE has no cancel for it. A window such as the non-modal
+     * Settings window is a plain dialog or frame that no DialogWrapper holds, so the fallback must cover every kind.
+     * The `when` over [Kind] has no `else`, so a new kind does not compile until it has a way.
+     */
+    fun closeWay(kind: Kind, isProjectFrame: Boolean, hasDialogWrapper: Boolean, hasPopup: Boolean, hasMenu: Boolean): CloseWay? = when {
+        hasDialogWrapper -> CloseWay.CANCEL_DIALOG
+        hasPopup -> CloseWay.CANCEL_POPUP
+        hasMenu -> CloseWay.CLOSE_MENU
+        isProjectFrame -> null
+        else -> when (kind) {
+            Kind.FRAME, Kind.DIALOG, Kind.POPUP -> CloseWay.REQUEST_CLOSE
+        }
+    }
+
     /**
      * [all] in creation order, as `Window.getWindows()` returns them. [tops] are the windows without an owner that
      * belong to the project: its frame, and frames such as the separate Settings window. The result is every top and

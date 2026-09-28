@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ui
 
+import com.intellij.ide.DataManager
 import com.intellij.ide.actions.ShowSettingsUtilImpl
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.ide.plugins.contentModules
@@ -16,6 +17,8 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.options.SearchableConfigurable
 import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.options.ex.Settings
+import com.intellij.openapi.util.ActionCallback
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.playback.PlaybackContext
 import com.intellij.openapi.ui.playback.PlaybackRunner
@@ -46,6 +49,8 @@ import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import java.awt.Component
+import java.awt.Dialog
 import java.awt.Window
 import java.nio.file.Path
 import java.util.Collections
@@ -72,10 +77,18 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
 
     /**
      * Opens Settings at [UiStep.page], an id, a path such as `Editor > General > Code Folding` or a display name; an
-     * open Settings window of the project switches to the page instead.
+     * open Settings window or modal Settings dialog switches to the page instead.
      */
     suspend fun settings(step: UiStep): Opened {
         val page = findPage(step.page!!, step.timeoutMs)
+        // Asked again, the IDE opens a second modal Settings dialog over an open one: switch the open one instead.
+        withContext(edtAny) { selectInModal(page) }?.let { callback ->
+            val started = TimeSource.Monotonic.markNow()
+            while (!callback.isProcessed && started.elapsedNow().inWholeMilliseconds < step.timeoutMs) delay(POLL_MS)
+            if (!callback.isDone) throw UiStepFailure("the open Settings dialog did not switch to $page within ${step.timeoutMs} ms")
+            UiSettle.settle(quietMs = SETTLE_QUIET_MS, maxMs = step.timeoutMs)
+            return Opened("switched Settings to $page", page.id)
+        }
         val before = UiSettle.showingWindows()
         ApplicationManager.getApplication().invokeLater({
             if (page.id != null) ShowSettingsUtilImpl.showSettingsDialog(project, page.id, null)
@@ -94,10 +107,25 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         return Opened("$verb $page", page.id)
     }
 
-    private fun settingsWindow(): Window? = Window.getWindows().firstOrNull { w ->
-        w.isShowing && (w as? RootPaneContainer)?.rootPane?.let { root ->
-            UIUtil.uiTraverser(root).any { it.javaClass.name == SETTINGS_EDITOR }
-        } == true
+    private fun settingsWindow(): Window? = Window.getWindows().firstOrNull { settingsEditor(it) != null }
+
+    /** The Settings editor [w] shows, or null. EDT. */
+    private fun settingsEditor(w: Window): Component? =
+        if (!w.isShowing) null
+        else (w as? RootPaneContainer)?.rootPane?.let { root -> UIUtil.uiTraverser(root).firstOrNull { it.javaClass.name == SETTINGS_EDITOR } }
+
+    /**
+     * Selects [page] in an open modal Settings dialog through the editor's own [Settings], and returns the selection
+     * callback. Null when no modal Settings dialog shows, or the page has no id to find it by. EDT.
+     */
+    private fun selectInModal(page: SettingsPage): ActionCallback? {
+        val id = page.id ?: return null
+        val editor = Window.getWindows().asSequence()
+            .filter { (it as? Dialog)?.isModal == true }
+            .firstNotNullOfOrNull(::settingsEditor) ?: return null
+        val settings = Settings.KEY.getData(DataManager.getInstance().getDataContext(editor)) ?: return null
+        val configurable = settings.find(id) ?: return null
+        return settings.select(configurable)
     }
 
     /**

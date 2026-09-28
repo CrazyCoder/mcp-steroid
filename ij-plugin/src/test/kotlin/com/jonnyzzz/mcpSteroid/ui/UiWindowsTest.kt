@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.ui
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class UiWindowsTest {
@@ -26,6 +27,23 @@ class UiWindowsTest {
         val settingsPopup = W("settings-popup", settings)
         val ordered = UiWindows.order(listOf(frame, settings), listOf(frame, frameDialog, settings, settingsPopup), ownerOf = { it.owner })
         assertEquals(listOf("settings-popup", "settings", "frame-dialog", "frame"), ordered.map { it.id })
+    }
+
+    @Test
+    fun `every kind of window a snapshot reports can be closed, except the project frame`() {
+        for (kind in UiWindows.Kind.entries) {
+            // The floating Settings window is such a dialog: no DialogWrapper, popup or menu holds it.
+            assertEquals(kind.label, UiWindows.CloseWay.REQUEST_CLOSE, UiWindows.closeWay(kind, false, false, false, false))
+        }
+        assertNull(UiWindows.closeWay(UiWindows.Kind.FRAME, isProjectFrame = true, hasDialogWrapper = false, hasPopup = false, hasMenu = false))
+    }
+
+    @Test
+    fun `the IDE's own cancel comes first, and a menu in the project frame closes alone`() {
+        val dialog = UiWindows.Kind.DIALOG
+        assertEquals(UiWindows.CloseWay.CANCEL_DIALOG, UiWindows.closeWay(dialog, false, hasDialogWrapper = true, hasPopup = true, hasMenu = true))
+        assertEquals(UiWindows.CloseWay.CANCEL_POPUP, UiWindows.closeWay(UiWindows.Kind.POPUP, false, hasDialogWrapper = false, hasPopup = true, hasMenu = true))
+        assertEquals(UiWindows.CloseWay.CLOSE_MENU, UiWindows.closeWay(UiWindows.Kind.FRAME, isProjectFrame = true, hasDialogWrapper = false, hasPopup = false, hasMenu = true))
     }
 
     @Test

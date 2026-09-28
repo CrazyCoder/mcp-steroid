@@ -303,8 +303,10 @@ table rows the same way.
 ## Close what you opened
 
 `ui.close()`, or the `close` step, closes the topmost dialog, popup or separate window such as Settings:
-it cancels a dialog or a popup, and closes a window as its close button does. Pass a target to close the
-window that holds it. Each call closes one window, so call it once per window you opened.
+it cancels a dialog or a popup, and closes any other window as its close button does, such as the
+floating Settings window. The step fails when the window is still open afterwards and opened nothing,
+such as a confirmation. Pass a target to close the window that holds it. Each call closes one window, so
+call it once per window you opened.
 
 ## Pitfalls
 
