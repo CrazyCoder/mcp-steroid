@@ -91,7 +91,10 @@ object UiCodeRange {
         }
     }
 
-    /** Hides [editor]'s caret and the highlight of its row for a picture; the returned function puts them back as they were. */
+    /**
+     * Hides [editor]'s caret and the highlight of its row for a picture; the returned function puts them back as they
+     * were.
+     */
     fun hideCaret(editor: Editor): () -> Unit {
         val rowShown = editor.settings.isCaretRowShown
         editor.settings.isCaretRowShown = false
