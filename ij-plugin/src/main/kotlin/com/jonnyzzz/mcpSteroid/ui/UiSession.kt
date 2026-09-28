@@ -681,6 +681,10 @@ class UiSession(
      * a list that acts on a click, such as Find Action's results, and a combo box would need its popup opened.
      */
     private suspend fun selectStep(given: UiStep): String {
+        // A JetBrains Client knows neither the backend's inspections nor its Inspections page: the backend selects.
+        given.inspection?.let { name ->
+            if (withContext(edtAny) { localInspection(name) } == null) backendInspectionSelect(name)?.let { return it }
+        }
         val step = given.inspection?.let { given.copy(target = UiTarget(cls = INSPECTIONS_TREE), row = inspectionPath(it), inspection = null) } ?: given
         val found = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
         // An open combo box popup's list shows the combo box's items: selecting in the list alone would not pick one.
@@ -1331,11 +1335,35 @@ class UiSession(
     private suspend fun inspectionHighlight(shortName: String, label: String?, window: Window, timeoutMs: Long): Located =
         locateHighlight(UiHighlight(UiTarget(cls = INSPECTIONS_TREE), row = inspectionPath(shortName), label = label), window, timeoutMs)
 
-    /** The row path of inspection [shortName] in the Inspections tree: its groups, then its display name. */
-    private suspend fun inspectionPath(shortName: String): String = withContext(edtAny) {
-        val tool = com.intellij.profile.codeInspection.InspectionProjectProfileManager.getInstance(project).currentProfile.getInspectionTool(shortName, project)
+    /**
+     * The row path of inspection [shortName] in the Inspections tree: its groups, then its display name. A JetBrains
+     * Client's profile lacks the backend's inspections, and its Inspections page is the backend's: the backend selects
+     * the row there, and its report names the path.
+     */
+    private suspend fun inspectionPath(shortName: String): String {
+        val local = withContext(edtAny) { localInspection(shortName) }
+        if (local != null) return local
+        val report = backendInspectionSelect(shortName)
             ?: throw UiStepFailure("no inspection has the short name \"$shortName\"; a get of an inspection lists short names as it finds them")
-        (tool.groupPath.toList() + tool.displayName).joinToString(UiRows.PATH_SEPARATOR)
+        return SELECTED_PATH.find(report)?.groupValues?.get(1) ?: throw UiStepFailure("the backend selected the inspection but named no row: $report")
+    }
+
+    /** The row path of inspection [shortName] from this side's profile, or null when it has none. EDT. */
+    private fun localInspection(shortName: String): String? =
+        com.intellij.profile.codeInspection.InspectionProjectProfileManager.getInstance(project).currentProfile.getInspectionTool(shortName, project)
+            ?.let { tool -> (tool.groupPath.toList() + tool.displayName).joinToString(UiRows.PATH_SEPARATOR) }
+
+    /** In a JetBrains Client, the report of a select of inspection [shortName] run on the backend, or null elsewhere. */
+    private suspend fun backendInspectionSelect(shortName: String): String? {
+        val forward = forward ?: return null
+        val step = UiSteps.parse(JsonArray(listOf(buildJsonObject {
+            put("action", "select")
+            put("inspection", shortName)
+            put("side", "backend")
+        }))).single()
+        val report = forward.invoke(step)
+        if (!report.passed) throw UiStepFailure("on the backend: ${report.text}")
+        return report.text
     }
 
     /**
@@ -1887,6 +1915,8 @@ class UiSession(
         private const val FIT_ROUNDS = 2
         /** The tree table of Settings | Editor | Inspections, which an inspection highlight searches. */
         private const val INSPECTIONS_TREE = "InspectionsConfigTreeTable"
+        /** The row path in a select step's report, as `selected row #70 "A > B > C" in ...`. */
+        private val SELECTED_PATH = Regex("""selected row #\d+ "(.+?)" in """)
         /** The most text controls a picture's badges keep off: an IDE window shows a few hundred. */
         private const val MAX_OBSTACLES = 2_000
         private const val ACTION_QUIET_MS = 700L
