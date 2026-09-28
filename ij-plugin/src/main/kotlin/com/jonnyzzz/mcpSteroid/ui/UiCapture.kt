@@ -293,7 +293,8 @@ object UiCapture {
      * Where each mark's badge and label go, badges placed in order so that none covers another. A label goes right of
      * its mark on the badge's line, "(1) [control] label", or left of the badge when the picture has no room there.
      * Where that label would cover the text of another control, one of [obstacles], badge and label move below the
-     * mark, or above it. A pointer mark's badge goes right of the pointer.
+     * mark, or above it. A pointer mark's badge goes right of the pointer, else left of it with the label further
+     * left, below or above. With no spot that covers nothing, they take the one that covers the least.
      */
     private fun layout(canvas: Canvas, marks: List<Mark>, g: Graphics2D, obstacles: List<Rectangle>): List<Pair<Mark, Parts>> {
         val placed = mutableListOf<Rectangle>()
@@ -328,17 +329,29 @@ object UiCapture {
                 label?.let { placed += it }
                 return@mapIndexed mark to Parts(outline, null, label)
             }
-            var badge = if (mark.pointer) {
-                Rectangle(outline.x + outline.width + GAP, outline.y + (outline.height - BADGE) / 2, BADGE, BADGE).takeIf(::free)
-                    ?: badgeBounds(outline, BADGE, within, placed, others)
-            } else badgeBounds(outline, BADGE, within, placed, others)
-            var label = mark.label?.let { labelFor(badge, it) }
-            if (label != null && others.any { it.intersects(label!!) }) {
-                listOf(below(outline, BADGE), above(outline, BADGE)).firstOrNull { spot -> free(spot) && free(labelFor(spot, mark.label!!)) }?.let { spot ->
-                    badge = spot
-                    label = labelFor(spot, mark.label!!)
-                }
+            // The pixels of other text and of placed badges a spot covers; one past the picture counts as covering all.
+            fun covered(vararg parts: Rectangle?): Long = parts.filterNotNull().sumOf { r ->
+                if (!within.contains(r)) OFF_PICTURE
+                else (others + placed).sumOf { o -> r.intersection(o).takeUnless { it.isEmpty }?.let { it.width.toLong() * it.height } ?: 0L }
             }
+            fun spot(badge: Rectangle, leftward: Boolean = false): Pair<Rectangle, Rectangle?> = badge to mark.label?.let { text ->
+                if (!leftward) return@let labelFor(badge, text)
+                val width = labelMetrics.stringWidth(text) + 2 * LABEL_PAD
+                Rectangle(badge.x - GAP - width, badge.y, width, badge.height)
+            }
+            val spots = if (mark.pointer) {
+                // A menu opened by the click reaches right of the pointer, and below and above it: the left stays clear.
+                val y = outline.y + (outline.height - BADGE) / 2
+                listOf(
+                    spot(Rectangle(outline.x + outline.width + GAP, y, BADGE, BADGE)),
+                    spot(Rectangle(outline.x - GAP - BADGE, y, BADGE, BADGE), leftward = true),
+                    spot(below(outline, BADGE)), spot(above(outline, BADGE)),
+                )
+            } else {
+                listOf(spot(badgeBounds(outline, BADGE, within, placed, others)), spot(below(outline, BADGE)), spot(above(outline, BADGE)))
+            }
+            // The first spot whose badge and label cover nothing, else the one that covers the least.
+            val (badge, label) = spots.firstOrNull { (b, l) -> free(b) && (l == null || free(l)) } ?: spots.minBy { (b, l) -> covered(b, l) }
             placed += badge
             label?.let { placed += it }
             mark to Parts(outline, badge, label)
@@ -418,6 +431,8 @@ object UiCapture {
     /** The size of a pointer mark, as a mouse pointer shows at the IDE's scale. */
     private const val POINTER_W = 12
     private const val POINTER_H = 19
+    /** What a spot past the picture's edge counts as covering: more than any spot inside it can. */
+    private const val OFF_PICTURE = Long.MAX_VALUE / 16
     private val BADGE_FONT = Font(Font.SANS_SERIF, Font.BOLD, 11)
     private val LABEL_FONT = Font(Font.SANS_SERIF, Font.BOLD, 12)
 }

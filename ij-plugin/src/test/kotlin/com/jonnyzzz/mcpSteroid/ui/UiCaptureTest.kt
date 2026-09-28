@@ -110,6 +110,25 @@ class UiCaptureTest {
     }
 
     @Test
+    fun `a pointer's badge and label go left of it when a menu's text lies right, above and below`() {
+        val c = canvas(800, 600)
+        // A context menu opened at the click: its items reach from just right of the pointer, above and below it.
+        val menu = Rectangle(412, 190, 300, 300)
+        val area = UiCapture.markArea(c, listOf(UiCapture.Mark(1, Rectangle(400, 200, 1, 1), "right-click", pointer = true)), listOf(menu))
+        assertTrue("nothing reaches into the menu: $area", area.x + area.width <= menu.x)
+    }
+
+    @Test
+    fun `with no free spot a label takes the one that covers the least text`() {
+        val c = canvas(800, 600)
+        val mark = Rectangle(300, 200, 80, 24)
+        // Text all around the mark, but only a sliver of it where the label would go below.
+        val around = listOf(Rectangle(100, 150, 700, 48), Rectangle(100, 200, 198, 24), Rectangle(382, 200, 418, 24), Rectangle(100, 230, 700, 2))
+        val area = UiCapture.markArea(c, listOf(UiCapture.Mark(1, mark, "the setting")), around)
+        assertTrue("the label hangs below, over the sliver: $area", area.y + area.height > mark.y + mark.height + 4)
+    }
+
+    @Test
     fun `a pointer mark draws an arrow at the point, not a box`() {
         val c = UiCapture.highlight(canvas(400, 300), listOf(UiCapture.Mark(1, Rectangle(200, 100, 1, 1), null, pointer = true)))
         // The tip is at (200, 100) on screen, (100, 50) in the picture: the arrow's body runs down and right of it.
