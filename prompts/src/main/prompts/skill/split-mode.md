@@ -63,6 +63,12 @@ each disagreement, and a `steroid_ui` call that opens or closes editors reports 
 notice. The backend logs each open as `Opening remote editor for file=...`, and each close as
 `Removing editor`, which `{"action":"expect","log":"...","side":"backend"}` checks.
 
+The backend reads the errors in open editors, since the Client's copy of the highlighting has no descriptions.
+An `EDITOR ERRORS in the backend` notice therefore comes with a call that reaches the backend, such as
+`steroid_execute_code` or `steroid_refactor`, and `{"action":"get","problems":...}` runs there by itself. The
+Client shows the backend's notifications as well as its own, so `IDE NOTIFICATIONS in the JetBrains Client` names
+both, and the backend does not repeat them.
+
 ## Memory on each side
 
 Each side has its own heap. The backend holds the project model, the indexes and the inspections, so it is

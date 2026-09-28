@@ -107,7 +107,8 @@ class IdeNotifications {
 
         /**
          * The notifications, errors and warnings first and then the newest, at most [MAX_LINES] lines, with how to act
-         * on one and how to list them all. [side] names the process in Split Mode, as [FreezeMonitor.sideOf] gives it.
+         * on one when a listed one has an action, and how to list them all. [side] names the process in Split Mode, as
+         * [FreezeMonitor.sideOf] gives it.
          */
         fun render(notifications: List<IdeNotification>, side: String? = null): String = buildString {
             val shown = notifications.sortedWith(compareBy<IdeNotification> { ORDER.indexOf(it.type).let { i -> if (i < 0) ORDER.size else i } }
@@ -115,8 +116,11 @@ class IdeNotifications {
             val count = if (notifications.size == 1) "1 notification" else "${notifications.size} notifications"
             val projects = notifications.mapNotNull { it.project }.distinct().size > 1
             append("IDE NOTIFICATIONS${side?.let { " in $it" }.orEmpty()}: the IDE showed $count since your last call")
-            append("; act on one with a steroid_ui click on its action in the Notifications tool window, ")
-            append("{\"action\":\"toolwindow\",\"id\":\"Notifications\"}:")
+            if (shown.take(MAX_LINES).any { it.actions.isNotEmpty() }) {
+                append("; act on one with a steroid_ui click on its action in the Notifications tool window, ")
+                append("{\"action\":\"toolwindow\",\"id\":\"Notifications\"}")
+            }
+            append(':')
             for (n in shown.take(MAX_LINES)) append("\n- ").append(line(n, projects))
             if (shown.size > MAX_LINES) append("\n- and ${shown.size - MAX_LINES} more; {\"action\":\"get\",\"notifications\":true} lists them")
             append('\n')

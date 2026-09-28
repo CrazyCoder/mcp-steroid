@@ -49,6 +49,14 @@ class IdeNotificationsTest {
     }
 
     @Test
+    fun `without an action to click, the notice does not say how to click one`() {
+        val plain = IdeNotification(1, 1_700_000_000_000L, "proj", "INFORMATION", "Indexing", "done", emptyList())
+        val notice = IdeNotifications.render(listOf(plain))
+        assertTrue(notice.startsWith("IDE NOTIFICATIONS: the IDE showed 1 notification since your last call:\n"))
+        assertTrue(IdeNotifications.render(listOf(plain.copy(actions = listOf("Show")))).contains("Notifications tool window"))
+    }
+
+    @Test
     fun `a notification without a title or a text is not kept, and a long text is cut`() {
         val notifications = IdeNotifications()
         notifications.add(null, "INFORMATION", "", "", emptyList())
