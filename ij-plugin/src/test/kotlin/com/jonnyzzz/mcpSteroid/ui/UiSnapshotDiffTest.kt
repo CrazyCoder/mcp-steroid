@@ -32,6 +32,27 @@ class UiSnapshotDiffTest {
     }
 
     @Test
+    fun `an aged time, the gutter and a file editor's text are no change`() {
+        val frame = { age: String, lines: String, text: String ->
+            """
+            window w-3 "refplay – App.java" (frame) source=remote-driver
+            - JPanel
+              - EditorGutterComponentImpl [ref=e75] text=$lines
+              - EditorComponentImpl "Editor for App.java" [ref=e56] [editable] value="$text"
+              - EditorComponentImpl "Name:" [ref=e57] [editable] value="$text"
+              - TextPanel "// Build completed successfully in 2 sec ($age)" [ref=e123]
+            """.trimIndent()
+        }
+        assertEquals(
+            """
+            - EditorComponentImpl "Name:" [ref=e57] [editable] value="a"
+            + EditorComponentImpl "Name:" [ref=e57] [editable] value="b"
+            """.trimIndent(),
+            UiSnapshotDiff.diff(frame("a minute ago", "1|2", "a"), frame("12 minutes ago", "1|2|3", "b")),
+        )
+    }
+
+    @Test
     fun `a focus change alone is no change`() {
         val after = before.replace(" [focused]", "").replace("[ref=e2] [disabled]", "[ref=e2] [disabled] [focused]")
         assertEquals("", UiSnapshotDiff.diff(before, after))

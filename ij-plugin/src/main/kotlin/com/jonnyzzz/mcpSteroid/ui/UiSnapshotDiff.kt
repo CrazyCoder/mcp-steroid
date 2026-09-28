@@ -8,12 +8,17 @@ package com.jonnyzzz.mcpSteroid.ui
  * control across the two snapshots, so a changed state shows as its old and new line.
  *
  * Not counted as changes: the keyboard focus, which moves with nearly every step; wrapper panels, which show
- * nothing; and widgets that change on their own, the memory indicator and the background tasks in the status
- * bar, with everything under them. A control that came back with the same line under a new ref, as a menu bar
- * rebuilt while the IDE starts, is counted in one line instead of listed.
+ * nothing; widgets that change on their own, the memory indicator and the background tasks in the status bar, with
+ * everything under them; a time that only aged, such as "(3 minutes ago)"; and what follows the caret and the code of
+ * the project's files, the gutter, the breadcrumbs and the text of a file's editor, which the step reports and the
+ * run's code changes give. A control that came back with the same line under a new ref, as a menu bar rebuilt while
+ * the IDE starts, is counted in one line instead of listed.
  */
 object UiSnapshotDiff {
-    private val VOLATILE_CLASSES = setOf("MemoryUsagePanelImpl", "MemoryUsagePanel", "InlineProgressPanel")
+    private val VOLATILE_CLASSES = setOf("MemoryUsagePanelImpl", "MemoryUsagePanel", "InlineProgressPanel", "EditorGutterComponentImpl", "PsiBreadcrumbs")
+    /** A file's editor, whose text the code changes give; a dialog's editor field is named by its label instead. */
+    private const val FILE_EDITOR = "EditorComponentImpl \"Editor for "
+    private val AGE = Regex("""\((?:a|an|\d+) (?:second|minute|hour|day)s? ago\)""")
     private val WRAPPER = Regex("^[\\w$]+$")
     private val REF = Regex(" \\[ref=e\\d+]")
 
@@ -36,11 +41,12 @@ object UiSnapshotDiff {
             }
             val oldLines = changeLines(was.lines)
             val newLines = changeLines(block.lines)
-            val removed = subtract(oldLines, newLines)
-            val added = subtract(newLines, oldLines)
+            val aged = { line: String -> line.replace(AGE, "") }
+            val removed = subtract(oldLines, newLines, key = aged)
+            val added = subtract(newLines, oldLines, key = aged)
             // The same line under a new ref is the same control rebuilt: its old ref is stale, nothing else changed.
-            val removedKept = subtract(removed, added, key = { it.replace(REF, "") })
-            val addedKept = subtract(added, removed, key = { it.replace(REF, "") })
+            val removedKept = subtract(removed, added, key = { aged(it).replace(REF, "") })
+            val addedKept = subtract(added, removed, key = { aged(it).replace(REF, "") })
             val rebuilt = added.size - addedKept.size
             val changes = removedKept.map { "- $it" } + addedKept.map { "+ $it" } +
                 listOfNotNull(if (rebuilt > 0) "~ $rebuilt control(s) rebuilt with new refs; take a snapshot for them" else null)
@@ -81,7 +87,7 @@ object UiSnapshotDiff {
             if (volatileDepth >= 0 && depth > volatileDepth) continue
             volatileDepth = -1
             val line = raw.replace(" [focused]", "").trim().removePrefix("- ")
-            if (line.substringBefore(' ') in VOLATILE_CLASSES) {
+            if (line.substringBefore(' ') in VOLATILE_CLASSES || line.startsWith(FILE_EDITOR)) {
                 volatileDepth = depth
                 continue
             }

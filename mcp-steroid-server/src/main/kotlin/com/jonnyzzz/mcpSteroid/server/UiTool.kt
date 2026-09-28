@@ -111,7 +111,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           "contains", "matches" (a regex), "count", or "row" with "is" selected, expanded or collapsed, or with
           "value", "contains" or "matches" for a table row's other cells;
           "title" (a window) with "is" visible or hidden; "file" with "value", "contains" or "matches", optionally
-          on "line", or "caret":"line:column"; "editor":"path or name" with "is" visible, focused or hidden;
+          on "line", "caret":"line:column", or "golden":"path" (the whole text equals a golden file's);
+          "changed":["path", ...] (exactly the files the steps changed, [] for none); "diff":"-old\n+new" (lines
+          of the steps' diff, with "file" of that file's); "console":"App" with "contains" or "matches" (a run's
+          output); "editor":"path or name" with "is" visible, focused or hidden;
           "banner":"text" above an open editor; "notification":"text", "error":"text" ("" or true for any) and
           "log":"text" (an idea.log line), shown or logged since the call started; "memory" with "below":
           heap_after_gc (MB, after a full GC), heap (MB), threads or gc_signals; "layout":true, that the topmost
@@ -141,8 +144,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           name, get alone shows its saved XML. "log":"#category" reads or sets a debug log level (trace, debug,
           all, or default). A set reports the value before and after. get also takes "editors":true (the open
           editors of each side, and in Split Mode where they disagree), "file":"path" (its type, language,
-          editor providers and open editors) and "memory":true (heap, heap after the last GC, direct buffers,
-          threads, OS memory and the GC's load, as the memory indicator shows them)
+          editor providers and open editors), "memory":true (heap, heap after the last GC, direct buffers,
+          threads, OS memory and the GC's load, as the memory indicator shows them), "builds":true (the recent
+          builds and syncs with their first errors), "console":"App" with optional "lines" (a run's last output
+          lines and exit code; "" for the latest run) and "changes":true (the diff of the files the steps changed)
         - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project, or
           with "delete":true deletes it
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
@@ -151,7 +156,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           the topmost one, to the execution folder, for a visual review
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In
         Split Mode any step takes "side":"backend" to run on the Remote Development backend from a JetBrains
-        Client call; write, code, goto, file and banner expects and inspection settings go there by default.
+        Client call; write, code, goto, file, banner, changed, diff and console expects, inspection settings,
+        and gets of files, builds, consoles and changes go there by default.
 
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]
@@ -159,6 +165,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                   {"action":"run","id":"ChangeSignature"}], then fill and click in the dialog it opens.
         goto and run work the way a user does: they open files, move the caret and show dialogs, which a
         reproduction needs. To only change code, and leave the user's windows alone, use steroid_refactor.
+        mcp-steroid://ide/editor-actions lists what applies at the caret and the common action ids. A step that
+        changed project files ends with them, such as "changed src/A.kt (+5 -1)", and the response ends with
+        the diff under "code changes:". Tool results start with BUILD FAILED and RUN FAILED notices for builds,
+        syncs and runs that failed since the previous call.
 
         Every call with steps records them to the task's recording file, named in the response, with refs
         replaced by names so that they replay in another session. A scenario file of such steps is any

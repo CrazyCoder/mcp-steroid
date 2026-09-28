@@ -17,6 +17,8 @@ import com.intellij.openapi.util.text.StringUtil
 import com.jonnyzzz.mcpSteroid.freeze.IdeBanners
 import com.jonnyzzz.mcpSteroid.freeze.IdeErrors
 import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
+import com.jonnyzzz.mcpSteroid.freeze.IdeRuns
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.jonnyzzz.mcpSteroid.server.UiExpectState
 import com.jonnyzzz.mcpSteroid.server.UiStep
 import com.jonnyzzz.mcpSteroid.server.UiTarget
@@ -48,6 +50,8 @@ internal class UiExpect(
     private val describe: (UiNode) -> String,
     /** The controls that lie past an edge, in the windows in scope or under a target, as layout lines. */
     private val layout: suspend (UiTarget?) -> List<String>,
+    /** The project files the run changed so far. */
+    private val runChanges: suspend () -> List<UiCodeChanges.FileChange>,
 ) {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
     private val editors = UiEditors(project)
@@ -86,6 +90,10 @@ internal class UiExpect(
         }
         step.target != null -> control(step, step.target!!)
         step.title != null -> window(step.title!!, step.state)
+        step.changed != null -> changed(step.changed!!)
+        step.diff != null -> diff(step.diff!!, step.file)
+        step.console != null -> console(step)
+        step.file != null && step.golden != null -> golden(step.file!!, step.golden!!)
         step.file != null -> file(step)
         step.notification != null -> notification(step.notification!!)
         step.banner != null -> banner(step.banner!!)
@@ -295,6 +303,66 @@ internal class UiExpect(
         }
     }
 
+    /** Exactly [wanted] among the project files the run changed, created, deleted or moved. */
+    private suspend fun changed(wanted: List<String>): Check {
+        val actual = runChanges().map { it.path }.toSortedSet()
+        val want = wanted.map(::normalize).toSortedSet()
+        val shown = if (actual.isEmpty()) "the run changed no project file" else "the run changed ${actual.joinToString()}"
+        val extra = (actual - want).takeIf { it.isNotEmpty() }?.let { "; not expected: ${it.joinToString()}" }.orEmpty()
+        val missing = (want - actual).takeIf { it.isNotEmpty() }?.let { "; unchanged: ${it.joinToString()}" }.orEmpty()
+        return Check(actual == want, if (want.isEmpty()) "no project file changed" else "exactly ${want.joinToString()} changed", shown + extra + missing)
+    }
+
+    /** [wanted] diff lines, one after another, in one hunk of the run's diff, or of [file]'s. */
+    private suspend fun diff(wanted: String, file: String?): Check {
+        val lines = wanted.lines().filter { it.isNotBlank() }
+        val all = runChanges()
+        val changes = file?.let { f -> all.filter { it.path == normalize(f) } } ?: all
+        val where = file?.let { "the diff of $it" } ?: "the run's diff"
+        val having = changes.filter { UiCodeChanges.diffHas(it, lines) }
+        val holds = having.isNotEmpty()
+        val actual = when {
+            holds -> "they are in the diff of ${having.joinToString { it.path }}"
+            changes.isEmpty() && file != null -> "the run did not change $file" + if (all.isEmpty()) "" else "; it changed ${all.joinToString { it.path }}"
+            changes.isEmpty() -> "the run changed no project file"
+            else -> "the diff is:\n" + UiCodeChanges.render(changes, maxLines = FAILURE_DIFF_LINES)
+        }
+        return Check(holds, "$where with the lines ${lines.joinToString(" | ") { "\"$it\"" }}", actual)
+    }
+
+    /** [path]'s whole text equal to the text of [golden], lines compared without their separators. */
+    private suspend fun golden(path: String, golden: String): Check {
+        val file = withContext(Dispatchers.IO) { CodeLocation.findFile(project, path) } ?: return Check(false, "file $path", "the file is not found")
+        val expectedFile = withContext(Dispatchers.IO) { CodeLocation.findFile(project, golden) }
+            ?: throw UiStepFailure("no golden file $golden; write it with the text $path must have, relative to the project")
+        val actual = readAction { FileDocumentManager.getInstance().getDocument(file)?.text } ?: return Check(false, "file $path", "the file has no text")
+        val expected = readAction { FileDocumentManager.getInstance().getDocument(expectedFile)?.text ?: VfsUtilCore.loadText(expectedFile) }
+        val norm = { s: String -> s.replace("\r\n", "\n").trimEnd('\n') }
+        val wanted = "$path equal to $golden"
+        if (norm(actual) == norm(expected)) return Check(true, wanted, "it is")
+        val diff = UiCodeChanges.render(listOf(UiCodeChanges.FileChange(path, norm(expected), norm(actual))), maxLines = FAILURE_DIFF_LINES)
+            .lines().drop(1).joinToString("\n")
+        return Check(false, wanted, "it differs, - the golden text, + the file's:\n$diff")
+    }
+
+    /** The output of the latest run named by [UiStep.console] containing or matching the step's text. */
+    private fun console(step: UiStep): Check {
+        val runs = IdeRuns.getInstanceOrNull() ?: throw UiStepFailure("the IDE application is not available")
+        val name = step.console!!
+        val what = "the console of ${if (name.isBlank()) "the latest run" else "'$name'"}"
+        val run = runs.find(project.name, name) ?: return Check(false, what, "no such run since the IDE started")
+        val lines = run.text()
+        val holds = if (step.contains != null) lines.any { it.contains(step.contains!!) } else Regex(step.matches!!).let { r -> lines.any { r.containsMatchIn(it) } }
+        val wanted = if (step.contains != null) "$what containing \"${step.contains}\"" else "$what matching /${step.matches}/"
+        return Check(holds, wanted, "its last lines: " + lines.takeLast(FAILURE_CONSOLE_LINES).joinToString(" | ") { it.take(160) }.ifEmpty { "(no output)" })
+    }
+
+    private fun normalize(path: String): String {
+        val p = path.replace('\\', '/').removePrefix("./")
+        val base = project.basePath?.replace('\\', '/')?.trimEnd('/')
+        return if (base != null && p.startsWith("$base/", ignoreCase = true)) p.substring(base.length + 1) else p
+    }
+
     private suspend fun notification(text: String): Check {
         val seen = notifications.since(startedMs) + withContext(edtAny) {
             ActionCenter.getNotifications(project).map { UiNotificationLog.describe(it) }
@@ -333,6 +401,8 @@ internal class UiExpect(
         const val LAYOUT_QUIET_MS = 300L
         const val LAYOUT_SETTLE_MS = 1_500L
         const val GC_EVERY_MS = 2_000L
+        const val FAILURE_DIFF_LINES = 30
+        const val FAILURE_CONSOLE_LINES = 5
 
         /** When a heap_after_gc check last ran a full GC, in this process. */
         @Volatile

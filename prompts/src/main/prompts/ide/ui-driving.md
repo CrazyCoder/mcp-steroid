@@ -173,6 +173,9 @@ Two ways to refactor, for two jobs:
   preview or the in-place template, which is what a reproduction of a user's report needs, and they
   reach refactorings the tool does not cover.
 
+[Editor actions](mcp-steroid://ide/editor-actions) covers this in full: what applies at the caret, context
+actions, the context menu, Refactor This, Generate, and the code each step changed.
+
 A `goto` step opens a file in the editor and puts the caret on a symbol, a line and column, or selects an
 exact snippet. A `run` step then runs any IDE action by id there, and the next steps drive the dialog,
 popup or in-place template it opens. This covers every refactoring with a dialog, in any language, with
@@ -322,6 +325,7 @@ window that holds it. Each call closes one window, so call it once per window yo
 # See also
 
 - [Record, check and replay IDE scenarios with steroid_ui](mcp-steroid://ide/ui-scenarios)
+- [Drive editor actions at a code fragment as a person does](mcp-steroid://ide/editor-actions)
 - [Split Mode: what runs on the client and what runs on the backend](mcp-steroid://skill/split-mode)
 - [Discover IDE actions at caret](mcp-steroid://ide/action-discovery)
 - [Open Project (With Dialog Handling)](mcp-steroid://open-project/open-with-dialogs)

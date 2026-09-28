@@ -154,6 +154,9 @@
         <registryKey key="mcp.steroid.kotlinc.parameters" defaultValue="-language-version 2.3 -api-version 2.3 -Xdisable-default-scripting-plugin"
             description="Additional kotlinc command-line parameters (space-separated). Default: -language-version 2.3 -api-version 2.3 — the Kotlin bundled by the oldest supported IDE (2026.1 ships 2.3.20) — plus -Xdisable-default-scripting-plugin, because the bundled kotlinc/ folder ships no kotlin-scripting-* jars and the default scripting-plugin probe would log a ClassNotFoundException on every compilation. For example: -Xskip-metadata-version-check"/>
 
+        <!-- Failed builds and syncs from the Build and Sync tool windows, surfaced to agents in every tool result -->
+        <postStartupActivity implementation="com.jonnyzzz.mcpSteroid.freeze.IdeBuilds$Startup"/>
+
         <!-- Start MCP server when a project opens (writes URL files, runs analytics) -->
         <postStartupActivity
                 implementation="com.jonnyzzz.mcpSteroid.server.SteroidsMcpServerStartupActivity"/>
@@ -167,5 +170,11 @@
         <listener class="com.jonnyzzz.mcpSteroid.freeze.FreezeListener"
                   topic="com.intellij.diagnostic.IdePerformanceListener"/>
     </applicationListeners>
+
+    <projectListeners>
+        <!-- The output of runs, kept for a get of a console, and failed runs surfaced to agents in every tool result -->
+        <listener class="com.jonnyzzz.mcpSteroid.freeze.IdeRuns$Listener"
+                  topic="com.intellij.execution.ExecutionListener"/>
+    </projectListeners>
 
 </idea-plugin>

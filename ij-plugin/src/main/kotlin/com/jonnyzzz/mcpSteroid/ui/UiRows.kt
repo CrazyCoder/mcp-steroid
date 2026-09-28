@@ -1,7 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ui
 
+import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.ui.SimpleColoredComponent
+import com.intellij.ui.popup.PopupFactoryImpl
 import java.awt.Component
 import java.awt.Container
 import java.awt.Point
@@ -22,7 +24,8 @@ import javax.swing.tree.TreePath
 
 /**
  * One row of a list, tree, table or tabbed pane as a snapshot shows it. [expanded] is null for a list row or a tree
- * leaf; [cells] are a table row's cells after its first, which [text] holds.
+ * leaf; [cells] are a table row's cells after its first, which [text] holds. [action] is the id of the IDE action a
+ * popup row runs, as in Refactor This or Generate, which a run step takes.
  */
 data class UiRow(
     val index: Int,
@@ -31,6 +34,7 @@ data class UiRow(
     val selected: Boolean,
     val expanded: Boolean?,
     val cells: List<String> = emptyList(),
+    val action: String? = null,
 )
 
 /** The rows a snapshot lists for a component: the ones in view, and how many rows it has in all. */
@@ -204,7 +208,8 @@ object UiRows {
         wanted.size <= path.size && path.takeLast(wanted.size).zip(wanted).all { (have, want) -> have == want || loose(have, want) }
 
     private fun row(c: Component, i: Int): UiRow = when (c) {
-        is JList<*> -> UiRow(i, listRow(c, i), 0, c.isSelectedIndex(i), null)
+        is JList<*> -> UiRow(i, listRow(c, i), 0, c.isSelectedIndex(i), null,
+            action = (c.model.getElementAt(i) as? PopupFactoryImpl.ActionItem)?.let { ActionManager.getInstance().getId(it.action) })
         is JTree -> {
             val path = c.getPathForRow(i)
             val leaf = path?.let { c.model.isLeaf(it.lastPathComponent) } ?: true

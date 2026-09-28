@@ -56,7 +56,7 @@ data class Freeze(
  * and dumps threads while it lasts; [FreezeListener] forwards those reports here. Each dump is read for
  * who holds the lock. A steroid_execute_code script that holds a read lock the UI waits for is cancelled.
  * [guard] puts the freeze in front of every tool result, and answers a call that is still waiting once
- * the freeze has been known for [EARLY_ANSWER_MS]. It also carries the [IdeMemory], [IdeErrors] and [IdeBanners] notices.
+ * the freeze has been known for [EARLY_ANSWER_MS]. It also carries the [IdeMemory], [IdeErrors], [IdeBuilds], [IdeRuns] and [IdeBanners] notices.
  */
 @Service(Service.Level.APP)
 class FreezeMonitor(private val scope: CoroutineScope) {
@@ -129,9 +129,15 @@ class FreezeMonitor(private val scope: CoroutineScope) {
     @TestOnly
     internal var ideMemory: () -> IdeMemory? = IdeMemory::getInstanceOrNull
 
+    @TestOnly
+    internal var ideBuilds: () -> IdeBuilds? = IdeBuilds::getInstanceOrNull
+
+    @TestOnly
+    internal var ideRuns: () -> IdeRuns? = IdeRuns::getInstanceOrNull
+
     /**
-     * Runs [call] and puts any freeze, the errors the IDE logged since [session]'s last call, and the warning
-     * banners above open editors and the memory pressure it was not told about, in front of its result. A call
+     * Runs [call] and puts any freeze, the errors the IDE logged and the builds and runs that failed since [session]'s
+     * last call, and the warning banners above open editors and the memory pressure it was not told about, in front of its result. A call
      * still running once a freeze has been known for [EARLY_ANSWER_MS] is answered with the freeze instead, and
      * keeps running in the IDE. [reportsIdeErrors] tells that the call's own result lists the errors logged while it ran, as
      * steroid_execute_code does. With [jsonOutput] every answer is the [ToolOutputContract] envelope of [tool], and the
@@ -147,9 +153,14 @@ class FreezeMonitor(private val scope: CoroutineScope) {
         val errors = ideErrors()
         val banners = ideBanners()
         val memory = ideMemory()
+        val builds = ideBuilds()
+        val runs = ideRuns()
         val startedAtMs = System.currentTimeMillis()
         // Each notice is marked told when it is read, so a result reads them once.
-        fun notices() = listOfNotNull(noticeFor(session), memory?.noticeFor(session), errors?.noticeFor(session), banners?.noticeFor(session))
+        fun notices() = listOfNotNull(
+            noticeFor(session), memory?.noticeFor(session), errors?.noticeFor(session), builds?.noticeFor(session), runs?.noticeFor(session),
+            banners?.noticeFor(session),
+        )
         // An answer the monitor makes itself, as text or as an envelope.
         fun answer(notices: List<String>, text: String, how: ToolOutputContract.Interruption) =
             if (jsonOutput) ToolOutputContract.result(ToolOutputContract.interrupted(tool, how, text, notices))

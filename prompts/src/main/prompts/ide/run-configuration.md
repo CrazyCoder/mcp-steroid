@@ -2,6 +2,11 @@ IDE: Run Configuration
 
 This example lists available run configurations and can optionally
 
+To read the output of a run that already ran, no script is needed: `steroid_ui` with
+`[{"action":"get","console":"App","lines":40}]` gives the last lines and the exit code of the latest run named App,
+`""` for the latest run, with error lines marked `! `. Every tool result starts with a `RUN FAILED` notice for a run
+that exited with an error since the previous call.
+
 ```kotlin
 import com.intellij.execution.RunManager
 import com.intellij.execution.executors.DefaultRunExecutor

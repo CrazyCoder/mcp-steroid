@@ -1,8 +1,14 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ui
 
+import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
+import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.readAction
+import com.intellij.openapi.command.undo.UndoManager
+import com.intellij.openapi.editor.impl.EditorComponentImpl
+import com.intellij.psi.PsiDocumentManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
@@ -62,6 +68,8 @@ internal class UiEditorSteps(private val project: Project) {
         val manager = ActionManager.getInstance()
         val action = manager.getAction(id) ?: throw UiStepFailure(unknownId(id))
         val text = action.templatePresentation.text?.takeIf { it.isNotBlank() }
+        val analysis = if (id in NEEDS_ANALYSIS) awaitAnalysis(component, step.timeoutMs) else ""
+        val undo = if (id == UNDO || id == REDO) undoState(component, id) else null
         val ran = CompletableDeferred<Boolean>()
         val before = UiSettle.showingWindows()
         ApplicationManager.getApplication().invokeLater({
@@ -75,7 +83,49 @@ internal class UiEditorSteps(private val project: Project) {
             delay(POLL_MS)
         }
         if (ran.isCompleted && !ran.await()) throw UiStepFailure("$id is disabled here${text?.let { " (\"$it\")" } ?: ""}")
-        return "ran $id${text?.let { " (\"$it\")" } ?: ""}"
+        return "${analysis}ran $id${(undo?.name ?: text)?.let { " (\"$it\")" } ?: ""}" + (undo?.let { undoNote(component, it) } ?: "")
+    }
+
+    /** What an Undo or Redo is about to do in the editor of [component]: its command's name, the text's stamp and the caret. */
+    private class UndoState(val name: String?, val stamp: Long?, val caret: Int?)
+
+    private suspend fun undoState(component: Component, id: String): UndoState = withContext(edtAny) {
+        val editor = (component as? EditorComponentImpl)?.editor
+        val fileEditor = editor?.virtualFile?.let { FileEditorManager.getInstance(project).getSelectedEditor(it) }
+        val manager = UndoManager.getInstance(project)
+        val name = if (id == UNDO) manager.getUndoActionNameAndDescription(fileEditor).first else manager.getRedoActionNameAndDescription(fileEditor).first
+        UndoState(name?.replace("_", ""), editor?.document?.modificationStamp, editor?.caretModel?.offset)
+    }
+
+    /**
+     * Where an Undo or Redo that changed no text left the caret. With the caret away from the change, the first Undo only
+     * brings it back there, as it does for a person, and the next one undoes.
+     */
+    private suspend fun undoNote(component: Component, before: UndoState): String = withContext(edtAny) {
+        val editor = (component as? EditorComponentImpl)?.editor ?: return@withContext ""
+        if (editor.document.modificationStamp != before.stamp || editor.caretModel.offset == before.caret) return@withContext ""
+        val pos = editor.caretModel.logicalPosition
+        "; it changed no text but moved the caret to ${pos.line + 1}:${pos.column + 1}, where the change is: with the caret away from a change, " +
+            "the first Undo brings it back, and the next one undoes"
+    }
+
+    /**
+     * Waits for the highlighting of the editor that holds [component], up to [timeoutMs]: the context actions and quick
+     * fixes come from it, so a popup shown while it runs lists only some of them. Returns what the wait took, for the report.
+     */
+    private suspend fun awaitAnalysis(component: Component, timeoutMs: Long): String {
+        val editor = (component as? EditorComponentImpl)?.editor ?: return ""
+        val started = TimeSource.Monotonic.markNow()
+        while (true) {
+            val finished = readAction {
+                val file = PsiDocumentManager.getInstance(project).getPsiFile(editor.document) ?: return@readAction true
+                (DaemonCodeAnalyzer.getInstance(project) as? DaemonCodeAnalyzerEx)?.isErrorAnalyzingFinished(file) ?: true
+            }
+            val took = started.elapsedNow().inWholeMilliseconds
+            if (finished) return if (took < POLL_MS) "" else "waited $took ms for the editor's analysis; "
+            if (took >= timeoutMs) return "the editor's analysis was still running after $took ms, so the popup may lack some items; "
+            delay(POLL_MS)
+        }
     }
 
     private fun unknownId(id: String): String {
@@ -89,5 +139,9 @@ internal class UiEditorSteps(private val project: Project) {
     private companion object {
         const val PLACE = "steroid_ui"
         const val POLL_MS = 50L
+        const val UNDO = "\$Undo"
+        const val REDO = "\$Redo"
+        /** The actions whose popups list what the editor's highlighting found. */
+        val NEEDS_ANALYSIS = setOf("ShowIntentionActions", "GotoNextError", "GotoPreviousError", "ShowErrorDescription")
     }
 }

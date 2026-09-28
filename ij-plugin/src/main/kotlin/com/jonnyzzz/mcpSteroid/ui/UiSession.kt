@@ -23,7 +23,9 @@ import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
 import com.intellij.openapi.util.Disposer
+import com.jonnyzzz.mcpSteroid.freeze.IdeBuilds
 import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
+import com.jonnyzzz.mcpSteroid.freeze.IdeRuns
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiEditorState
 import com.jonnyzzz.mcpSteroid.server.UiForwardedStep
@@ -54,10 +56,15 @@ import java.nio.file.Path
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.AbstractButton
+import javax.swing.JButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
 import javax.swing.JList
+import javax.swing.JMenu
+import javax.swing.JMenuItem
+import javax.swing.JPopupMenu
 import javax.swing.JScrollPane
+import javax.swing.MenuSelectionManager
 import javax.swing.JSpinner
 import javax.swing.JTabbedPane
 import javax.swing.JTable
@@ -87,6 +94,8 @@ data class UiSessionResult(
     val recorded: List<JsonObject> = emptyList(),
     /** The steps that put back what the session's recorded runs changed, the last change first. */
     val undo: List<JsonObject> = emptyList(),
+    /** The project files the run changed, as a diff, or null when it changed none. */
+    val codeChanges: String? = null,
 )
 
 /**
@@ -131,6 +140,9 @@ class UiSession(
     /** Set by a click on a button whose text ends with an ellipsis, which by convention opens a dialog. */
     private var clickOpensWindow = false
 
+    /** Set by a click on a dialog's default button, such as OK or Refactor, which closes the dialog once its work is done. */
+    private var clickClosesDialog = false
+
     /**
      * What a step does about a window it opened, or a tool window it showed, that cuts controls: one of
      * [UiScenario.LAYOUT_MODES], or null for nothing, as in a call whose snapshot already shows the layout lines.
@@ -144,6 +156,26 @@ class UiSession(
     private val journal = UiRestore.Journal()
     private val stepUndo = mutableListOf<JsonObject>()
     private val undo: (List<JsonObject>) -> Unit = { stepUndo += it }
+
+    /**
+     * The project files the session's runs change, from its first run until [close]. A JetBrains Client holds no project
+     * files: the backend tracks the steps it runs.
+     */
+    private var codeChanges: UiCodeChanges? = null
+    private val codeChangesDisposable = Disposer.newDisposable("steroid_ui code changes")
+
+    private fun codeChanges(): UiCodeChanges? {
+        if (forward != null) return null
+        return codeChanges ?: UiCodeChanges(project, codeChangesDisposable).also { codeChanges = it }
+    }
+
+    /** Starts the span of changes the next runs report and check: a scenario's steps, after its setup. */
+    fun checkpoint() {
+        codeChanges()?.checkpoint()
+    }
+
+    /** Stops tracking the project's files. */
+    fun close() = Disposer.dispose(codeChangesDisposable)
 
     /**
      * Runs [steps], numbered from [firstIndex] in the reports, as a scenario run from a later step numbers them, and
@@ -160,7 +192,10 @@ class UiSession(
         val runStarted = TimeSource.Monotonic.markNow()
         val disposable = Disposer.newDisposable("steroid_ui session")
         val notifications = UiNotificationLog(project, disposable)
-        val expect = UiExpect(project, startedMs, notifications, ::matchForExpect, ::describe, ::layoutProblems)
+        val tracker = codeChanges()
+        val expect = UiExpect(project, startedMs, notifications, ::matchForExpect, ::describe, ::layoutProblems) {
+            tracker?.runChanges() ?: throw UiStepFailure("this side holds no project files; check changes with \"side\":\"backend\"")
+        }
         try {
             for ((i, step) in steps.withIndex()) {
                 val index = firstIndex + i
@@ -174,6 +209,7 @@ class UiSession(
                 portableRow = null
                 portableFields.clear()
                 layoutFailure = null
+                tracker?.stepStarted()
                 suspend fun attempt(): String = when {
                     forward != null && runsOnBackend(step) -> onBackend(step).let { line ->
                         if (step.action == UiAction.GOTO) line + focusClientEditor(step.file!!) else line
@@ -206,7 +242,11 @@ class UiSession(
                     if (record) journal.add(UiRestore.onSide(stepUndo.toList(), step.side))
                     stepUndo.clear()
                 }
-                val line = meanwhile + outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
+                // The files the step changed, which an expect only reads; a replay puts each back as the session found it.
+                val changed = if (step.action == UiAction.EXPECT || step.action == UiAction.GET) emptyList() else tracker?.stepChanges().orEmpty()
+                if (record && changed.isNotEmpty()) journal.add(tracker!!.restores(changed))
+                val changedNote = if (changed.isEmpty()) "" else "; ${UiCodeChanges.counts(changed)}"
+                val line = meanwhile + outcome.fold({ it }, { it.message ?: it.javaClass.simpleName }) + changedNote
                 trace?.let { t ->
                     val pictureAfter = tracePicture(index, "after")
                     t.record(index, label, line, outcome.isFailure, render(withBounds = true), pictureBefore, pictureAfter,
@@ -229,6 +269,10 @@ class UiSession(
         } finally {
             Disposer.dispose(disposable)
         }
+        // A refactoring whose dialog closed writes its changes a moment later, after its step reported.
+        tracker?.awaitQuiet()
+        val runChanges = tracker?.runChanges().orEmpty()
+        if (record && runChanges.isNotEmpty()) journal.add(tracker!!.restores(runChanges))
         val snapshot = when {
             failure != null && windowId != null && withContext(edtAny) { listedWindows().isEmpty() } -> ""
             // A failure outside the windows names what went wrong in the code, the action or the setting; the windows add nothing.
@@ -239,7 +283,7 @@ class UiSession(
             mode == UiSnapshotMode.NONE -> ""
             else -> UiSnapshotDiff.diff(before.orEmpty(), render(withBounds = false)).ifEmpty { "(the snapshot did not change)" }
         }
-        return UiSessionResult(reports, failure, snapshot, outcomes, recorded, journal.steps())
+        return UiSessionResult(reports, failure, snapshot, outcomes, recorded, journal.steps(), runChanges.takeIf { it.isNotEmpty() }?.let { UiCodeChanges.render(it) })
     }
 
     /**
@@ -282,15 +326,16 @@ class UiSession(
 
     /**
      * Whether a JetBrains Client sends [step] to the backend: its `side` when it names one, else the steps that need the
-     * project itself, which only the backend holds: files, the editor at a file, editor banners, scripts and the
-     * inspection profile.
+     * project itself, which only the backend holds: files, the editor at a file, editor banners, scripts, the
+     * inspection profile, builds and run consoles.
      */
     private fun runsOnBackend(step: UiStep): Boolean = when (step.side) {
         "backend" -> true
         "frontend" -> false
-        else -> step.action in BACKEND_HOME || step.action == UiAction.EXPECT && (step.file != null || step.banner != null) ||
+        else -> step.action in BACKEND_HOME ||
+            step.action == UiAction.EXPECT && (step.file != null || step.banner != null || step.console != null || step.changed != null || step.diff != null) ||
             (step.action == UiAction.GET || step.action == UiAction.SET) && step.inspection != null ||
-            step.action == UiAction.GET && step.file != null
+            step.action == UiAction.GET && (step.file != null || step.builds || step.changes || step.console != null)
     }
 
     /**
@@ -395,6 +440,11 @@ class UiSession(
         UiAction.GET -> when {
             step.editors -> editorsReport(step)
             step.memory -> IdeMemory.getInstanceOrNull()?.report() ?: throw UiStepFailure("the IDE application is not available")
+            step.builds -> IdeBuilds.getInstanceOrNull()?.recent(BUILDS_LISTED)?.let(IdeBuilds::renderRecent) ?: throw UiStepFailure("the IDE application is not available")
+            step.changes -> codeChanges()?.runChanges()?.let { if (it.isEmpty()) "the run changed no project file" else UiCodeChanges.render(it, maxLines = Int.MAX_VALUE) }
+                ?: throw UiStepFailure("this side holds no project files; get the changes with \"side\":\"backend\"")
+            step.console != null -> IdeRuns.getInstanceOrNull()?.report(project.name, step.console!!, step.lines ?: UiSteps.DEFAULT_CONSOLE_LINES)
+                ?: throw UiStepFailure("the IDE application is not available")
             step.file != null -> editors.facts(step.file!!)
             else -> config.get(step).line
         }
@@ -415,16 +465,19 @@ class UiSession(
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
                 val row = rowArea(node, tabOf(node, step))
                 clickOpensWindow = withContext(edtAny) { (node.component as? AbstractButton)?.text?.let(::opensWindow) == true }
+                clickClosesDialog = withContext(edtAny) { (node.component as? JButton)?.let { it.isDefaultButton && DialogWrapper.findInstance(it) != null } == true }
                 val offset = if (step.offsetX != null || step.offsetY != null) {
                     Point(step.offsetX ?: (node.component.width / 2), step.offsetY ?: (node.component.height / 2))
                 } else null
                 val click = input.click(node.component, button(step.button), step.count, UiInput.modifiersMask(step.modifiers), offset, row?.area)
+                (node.component as? JMenu)?.let { menu -> return submenu(menu, node, "clicked") }
                 withContext(edtAny) { row?.let { "on ${it.label}: " }.orEmpty() + describeClick(node, click) }
             }
             UiAction.HOVER -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
                 val row = rowArea(node, step)
                 input.hover(node.component, row?.area)
+                (node.component as? JMenu)?.takeIf { row == null }?.let { menu -> return submenu(menu, node, "moved over") }
                 "moved over ${row?.let { "${it.label} in " }.orEmpty()}${describe(node)}"
             }
             UiAction.SCROLL -> scrollStep(step)
@@ -434,7 +487,8 @@ class UiSession(
                 "typed ${step.text!!.length} character(s) into ${withContext(edtAny) { describeComponent(report.recipient) }}"
             }
             UiAction.FILL -> {
-                val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
+                // A label and its field share a name: the field is what a fill types into.
+                val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true, fits = { textField(it) != null || UiRows.rows(it) != null })
                 if (step.row != null || step.index != null) return withContext(edtAny) { fillCell(step, node) }
                 val field = withContext(edtAny) { textField(node.component) }
                     ?: throw UiStepFailure("${describe(node)} is not a text field and holds no single one")
@@ -744,6 +798,11 @@ class UiSession(
                     )
                     "asked the window to close"
                 }
+                // A context menu or a main menu is a Swing menu, which closes with its submenus, as ESCAPE does.
+                inside != null && UIUtil.findComponentOfType((window as? RootPaneContainer)?.rootPane, JPopupMenu::class.java) != null -> {
+                    MenuSelectionManager.defaultManager().clearSelectedPath()
+                    "closed the menu and its submenus"
+                }
                 else -> throw UiStepFailure("window \"$title\" is not a dialog, popup or separate window the IDE can close")
             }
         }
@@ -902,6 +961,7 @@ class UiSession(
         val actions = Collections.synchronizedList(mutableListOf<String>())
         val actionOpensWindow = AtomicBoolean(false)
         clickOpensWindow = false
+        clickClosesDialog = false
         val connection = ApplicationManager.getApplication().messageBus.connect()
         connection.subscribe(AnActionListener.TOPIC, object : AnActionListener {
             override fun beforeActionPerformed(action: AnAction, event: AnActionEvent) {
@@ -922,6 +982,9 @@ class UiSession(
             if ((actionOpensWindow.get() || clickOpensWindow) && UiSettle.showingWindows() == windowsBefore) {
                 noWindow = !UiSettle.awaitWindowChange(windowsBefore, OPENER_WAIT_MS, stopWhen = ::inplaceActive)
             }
+            // A dialog's OK or Refactor first ends a table edit or checks its fields, then does its work and closes: a
+            // report made before that would show the dialog still open, and the next step would act on the IDE behind it.
+            if (clickClosesDialog && UiSettle.showingWindows() == windowsBefore) UiSettle.awaitWindowChange(windowsBefore, CLOSE_WAIT_MS)
             // An IDE action often opens its window a few hundred milliseconds later (Settings does), so wait longer
             // for the windows to settle after one ran.
             if (actions.isEmpty()) UiSettle.settle() else UiSettle.settle(quietMs = ACTION_QUIET_MS, maxMs = ACTION_SETTLE_MS)
@@ -1001,12 +1064,19 @@ class UiSession(
         TemplateManager.getInstance(project).getActiveTemplate(editor) != null
     }
 
-    /** Finds [target], waiting up to [timeoutMs] for one showing (and, when asked, enabled) match. */
-    private suspend fun resolve(target: UiTarget, timeoutMs: Long, requireEnabled: Boolean): UiNode {
+    /**
+     * Finds [target], waiting up to [timeoutMs] for one showing (and, when asked, enabled) match. Of several matches, the
+     * only one [fits] takes, such as the field a label names rather than the label, is the match. EDT for [fits].
+     */
+    private suspend fun resolve(target: UiTarget, timeoutMs: Long, requireEnabled: Boolean, fits: ((Component) -> Boolean)? = null): UiNode {
         val started = TimeSource.Monotonic.markNow()
         var last: UiMatch
         while (true) {
             last = match(target)
+            if (fits != null && last is UiMatch.Many) {
+                val many = last
+                withContext(edtAny) { many.matches.filter { fits(it.component) }.singleOrNull() }?.let { last = UiMatch.One(it) }
+            }
             when (val m = last) {
                 is UiMatch.One -> {
                     if (!requireEnabled || withContext(edtAny) { m.node.component.isEnabled }) {
@@ -1108,6 +1178,25 @@ class UiSession(
     }
 
     private fun scopeModels(): List<UiModelResult> = scopeWindows().map { UiModel.build(it) }
+
+    /**
+     * After a click on or a move over a submenu, waits for its items: the IDE fills an action group's submenu after it
+     * shows, so a report made at once would find it empty or not yet open.
+     */
+    private suspend fun submenu(menu: JMenu, node: UiNode, did: String): String {
+        val started = TimeSource.Monotonic.markNow()
+        var items = 0
+        while (started.elapsedNow().inWholeMilliseconds < SUBMENU_WAIT_MS) {
+            items = withContext(edtAny) { if (menu.isPopupMenuVisible) menu.popupMenu.components.count { it.isVisible && it is JMenuItem } else 0 }
+            if (items > 0) break
+            delay(POLL_MS)
+        }
+        UiSettle.barrier()
+        return withContext(edtAny) {
+            if (items > 0) "$did ${describe(node)}; its submenu shows $items items"
+            else "$did ${describe(node)}, but its submenu did not open in $SUBMENU_WAIT_MS ms; press RIGHT to open it"
+        }
+    }
 
     private fun describeClick(node: UiNode, click: ClickReport): String = buildList {
         add(
@@ -1215,6 +1304,9 @@ class UiSession(
         private const val AUTO = "auto"
         private const val CHECK = "check"
         private const val EDITOR_WAIT_MS = 3_000L
+        private const val BUILDS_LISTED = 10
+        private const val SUBMENU_WAIT_MS = 2_000L
+        private const val CLOSE_WAIT_MS = 3_000L
         private const val ON_BACKEND = "on the backend: "
         private const val LUX_PREFIX = "Lux"
         private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")

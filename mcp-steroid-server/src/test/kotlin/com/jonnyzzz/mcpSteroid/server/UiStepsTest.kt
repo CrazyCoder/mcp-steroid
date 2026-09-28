@@ -253,7 +253,7 @@ class UiStepsTest {
         assertTrue(fails("""[{"action":"expect","name":"t","value":"a","contains":"b"}]""").contains("one of value"))
         assertTrue(fails("""[{"action":"expect","name":"t","matches":"("}]""").contains("regular expression"))
         assertTrue(fails("""[{"action":"expect","title":"S","value":"x"}]""").contains("is=visible or is=hidden only"))
-        assertTrue(fails("""[{"action":"expect","file":"A.kt"}]""").contains("needs value, contains, matches or caret"))
+        assertTrue(fails("""[{"action":"expect","file":"A.kt"}]""").contains("needs value, contains, matches, golden, diff or caret"))
         assertTrue(fails("""[{"action":"expect","file":"A.kt","caret":"3"}]""").contains("line:column"))
         assertTrue(fails("""[{"action":"expect","error":"NPE","is":"visible"}]""").contains("text alone"))
         val file = UiSteps.parse("""[{"action":"expect","file":"A.kt","line":3,"contains":"foo"}]""").single()
@@ -281,6 +281,37 @@ class UiStepsTest {
         assertTrue(fails("""[{"action":"click","name":"OK","editors":true}]""").contains("editors goes with get"))
         assertTrue(fails("""[{"action":"click","name":"OK","log":"x"}]""").contains("log goes with expect, get and set"))
         assertTrue(fails("""[{"action":"click","name":"OK","editor":"a.md"}]""").contains("go(es) with expect"))
+    }
+
+    @Test
+    fun `code changes are read with get and checked by files, diff lines or a golden file`() {
+        assertTrue(UiSteps.parse("""[{"action":"get","changes":true}]""").single().changes)
+        assertEquals(emptyList<String>(), UiSteps.parse("""[{"action":"expect","changed":[]}]""").single().changed)
+        assertEquals(listOf("src/A.java"), UiSteps.parse("""[{"action":"expect","changed":["src/A.java"]}]""").single().changed)
+        val diff = UiSteps.parse("""[{"action":"expect","file":"src/A.java","diff":"-int a;\n+int b;"}]""").single()
+        assertEquals("-int a;\n+int b;", diff.diff)
+        assertEquals("src/A.java", diff.file)
+        assertEquals("x.golden", UiSteps.parse("""[{"action":"expect","file":"src/A.java","golden":"x.golden"}]""").single().golden)
+        assertTrue(fails("""[{"action":"expect","changed":"src/A.java"}]""").contains("JSON array"))
+        assertTrue(fails("""[{"action":"expect","diff":"int b;"}]""").contains("starts with + (added)"))
+        assertTrue(fails("""[{"action":"expect","golden":"x"}]""").contains("golden goes with a file"))
+        assertTrue(fails("""[{"action":"expect","file":"a","golden":"x","contains":"y"}]""").contains("pass one of"))
+        assertTrue(fails("""[{"action":"expect","changed":[],"diff":"+a"}]""").contains("one subject"))
+        assertTrue(fails("""[{"action":"click","name":"OK","diff":"+a"}]""").contains("go(es) with expect"))
+        assertTrue(fails("""[{"action":"click","name":"OK","changes":true}]""").contains("builds and changes go with get"))
+    }
+
+    @Test
+    fun `builds and consoles are read with get, and a console is checked by its text`() {
+        assertTrue(UiSteps.parse("""[{"action":"get","builds":true}]""").single().builds)
+        val get = UiSteps.parse("""[{"action":"get","console":"App","lines":10}]""").single()
+        assertEquals("App", get.console)
+        assertEquals(10, get.lines)
+        assertEquals("", UiSteps.parse("""[{"action":"expect","console":"","contains":"sum: 5"}]""").single().console)
+        assertTrue(fails("""[{"action":"expect","console":"App"}]""").contains("needs contains or matches"))
+        assertTrue(fails("""[{"action":"get","console":"App","lines":0}]""").contains("lines is from 1"))
+        assertTrue(fails("""[{"action":"get","builds":true,"lines":5}]""").contains("lines goes with a get of a console"))
+        assertTrue(fails("""[{"action":"get","builds":true,"memory":true}]""").contains("exactly one of"))
     }
 
     @Test

@@ -150,10 +150,13 @@ change first, as `restore step` lines:
 | `toolwindow` | The tab, the size and whether it showed |
 | `window` on the IDE window | Its size, or maximized; a dialog closes, so its size is not restored |
 | `write` | The text before, or no file when the step created it |
+| Any step that changed project files: a refactoring through its dialog, a generator, typing, a `code` step | Each file's text before, and no file where a step created one |
 
 Only the first change of each state counts, since its restore brings back what the IDE had before the run.
-`setup` steps are put back the same way. A `code`, `perf` or `run` step, and a click in a dialog, change what
-no restore knows; the cleanup handles those. A run that stops before the last step, with `to_step`, restores
+`setup` steps are put back the same way. The code the steps changed is put back as a person would review it,
+file by file; changes made outside the IDE during the run are left alone. Local History also gets a label before
+the steps, `steroid_ui: before "<title>"`, to revert to by hand. Other changes of a `code`, `perf` or `run` step,
+and of a click in a dialog, are unknown to the restore; the cleanup handles those. A run that stops before the last step, with `to_step`, restores
 nothing and ends with an `undo:` line that lists the restore steps.
 
 ## Replay and verdicts
@@ -195,6 +198,10 @@ soft. Each expect has one subject:
 | `title`: a window | `is`: visible (default) or hidden | `{"action":"expect","title":"Rename","is":"hidden"}` |
 | `file`: a project file's text | `value`, `contains` or `matches`, over `line` N when given | `{"action":"expect","file":"src/A.kt","line":3,"contains":"newName"}` |
 | `file` with `caret` | The caret in the file's editor, as `line:column`, 1-based | `{"action":"expect","file":"src/A.kt","caret":"3:14"}` |
+| `file` with `golden` | The whole text of the file equals a golden file's, relative to the project; a mismatch shows the diff, `-` for the golden text and `+` for the file's | `{"action":"expect","file":"src/A.kt","golden":"expected/A.kt"}` |
+| `changed` | Exactly these project files changed, were created, deleted or moved since the steps started; `[]` for none, as after a refactoring its conflicts stopped | `{"action":"expect","changed":["src/A.kt","src/B.kt"]}` |
+| `diff`, with `file` or alone | Lines of the run's diff, of the file or of any file, one after another in one change: each starts with `+` (added), `-` (removed) or a space (unchanged), and is compared without indentation | `{"action":"expect","file":"src/A.kt","diff":"-val x = a + b\n+val x = sum(a, b)"}` |
+| `console` | The output of the latest run named so, an application, a test or a Maven or Gradle task, `""` for the latest, with `contains` or `matches` | `{"action":"expect","console":"App","contains":"total: 5"}` |
 | `notification` | A notification shown since the call started, or listed in the Notifications tool window, whose title or text contains this | `{"action":"expect","notification":"Indexing"}` |
 | `banner` | A banner above one of the project's open editors, of any kind, whose text contains this | `{"action":"expect","banner":"Module JDK is not defined","not":true}` |
 | `error` | An IDE error logged since the call started whose summary contains this; `""` or `true` matches any | `{"action":"expect","error":"","not":true}` |
@@ -221,7 +228,7 @@ window opened. A set reports the value before and after, and a scenario's replay
 | `component` + `field` | `{"action":"set","component":"EditorSettings","field":"IS_WHITESPACES_SHOWN","value":"true"}` | A field of a persistent settings component, by the state name it is saved under. `get` with `component` alone shows its saved XML, which lists the fields that differ from their defaults. Only components already loaded are found, and a field that holds structured XML needs a `code` step |
 | `log` | `{"action":"set","log":"#com.jetbrains.rdserver.fileEditors","value":"debug"}` | A debug log category, as Help \| Diagnostic Tools \| Debug Log Settings sets it: `trace`, `debug`, `all`, or `default` to remove the level set for it. It lasts across restarts until the replay puts the level before back. Set it before the steps whose log lines an `expect` on `log` checks |
 
-`get` also reads three things no `set` changes:
+`get` also reads what no `set` changes:
 
 - `{"action":"get","editors":true}` lists the open editors of each side, with how many editors a file has
   when it is more than one, and the selected file. On a Remote Development backend it also lists what the
@@ -235,6 +242,14 @@ window opened. A set reports the value before and after, and a scenario's replay
   pools and threads; memory-mapped files; the OS figures; and the GC's share of the time since the previous
   report, with how often it was overloaded in the last 15 minutes. A `LOW MEMORY` notice in front of a tool
   result points here.
+- `{"action":"get","builds":true}` lists the recent builds and syncs, the IDE's own and Maven's and Gradle's, each
+  with its outcome and first errors as `path:line: message`. A `BUILD FAILED` notice in front of a tool result
+  names the failures since the previous call.
+- `{"action":"get","console":"App","lines":40}` reads the last lines of the latest run named App, `""` for the
+  latest run, with its state and exit code; error lines start with `! `. A `RUN FAILED` notice names the runs that
+  exited with an error since the previous call.
+- `{"action":"get","changes":true}` gives the diff of the project files the steps changed so far, which each
+  response otherwise ends with, cut to its first lines.
 
 Other setup steps:
 

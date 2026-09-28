@@ -2,6 +2,11 @@ JPS Build Errors
 
 Run an IDE JPS build and collect structured compiler diagnostics.
 
+To only learn whether a build already ran and failed, no script is needed: every tool result starts with a
+`BUILD FAILED` notice for a build or sync that failed since the previous call, the IDE's own, Maven's or Gradle's,
+with its first errors as `path:line: message`, and `steroid_ui` with `[{"action":"get","builds":true}]` lists the
+recent builds and their errors.
+
 `CompilerManager.make(...)` explicitly starts an IDE JPS compilation, including
 when IDE Build actions are delegated to Gradle or Maven. This is the
 structured-diagnostics companion to `ProjectTaskManager`: the task result flags

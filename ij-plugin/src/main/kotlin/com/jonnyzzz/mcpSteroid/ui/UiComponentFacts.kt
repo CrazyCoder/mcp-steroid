@@ -9,6 +9,7 @@ import javax.swing.AbstractButton
 import javax.swing.JButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
+import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JList
 import javax.swing.JSlider
@@ -81,9 +82,11 @@ object UiComponentFacts {
 
     fun tooltip(c: Component): String? = (c as? JComponent)?.toolTipText?.let(::clean)?.takeIf { it.isNotEmpty() }
 
-    fun value(c: Component): String? = when (c) {
-        is JTextComponent -> clean(c.text).take(MAX_VALUE)
-        is JComboBox<*> -> comboText(c)?.take(MAX_VALUE)
+    fun value(c: Component): String? = when {
+        // An HTML pane's text is its markup, style sheet included; its document holds the text it shows.
+        c is JEditorPane && c.contentType.contains("html") -> clean(runCatching { c.document.getText(0, c.document.length) }.getOrDefault(c.text)).take(MAX_VALUE)
+        c is JTextComponent -> clean(c.text).take(MAX_VALUE)
+        c is JComboBox<*> -> comboText(c)?.take(MAX_VALUE)
         else -> null
     }
 

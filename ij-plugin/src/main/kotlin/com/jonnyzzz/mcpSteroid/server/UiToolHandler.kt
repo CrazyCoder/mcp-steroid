@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.intellij.history.LocalHistory
 import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.util.SystemInfo
@@ -118,6 +119,10 @@ class UiToolHandlerIJ : UiToolHandler {
                 // A setup that failed leaves the IDE unlike the one the steps expect, so they do not run.
                 val main = if (setup?.failure != null) setup else {
                     room = session.makeRoom()
+                    // The steps' changes are what the run reports and checks, not the setup's.
+                    session.checkpoint()
+                    // A point Local History reverts the project to by hand, should the replay's own restore not finish.
+                    if (scenario != null && bridge == null) runCatching { LocalHistory.getInstance().putSystemLabel(project, "steroid_ui: before \"${scenario.title}\"") }
                     session.run(steps, mode, firstIndex = from)
                 }
                 // Cleanup and restore put the IDE back as it was, cramped or not.
@@ -154,6 +159,7 @@ class UiToolHandlerIJ : UiToolHandler {
                 room?.let { append('\n').append("setup layout: ").append(it) }
                 result.reports.forEach { append('\n').append(it.line) }
                 result.failure?.let { append('\n').append("FAILED ").append(it) }
+                result.codeChanges?.let { append("\ncode changes:\n").append(it) }
                 // Cleanup steps run soft, so a failed one is among the reports and never stops the others.
                 cleanupResult?.reports?.forEach { append('\n').append(it.line) }
                 restoreResult?.reports?.forEach { append('\n').append(it.line) }
@@ -189,6 +195,8 @@ class UiToolHandlerIJ : UiToolHandler {
             val message = "steroid_ui failed: ${e.message}"
             project.executionStorage.writeCodeErrorEvent(executionId, message)
             builder.addTextContent("ERROR: $message").markAsError().build()
+        } finally {
+            session.close()
         }
     }
 

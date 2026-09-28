@@ -140,6 +140,26 @@ data class UiStep(
     val memoryMetric: String? = null,
     /** On an expect of memory: the figure must be under this, in MB for sizes. */
     val below: Long? = null,
+    /** On a get step: the builds and syncs that finished, with the errors of each. */
+    val builds: Boolean = false,
+    /** On a get step: the diff of the project files the run changed so far. */
+    val changes: Boolean = false,
+    /**
+     * On a get or expect step: a Run or Debug console by its tab's name, such as "App", or "" for the one the Run tool
+     * window selects. A get reads its last [lines] lines; an expect checks its text with contains or matches.
+     */
+    val console: String? = null,
+    /** On a get of a console: how many of its last lines to read. */
+    val lines: Int? = null,
+    /** On an expect step: exactly the project files the run changed, created, deleted or moved; empty for none. */
+    val changed: List<String>? = null,
+    /**
+     * On an expect step: lines the run's diff has, one after another, each starting with `+` (added), `-` (removed) or a
+     * space (unchanged), matched without their indentation; with a file, in that file's diff.
+     */
+    val diff: String? = null,
+    /** On an expect step with a file: a file holding the whole text the file must have, relative to the project. */
+    val golden: String? = null,
     val page: String? = null,
     val registry: String? = null,
     val advanced: String? = null,
@@ -209,7 +229,11 @@ object UiSteps {
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
         "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
+        "builds", "changes", "console", "lines", "changed", "diff", "golden",
     )
+    /** How many console lines a get reads without [UiStep.lines], and at most. */
+    const val DEFAULT_CONSOLE_LINES = 40
+    const val MAX_CONSOLE_LINES = 2_000
     val SIDES = setOf("frontend", "backend")
     /** How a menu step shows the main menu: under the Main Menu button, merged into the main toolbar, or in a bar of its own. */
     val MENU_MODES = setOf("hamburger", "merged", "toolbar")
@@ -335,6 +359,16 @@ object UiSteps {
             memory = (obj["memory"] as? JsonPrimitive)?.takeIf { !it.isString }?.let { obj.boolean("memory") } ?: false,
             memoryMetric = (obj["memory"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             below = obj.long("below"),
+            builds = obj.boolean("builds") ?: false,
+            changes = obj.boolean("changes") ?: false,
+            console = obj.string("console"),
+            lines = obj.int("lines"),
+            changed = obj["changed"]?.let { v ->
+                (v as? JsonArray)?.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw IllegalArgumentException("changed lists file paths as strings") }
+                    ?: throw IllegalArgumentException("changed is a JSON array of file paths, [] for none")
+            },
+            diff = obj.string("diff"),
+            golden = obj.string("golden"),
             error = (obj["error"] as? JsonPrimitive)?.takeIf { !it.isString && it.booleanOrNull == true }?.let { "" } ?: obj.string("error"),
             page = obj.string("page"),
             registry = obj.string("registry"),
@@ -388,7 +422,7 @@ object UiSteps {
             val expectOnly = listOfNotNull(
                 step.state?.let { "is" }, step.contains?.let { "contains" }, step.matches?.let { "matches" },
                 step.caret?.let { "caret" }, step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
-                step.editor?.let { "editor" },
+                step.editor?.let { "editor" }, step.changed?.let { "changed" }, step.diff?.let { "diff" }, step.golden?.let { "golden" },
             )
             require(expectOnly.isEmpty()) { "${expectOnly.joinToString()} go(es) with expect, not $action" }
             if (step.action != UiAction.SET) require(step.value == null) { "value goes with expect and set, not $action" }
@@ -428,6 +462,12 @@ object UiSteps {
             require(!step.editors) { "editors goes with get, not $action" }
             if (step.action != UiAction.EXPECT) require(!step.memory && step.memoryMetric == null) { "memory goes with get and expect, not $action" }
             if (step.action != UiAction.EXPECT) require(step.log == null) { "log goes with expect, get and set, not $action" }
+            require(!step.builds && !step.changes) { "builds and changes go with get, not $action" }
+            if (step.action != UiAction.EXPECT) require(step.console == null) { "console goes with get and expect, not $action" }
+        }
+        if (step.lines != null) {
+            require(step.action == UiAction.GET && step.console != null) { "lines goes with a get of a console" }
+            require(step.lines in 1..MAX_CONSOLE_LINES) { "lines is from 1 to $MAX_CONSOLE_LINES, was ${step.lines}" }
         }
         when (step.action) {
             UiAction.FILL, UiAction.TYPE -> require(step.text != null) { "$action needs text" }
@@ -456,12 +496,15 @@ object UiSteps {
                 val kinds = listOfNotNull(
                     step.registry, step.advanced, step.option, step.inspection, step.component, step.log,
                     step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors }, "memory".takeIf { step.memory },
+                    "builds".takeIf { step.builds }, "changes".takeIf { step.changes }, step.console,
                 )
                 require(kinds.size == 1) {
-                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors or memory"
+                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors, memory, builds, changes or console"
                     else "set needs exactly one of registry, advanced, option, inspection, component or log"
                 }
-                if (step.action == UiAction.SET) require(!step.editors && !step.memory && step.file == null) { "editors, memory and file go with get, not set" }
+                if (step.action == UiAction.SET) require(!step.editors && !step.memory && step.file == null && !step.builds && !step.changes && step.console == null) {
+                    "editors, memory, file, builds, changes and console go with get, not set"
+                }
                 if (step.action == UiAction.SET && step.log != null) require(step.value?.lowercase() in LOG_LEVELS) {
                     "a log category's level is one of ${LOG_LEVELS.joinToString()}"
                 }
@@ -503,17 +546,25 @@ object UiSteps {
     private fun validateExpect(step: UiStep) {
         require(!step.memory) { "expect takes a memory figure: one of ${MEMORY_METRICS.joinToString()}" }
         // A layout check takes a target as its scope, not as a second subject.
+        step.golden?.let { require(step.file != null && it.isNotBlank()) { "golden goes with a file: the path of a file holding its whole expected text" } }
+        // A diff with a file checks that file's diff; alone, the whole run's.
         val subjects = listOfNotNull(
             step.target?.takeIf { !step.layout }?.let { "a target" }, "layout".takeIf { step.layout }, step.title?.let { "title" }, step.file?.let { "file" },
             step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
             step.editor?.let { "editor" }, step.log?.let { "log" }, step.memoryMetric?.let { "memory" },
+            step.console?.let { "console" }, step.changed?.let { "changed" }, step.diff?.takeIf { step.file == null }?.let { "diff" },
         )
         require(subjects.size == 1) {
-            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, editor, notification, banner, error, log, memory or layout"
+            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, editor, notification, banner, error, log, memory, layout, console, changed or diff"
             else "expect checks one subject, not ${subjects.joinToString(" and ")}"
         }
         if (step.memoryMetric == null) require(step.below == null) { "below goes with memory" }
-        require(listOfNotNull(step.value, step.contains, step.matches).size <= 1) { "pass one of value, contains or matches" }
+        require(listOfNotNull(step.value, step.contains, step.matches, step.golden, step.diff).size <= 1) { "pass one of value, contains, matches, golden or diff" }
+        step.diff?.let { d ->
+            require(d.lines().any { it.isNotBlank() }) { "diff needs lines, each starting with +, - or a space" }
+            require(d.lines().filter { it.isNotBlank() }.all { it[0] in "+- " }) { "each line of diff starts with + (added), - (removed) or a space (unchanged)" }
+            require(step.line == null && step.caret == null) { "diff checks the file's changes, not a line or the caret" }
+        }
         step.matches?.let {
             try {
                 Regex(it)
@@ -547,9 +598,14 @@ object UiSteps {
                 }
                 require(!textCheck && step.caret == null && step.line == null) { "a window takes is=visible or is=hidden only" }
             }
+            step.console != null -> require(step.state == null && step.value == null && step.caret == null && step.line == null && (step.contains != null || step.matches != null)) {
+                "expect on a console needs contains or matches, which its text since the run started is checked with"
+            }
+            step.changed != null -> require(step.state == null && !textCheck && step.caret == null && step.line == null) { "changed takes the list of files alone" }
+            step.diff != null && step.file == null -> require(step.state == null && step.caret == null && step.line == null) { "diff takes its lines, and a file to narrow it" }
             step.file != null -> {
-                require(step.state == null) { "a file takes value, contains, matches or caret, not is" }
-                require(textCheck || step.caret != null) { "expect on a file needs value, contains, matches or caret" }
+                require(step.state == null) { "a file takes value, contains, matches, golden, diff or caret, not is" }
+                require(textCheck || step.caret != null || step.golden != null || step.diff != null) { "expect on a file needs value, contains, matches, golden, diff or caret" }
                 require(!(textCheck && step.caret != null)) { "check the text or the caret, not both" }
                 step.caret?.let { require(CARET.matches(it)) { "caret is line:column, both 1-based, such as \"3:14\"" } }
                 step.line?.let { require(it >= 1) { "line is 1-based, was $it" } }
