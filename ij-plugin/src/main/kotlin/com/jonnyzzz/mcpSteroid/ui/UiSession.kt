@@ -1178,8 +1178,9 @@ class UiSession(
                 made.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = "made room: "),
             )
             // What the picture shows cut, each with the step that fixes it, so a bad picture is known without reading it.
-            // The crop's own area: its margin shows the edge of what lies around it, whose cuts are not the picture's.
-            val cut = pictureProblems(window, area ?: canvas.bounds).map { "\ncut: " + it.line.removePrefix("layout: ") }
+            // What the crop names, before its margin and the badges it grew by: those show the edge of what lies around
+            // it, whose cuts are not the picture's.
+            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window)).map { "\ncut: " + it.line.removePrefix("layout: ") }
             Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
                 what.joinToString("") { "; $it" } + cut.joinToString(""))
         }
@@ -1369,10 +1370,13 @@ class UiSession(
         val lines = screen.indices.filter { screen[it].contains(text) }
         val line = lines.reversed().getOrNull(nth)
             ?: throw UiStepFailure(if (lines.isEmpty()) "no line on the screen of the console of '$name' holds \"$text\"; scroll it to the line first" else "\"$text\" is on ${lines.size} lines; nth $nth asked")
-        val cellHeight = panel.pixelHeight / maxOf(1, buffer.height)
-        val cellWidth = panel.pixelWidth / maxOf(1, buffer.width)
-        val width = maxOf(1, screen[line].trimEnd().length) * cellWidth
-        return LocalHighlight(panel, Rectangle(0, line * cellHeight, width, cellHeight), "line ${line + 1} of the screen of the console of '$name'", label)
+        // In fractions: at a HiDPI scale a cell is not a whole number of logical pixels, and rounding each loses a character.
+        val cellHeight = panel.pixelHeight.toDouble() / maxOf(1, buffer.height)
+        val cellWidth = panel.pixelWidth.toDouble() / maxOf(1, buffer.width)
+        // One cell more: the terminal paints a glyph a little wider than its cell, so the last character reaches past it.
+        val width = kotlin.math.ceil((screen[line].trimEnd().length + 1) * cellWidth).toInt()
+        val top = (line * cellHeight).toInt()
+        return LocalHighlight(panel, Rectangle(0, top, width, kotlin.math.ceil((line + 1) * cellHeight).toInt() - top), "line ${line + 1} of the screen of the console of '$name'", label)
     }
 
     /**
