@@ -62,6 +62,70 @@ class UiLayoutTest {
         assertEquals(2500, UiResize.size("fit", 700, 4000, 400, 2500))
     }
 
+    private fun <T> onEdt(block: () -> T): T {
+        var result: Result<T>? = null
+        javax.swing.SwingUtilities.invokeAndWait { result = runCatching(block) }
+        return result!!.getOrThrow()
+    }
+
+    private fun refs(root: UiNode): (UiNode) -> String {
+        val ids = root.walk().withIndex().associate { (i, n) -> n.component to "e$i" }
+        return { ids.getValue(it.component) }
+    }
+
+    /** A stacked splitter 400 x 600 whose top pane holds a tree of [rows] rows 20 px high in a scroll pane [height] px high. */
+    private fun stackedTree(rows: Int, height: Int): Pair<com.intellij.openapi.ui.Splitter, JTree> {
+        val root = javax.swing.tree.DefaultMutableTreeNode("root").apply { repeat(rows) { add(javax.swing.tree.DefaultMutableTreeNode("row $it")) } }
+        val tree = JTree(root).apply { rowHeight = 20; isRootVisible = false }
+        val scroll = JScrollPane(tree)
+        val s = com.intellij.openapi.ui.Splitter(true, height / 600f).apply { firstComponent = scroll; secondComponent = JPanel(); setSize(400, 600); doLayout() }
+        scroll.doLayout()
+        return s to tree
+    }
+
+    @Test
+    fun `rows cut in height in a splitter pane name a splitter fit`() = onEdt {
+        val (s, tree) = stackedTree(6, 50)
+        val root = FallbackUiWalker(onlyShowing = false).build(s)
+        val cuts = UiLayout.cuts(root, refs(root)) { false }
+        assertEquals(1, cuts.size)
+        val cut = cuts.single()
+        assertTrue(cut.what, cut.what.contains("of 6 rows"))
+        assertEquals("""{"action":"splitter","ref":"${refs(root)(root.walk().first { it.component === tree })}","size":"fit"}""", cut.fix)
+    }
+
+    @Test
+    fun `a long list that scrolls is not cut`() = onEdt {
+        val (s, _) = stackedTree(200, 300)
+        val root = FallbackUiWalker(onlyShowing = false).build(s)
+        assertEquals(emptyList<UiLayout.Cut>(), UiLayout.cuts(root, refs(root)) { false })
+    }
+
+    @Test
+    fun `a table header cut in a dialog names no splitter`() = onEdt {
+        val table = javax.swing.JTable(javax.swing.table.DefaultTableModel(arrayOf(arrayOf<Any>("url", "string", "")), arrayOf("Name", "Type", "Default parameter value")))
+        val scroll = JScrollPane(table).apply { setBounds(0, 0, 240, 120) }
+        scroll.doLayout()
+        table.setSize(240, 40)
+        table.doLayout()
+        val root = FallbackUiWalker(onlyShowing = false).build(scroll)
+        val cuts = UiLayout.cuts(root, refs(root)) { true }
+        assertTrue(cuts.toString(), cuts.any { it.what.contains("Default parameter value") && it.fix == null })
+        // In the IDE window a header squeezed by its tool window is not reported.
+        assertTrue(UiLayout.cuts(root, refs(root)) { false }.none { it.what.contains("Default parameter value") })
+    }
+
+    @Test
+    fun `a combo box narrower than its text is cut in a dialog`() = onEdt {
+        val combo = javax.swing.JComboBox(arrayOf("{channelId: string; ts: string} | null")).apply { setSize(60, 24) }
+        val panel = JPanel(null).apply { setSize(200, 40); add(combo) }
+        val root = FallbackUiWalker(onlyShowing = false).build(panel)
+        val cuts = UiLayout.cuts(root, refs(root)) { true }
+        assertTrue(cuts.toString(), cuts.any { it.what.startsWith("the text of JComboBox") && it.what.endsWith("is cut") })
+        combo.setSize(400, 24)
+        assertTrue(UiLayout.cuts(root, refs(root)) { true }.none { it.what.startsWith("the text of JComboBox") })
+    }
+
     @Test
     fun `a tree wider than its view says its rows are cut, a narrow one says nothing`() {
         val tree = object : JTree() {

@@ -7,8 +7,12 @@ import com.intellij.openapi.wm.IdeFrame
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.intellij.ui.ScreenUtil
+import com.intellij.openapi.editor.impl.EditorComponentImpl
 import com.intellij.ui.SimpleColoredComponent
+import com.intellij.ui.treeStructure.treetable.TreeTable
 import java.awt.Component
+import javax.swing.JComboBox
+import javax.swing.JComponent
 import java.awt.Frame
 import java.awt.Rectangle
 import java.awt.Window
@@ -145,17 +149,108 @@ object UiLayout {
 
     /**
      * One layout line of a snapshot: a tool window, named by [toolWindow], or a window, that cuts controls, and [fix],
-     * the step that makes room, or null when there is none to take.
+     * the step that makes room, or null when there is none to take. [area] is where the cut content is on screen, or
+     * null when it does not show.
      */
-    class Problem(val line: String, val fix: String?, val toolWindow: String?)
+    class Problem(val line: String, val fix: String?, val toolWindow: String?, val area: Rectangle? = null)
+
+    /** Content a pane, field or header cuts: what is cut, and the splitter step that makes room, or null when none does. */
+    data class Cut(val node: UiNode, val what: String, val fix: String?)
+
+    /**
+     * Fewer rows than this showing, of a list that has more, count as cut: a pane squeezed to a few rows, as the
+     * debugger's Variables pane under a large console is.
+     */
+    private const val MIN_ROWS_SHOWN = 8
+
+    /** A list with more rows than this scrolls by design; its rows out of view are not cut. */
+    private const val MAX_ROWS_TO_FIT = 40
+
+    /**
+     * The splitters that lay out tool windows and the editor area belong to the IDE window: a tool window or window
+     * step sizes those. A detected cut looks for a splitter below these only.
+     */
+    private val LAYOUT_ROOTS = setOf("InternalDecoratorImpl", "EditorsSplitters")
+
+    private fun defaultInDialog(c: Component): Boolean = SwingUtilities.getWindowAncestor(c)?.let { it !is IdeFrame } == true
+
+    /**
+     * Content cut inside panes, fields and headers under [root], which a component tree hides and a picture shows: rows
+     * a splitter pane squeezes, a tree or tree table cut at the right, the text of an editor field, a combo box or a
+     * table header cut to its width, a truncated label. A splitter pane's cut names the splitter step that makes room;
+     * the others count in a dialog only, per [inDialog], where the window step does. EDT.
+     */
+    fun cuts(root: UiNode, refOf: (UiNode) -> String, inDialog: (Component) -> Boolean = ::defaultInDialog): List<Cut> =
+        root.walk().flatMap { node -> cutsOf(node, refOf, inDialog) }.toList()
+
+    private fun cutsOf(node: UiNode, refOf: (UiNode) -> String, inDialog: (Component) -> Boolean): List<Cut> {
+        val c = node.component
+        val out = mutableListOf<Cut>()
+        fun splitterFix(axis: UiSplitters.Axis) = paneFor(c, axis)?.let { """{"action":"splitter","ref":"${refOf(node)}","size":"fit"}""" }
+        fun add(what: String, axis: UiSplitters.Axis) {
+            val fix = splitterFix(axis)
+            if (fix != null || inDialog(c)) out += Cut(node, what, fix)
+        }
+        val name = describe(node, refOf)
+        val total = when (c) {
+            is JTree -> c.rowCount
+            is JList<*> -> c.model.size
+            is JTable -> c.rowCount
+            else -> -1
+        }
+        if (total in 1..MAX_ROWS_TO_FIT && c.parent is JViewport) {
+            val view = (c as JComponent).visibleRect
+            val shown = (0 until total).count { i -> UiRows.bounds(c, i)?.let { view.contains(it) } == true }
+            if (shown < minOf(total, MIN_ROWS_SHOWN) && UiSplitters.shortfall(c, UiSplitters.Axis.HEIGHT) > SLACK) {
+                add("$name shows $shown of $total rows", UiSplitters.Axis.HEIGHT)
+            }
+        }
+        val wide = UiSplitters.shortfall(c, UiSplitters.Axis.WIDTH)
+        if ((c is JTree || c is TreeTable || rowsCut(c) != null) && wide > SLACK && (c is TreeTable || c.parent is JViewport)) {
+            add("the rows of $name are cut at the right: they need $wide px more", UiSplitters.Axis.WIDTH)
+        }
+        if (c is JTable) {
+            c.tableHeader?.let { header ->
+                val cut = (0 until c.columnModel.columnCount).map { c.columnModel.getColumn(it) }.filter { column ->
+                    val shown = header.defaultRenderer.getTableCellRendererComponent(c, column.headerValue, false, false, -1, column.modelIndex)
+                    shown.preferredSize.width > column.width + SLACK
+                }
+                if (cut.isNotEmpty()) add("the header ${cut.joinToString { "\"${it.headerValue}\"" }} of $name is cut", UiSplitters.Axis.WIDTH)
+            }
+        }
+        val fieldCut = when (c) {
+            is EditorComponentImpl -> c.editor.contentComponent.preferredSize.width > c.editor.scrollingModel.visibleArea.width + SLACK
+            is JComboBox<*> -> c.preferredSize.width > c.width + SLACK
+            else -> false
+        }
+        // An editor in the IDE window scrolls its code sideways by design; only a field in a dialog counts.
+        if (fieldCut && (c !is EditorComponentImpl || inDialog(c))) add("the text of $name is cut", UiSplitters.Axis.WIDTH)
+        if (node.clip == UiClip.TRUNCATED) add("$name is truncated", UiSplitters.Axis.WIDTH)
+        return out
+    }
+
+    /** The pane of a splitter along [axis] that holds [c], below the splitters that lay out the IDE window. */
+    private fun paneFor(c: Component, axis: UiSplitters.Axis): UiSplitters.Pane? {
+        val pane = UiSplitters.paneOf(c, axis) ?: return null
+        var p: Component? = c
+        while (p != null && p !== pane.splitter) {
+            if (UiComponentFacts.simpleClassName(p) in LAYOUT_ROOTS) return null
+            p = p.parent
+        }
+        return pane
+    }
+
+    private fun describe(node: UiNode, refOf: (UiNode) -> String): String =
+        node.className + (node.name?.let { " \"${it.take(40)}\"" } ?: "") + " [ref=${refOf(node)}]"
 
     /** The layout lines of [window]'s snapshot, as [problems] finds them. */
     fun summary(window: Window, root: UiNode, refOf: (UiNode) -> String, project: Project): List<String> =
         problems(window, root, refOf, project).map { it.line }
 
     /**
-     * Each tool window of [window] narrower than its header, and the controls that lie past an edge, grouped by the
-     * tool window or the window that holds them, each with the step that makes room.
+     * Each tool window of [window] narrower than its header, the controls that lie past an edge, grouped by the tool
+     * window or the window that holds them, and the content cut inside panes, fields and headers, each with the step
+     * that makes room: a splitter step for a splitter pane, the tool window's step, or the window's.
      */
     fun problems(window: Window, root: UiNode, refOf: (UiNode) -> String, project: Project): List<Problem> {
         val toolWindows = toolWindows(project).filter { SwingUtilities.isDescendingFrom(it.window.decorator, window) }
@@ -171,13 +266,31 @@ object UiLayout {
                 if (inside.isNotEmpty()) append(": ").append(controls(inside, refOf))
                 append("; ").append(tw.step).append(" makes room")
             }
-            problems += Problem(line, tw.step, tw.id)
+            problems += Problem(line, tw.step, tw.id, screenArea(listOf(tw.window.decorator)))
         }
         byToolWindow[null]?.let { rest ->
-            problems += Problem("layout: ${controls(rest, refOf)} in this window; ${windowStep(window)}", windowFix(window), null)
+            problems += Problem("layout: ${controls(rest, refOf)} in this window; ${windowStep(window)}", windowFix(window), null, screenArea(rest.map { it.component }))
+        }
+        // One line per step: several cuts one splitter or one window step fixes read together.
+        val cuts = cuts(root, refOf).map { cut ->
+            val tw = toolWindows.firstOrNull { it.holds(cut.node.component) }
+            Triple(cut, cut.fix ?: tw?.step ?: windowFix(window), tw)
+        }
+        for ((fix, group) in cuts.groupBy { it.second }) {
+            val tw = group.first().third
+            val how = when {
+                fix == null -> windowStep(window)
+                group.first().first.fix == null && tw == null -> windowStep(window)
+                else -> "$fix makes room"
+            }
+            problems += Problem("layout: ${group.joinToString("; ") { it.first.what }}; $how", fix, tw?.id, screenArea(group.map { it.first.node.component }))
         }
         return problems
     }
+
+    /** The screen area [components] cover, of those that show, or null when none does. */
+    private fun screenArea(components: List<Component>): Rectangle? =
+        components.filter { it.isShowing }.map { Rectangle(it.locationOnScreen, it.size) }.reduceOrNull { a, b -> a.union(b) }
 
     /**
      * The step that gives [window] room, which runs as it is: the IDE window, by its class, fills the screen unless it

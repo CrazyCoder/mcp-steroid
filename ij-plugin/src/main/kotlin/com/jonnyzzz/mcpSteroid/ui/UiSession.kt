@@ -997,14 +997,16 @@ class UiSession(
             undo(restores)
             val r = when {
                 step.proportion != null -> UiSplitters.setProportion(s, step.proportion!!)
-                step.size == UiSteps.FIT -> UiSplitters.setSize(pane, UiSplitters.fitSize(pane))
+                step.size == UiSteps.FIT -> UiSplitters.setSize(pane, UiSplitters.fitSize(pane, c.takeUnless { it === s }))
                 else -> UiSplitters.setSize(pane, step.size!!.toInt())
             }
             val axis = if (pane.axis == UiSplitters.Axis.HEIGHT) "high" else "wide"
             val paneNode = FallbackUiWalker().leaf(pane.child)
+            val short = UiSplitters.othersShort(pane)
             "moved the divider of ${UiComponentFacts.simpleClassName(s)} [ref=${registry.refFor(s)}]: the pane with ${describe(paneNode)} is ${r.after} px $axis, " +
                 "was ${r.before} px (proportion ${UiSplitters.format(r.proportionAfter)}, was ${UiSplitters.format(r.proportionBefore)})" +
-                (r.heldBack?.let { "; held back: $it" } ?: "")
+                (r.heldBack?.let { "; held back: $it" } ?: "") +
+                (if (short > 0) "; the other pane now shows $short px less than it wants, so a larger window gives both room: ${UiLayout.windowStep(SwingUtilities.getWindowAncestor(s))}" else "")
         }
         UiSettle.barrier()
         return line
@@ -1101,9 +1103,13 @@ class UiSession(
     private suspend fun screenshotStep(step: UiStep): String {
         val file = step.out?.let { UiCapturePaths.resolve(it, scenarioDir) }
             ?: (artifacts ?: throw UiStepFailure("screenshot has no folder to save to in this call")).resolve("screenshots").resolve(step.save!! + ".png")
+        // A popup that a right click in an editor opens can show after that step's report: the picture and its
+        // highlights wait for it, or a highlight of a menu item finds the main menu's item of the same name.
+        UiSettle.settle()
         val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
         val window = withContext(edtAny) { (node?.let { windowOf(it.component) } ?: scopeWindows().firstOrNull())?.let(UiCapture::pictured) }
             ?: throw UiStepFailure("no window is showing")
+        val made = if (step.fit) fitForPicture(step, window) else emptyList()
         val highlights = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
         val cropOnBackend = (step.crop as? UiCrop.Control)?.let { backendBounds(it.target, null, null, window)?.first }
         val cropControl = if (cropOnBackend != null) null else (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
@@ -1158,9 +1164,12 @@ class UiSession(
                 highlights.takeIf { it.isNotEmpty() }?.withIndex()?.joinToString(", ", prefix = "highlights: ") { (i, h) -> "${i + 1} ${h.what}" },
                 step.crop?.let { "crop ${if (it is UiCrop.Control) it.target.toString() else it.toString()}" },
                 "the caret is hidden in the picture".takeIf { codeEditors.isNotEmpty() },
+                made.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = "made room: "),
             )
+            // What the picture shows cut, each with the step that fixes it, so a bad picture is known without reading it.
+            val cut = pictureProblems(window, canvas.bounds).map { "\ncut: " + it.line.removePrefix("layout: ") }
             Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
-                what.joinToString("") { "; $it" })
+                what.joinToString("") { "; $it" } + cut.joinToString(""))
         }
         val change = withContext(Dispatchers.IO) {
             try {
@@ -1199,6 +1208,39 @@ class UiSession(
         }
         return line + change
     }
+
+    /** The layout problems of [window] whose cut content lies in [area], a picture's screen area. EDT. */
+    private fun pictureProblems(window: Window, area: Rectangle): List<UiLayout.Problem> =
+        UiLayout.problems(window, UiModel.build(window).root, { registry.refFor(it.component) }, project).filter { it.area?.intersects(area) == true }
+
+    /**
+     * For a screenshot with fit: runs the steps that make room for what the picture would show cut, the part the crop
+     * names or the whole window, and looks again once, as the room one step makes can show another cut. The restores
+     * go with the step's. Returns what each step did.
+     */
+    private suspend fun fitForPicture(step: UiStep, window: Window): List<String> {
+        val done = mutableListOf<String>()
+        val tried = mutableSetOf<String>()
+        repeat(FIT_ROUNDS) {
+            val fixes = withContext(edtAny) {
+                val scope = pictureScope(step, window)
+                pictureProblems(window, scope).mapNotNull { it.fix }.filter { tried.add(it) }
+            }
+            if (fixes.isEmpty()) return done
+            fixes.forEach { done += applyFix(it) }
+            UiSettle.settle()
+        }
+        return done
+    }
+
+    /** The screen area a screenshot's crop names before it is painted: a control, a tool window, the Settings page, or the window. EDT. */
+    private suspend fun pictureScope(step: UiStep, window: Window): Rectangle = when (val crop = step.crop) {
+        is UiCrop.Control -> match(crop.target).let { m -> (m as? UiMatch.One)?.node?.component?.takeIf { it.isShowing }?.let { onScreen(it, Rectangle(0, 0, it.width, it.height)) } }
+        is UiCrop.ToolWindow -> UiLayout.toolWindows(project).firstOrNull { it.id.equals(crop.id, ignoreCase = true) }?.window?.decorator
+            ?.takeIf { it.isShowing }?.let { onScreen(it, Rectangle(0, 0, it.width, it.height)) }
+        UiCrop.Page -> UiSettingsParts.page(window)
+        else -> null
+    } ?: Rectangle(window.locationOnScreen, window.size)
 
     /** [area], in [c]'s coordinates, on screen. EDT. */
     private fun onScreen(c: Component, area: Rectangle): Rectangle = Rectangle(area).apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }
@@ -1796,6 +1838,8 @@ class UiSession(
         private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")
         private val UNCHECKED_WORDS = setOf("false", "off", "no", "[ ]")
         private const val POLL_MS = 100L
+        /** How many times a screenshot with fit looks for cut content: the room one step makes can show another cut. */
+        private const val FIT_ROUNDS = 2
         /** The tree table of Settings | Editor | Inspections, which an inspection highlight searches. */
         private const val INSPECTIONS_TREE = "InspectionsConfigTreeTable"
         /** The most text controls a picture's badges keep off: an IDE window shows a few hundred. */

@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.ui
 import com.intellij.openapi.ui.Splitter
 import com.intellij.openapi.ui.ThreeComponentsSplitter
 import com.intellij.ui.JBSplitter
+import com.intellij.ui.treeStructure.treetable.TreeTable
 import java.awt.Component
 import java.awt.Dimension
 import java.util.Locale
@@ -78,24 +79,43 @@ object UiSplitters {
     }.filter { it.isVisible }
 
     /** The axes along which [c]'s content is cut: its rows or text need more than its view shows. Height first. */
-    fun cutAxes(c: Component): List<Axis> {
+    fun cutAxes(c: Component): List<Axis> = Axis.entries.reversed().filter { shortfall(c, it) > SLACK }
+
+    /**
+     * How many pixels [c]'s content needs beyond what it shows along [axis]: a list, tree or table in a scroll pane
+     * against the pane's view, a tree table's tree against its tree column, any other control against its own size.
+     */
+    fun shortfall(c: Component, axis: Axis): Int {
+        if (c is TreeTable && axis == Axis.WIDTH && c.columnCount > 0) {
+            return c.tree.preferredSize.width - c.columnModel.getColumn(0).width
+        }
         val port = (c as? JScrollPane)?.viewport ?: c.parent as? JViewport
-        val need = (port?.view ?: c).preferredSize
-        val shown = port?.extentSize ?: c.size
-        return listOfNotNull(
-            Axis.HEIGHT.takeIf { need.height > shown.height + SLACK },
-            Axis.WIDTH.takeIf { need.width > shown.width + SLACK },
-        )
+        val need = along(axis, (port?.view ?: c).preferredSize)
+        val shown = along(axis, port?.extentSize ?: c.size)
+        return need - shown
     }
 
     fun size(p: Pane): Int = along(p.axis, p.child.size)
 
-    /** The size that shows [p]'s content whole: its preferred size, within what the other panes' minimum sizes leave. */
-    fun fitSize(p: Pane): Int {
-        val others = panes(p.splitter as JComponent).filter { it !== p.child }
-        val room = total(p.splitter) - others.sumOf { along(p.axis, it.minimumSize) }
-        return minOf(along(p.axis, p.child.preferredSize), room).coerceAtLeast(0)
+    /**
+     * The size that shows [p]'s content whole, within what the other panes' minimum sizes leave: its size now plus what
+     * [cut], the control a step named, lacks along the axis, or without it, the pane's preferred size.
+     */
+    fun fitSize(p: Pane, cut: Component? = null): Int {
+        val wanted = cut?.let { size(p) + shortfall(it, p.axis).coerceAtLeast(0) } ?: along(p.axis, p.child.preferredSize)
+        return minOf(wanted, room(p)).coerceAtLeast(0)
     }
+
+    /** The most [p] can get: the splitter's room less the other panes' minimum sizes. */
+    private fun room(p: Pane): Int = total(p.splitter) - others(p).sumOf { along(p.axis, it.minimumSize) }
+
+    private fun others(p: Pane): List<Component> = panes(p.splitter as JComponent).filter { it !== p.child }
+
+    /**
+     * Whether the other panes of [p] now show less than they want, as a pane that gave its room to [p] does: then only
+     * a larger window gives both room. The pixels they lack, or 0.
+     */
+    fun othersShort(p: Pane): Int = others(p).sumOf { (along(p.axis, it.preferredSize) - along(p.axis, it.size)).coerceAtLeast(0) }
 
     /** Gives [p] [px] pixels by moving its splitter's divider, as a drag does. */
     fun setSize(p: Pane, px: Int): Result {

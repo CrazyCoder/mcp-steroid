@@ -116,6 +116,24 @@ class UiSplittersTest {
     }
 
     @Test
+    fun `a tree table whose tree column is narrower than its tree is cut at the right, and fit adds the shortfall`() = onEdt {
+        val root = DefaultMutableTreeNode("root").apply { add(DefaultMutableTreeNode("Unused local symbol with a long name")) }
+        val model = com.intellij.ui.treeStructure.treetable.ListTreeTableModel(root, arrayOf(com.intellij.ui.treeStructure.treetable.TreeColumnInfo("Name")))
+        val table = com.intellij.ui.treeStructure.treetable.TreeTable(model).apply { setRootVisible(false) }
+        val scroll = JScrollPane(table)
+        val s = Splitter(false, 0.1f).apply { firstComponent = scroll; secondComponent = JPanel(); setSize(1000, 300); doLayout() }
+        scroll.doLayout()
+        table.doLayout()
+        val short = UiSplitters.shortfall(table, Axis.WIDTH)
+        assertTrue("short by $short", short > 0)
+        assertTrue(Axis.WIDTH in UiSplitters.cutAxes(table))
+        val pane = UiSplitters.paneOf(table, Axis.WIDTH)!!
+        val before = UiSplitters.size(pane)
+        assertEquals(before + short, UiSplitters.fitSize(pane, table))
+        assertTrue(s.proportion < 0.2f)
+    }
+
+    @Test
     fun `fit leaves the other pane its minimum size`() = onEdt {
         val big = JPanel().apply { preferredSize = Dimension(10, 5000) }
         val rest = JPanel().apply { minimumSize = Dimension(10, 100) }
