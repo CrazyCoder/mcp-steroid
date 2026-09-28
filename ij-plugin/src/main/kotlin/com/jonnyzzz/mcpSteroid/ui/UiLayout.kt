@@ -156,7 +156,8 @@ object UiLayout {
 
     /**
      * Content a pane, field or header cuts: what is cut, the splitter step that makes room, or null when none does, and
-     * [need], the pixels it lacks along [axis].
+     * [need], the pixels a window must grow along [axis] to show it: what it lacks, over its pane's share of a
+     * splitter that has no room of its own.
      */
     data class Cut(val node: UiNode, val what: String, val fix: String?, val need: Int = 0, val axis: UiSplitters.Axis = UiSplitters.Axis.WIDTH)
 
@@ -207,7 +208,9 @@ object UiLayout {
             // A splitter whose other panes keep their minimum sizes has no room to give: the window's step does then.
             val fix = pane?.takeIf { UiSplitters.fitSize(it, c) > UiSplitters.size(it) + SLACK }
                 ?.let { """{"action":"splitter","ref":"${refOf(node)}","size":"fit"}""" }
-            if (pane != null || inDialog(c)) out += Cut(node, what, fix, need, axis)
+            // A window step then makes the room, of which the splitter gives the pane only its share.
+            val windowNeed = if (pane != null && fix == null) kotlin.math.ceil(need / UiSplitters.windowShare(pane)).toInt() else need
+            if (pane != null || inDialog(c)) out += Cut(node, what, fix, windowNeed, axis)
         }
         val name = describe(node, refOf)
         val total = when (c) {

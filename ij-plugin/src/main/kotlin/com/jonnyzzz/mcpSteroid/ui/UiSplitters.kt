@@ -7,6 +7,7 @@ import com.intellij.ui.JBSplitter
 import com.intellij.ui.treeStructure.treetable.TreeTable
 import java.awt.Component
 import java.awt.Dimension
+import java.awt.Rectangle
 import java.util.Locale
 import javax.swing.JComponent
 import javax.swing.JScrollPane
@@ -87,7 +88,13 @@ object UiSplitters {
      */
     fun shortfall(c: Component, axis: Axis): Int {
         if (c is TreeTable && axis == Axis.WIDTH && c.columnCount > 0) {
-            return c.tree.preferredSize.width - c.columnModel.getColumn(0).width
+            // The rows in view, as they paint: the Inspections tree reports a preferred width narrower than its rows.
+            val tree = c.tree
+            val view = c.visibleRect.takeUnless { it.isEmpty } ?: Rectangle(0, 0, c.width, c.height)
+            val rows = if (tree.rowCount == 0) IntRange.EMPTY
+            else tree.getClosestRowForLocation(0, view.y)..tree.getClosestRowForLocation(0, view.y + view.height - 1)
+            val right = rows.maxOfOrNull { row -> tree.getRowBounds(row)?.let { it.x + it.width } ?: 0 } ?: tree.preferredSize.width
+            return right - c.columnModel.getColumn(0).width
         }
         val port = (c as? JScrollPane)?.viewport ?: c.parent as? JViewport
         val need = along(axis, (port?.view ?: c).preferredSize)
@@ -106,6 +113,16 @@ object UiSplitters {
     fun fitSize(p: Pane, cut: Component? = null): Int {
         val wanted = cut?.let { size(p) + shortfall(it, p.axis).coerceAtLeast(0) } ?: along(p.axis, p.child.preferredSize)
         return maxOf(size(p), minOf(wanted, room(p))).coerceAtLeast(0)
+    }
+
+    /**
+     * The part of a larger window [p] gets: its share of an IDE `Splitter`, which keeps its proportion as it grows, or
+     * all of it for the other splitters, whose growing pane is the one a step names in practice.
+     */
+    fun windowShare(p: Pane): Double {
+        val s = p.splitter as? Splitter ?: return 1.0
+        val total = total(s).takeIf { it > 0 } ?: return 1.0
+        return (size(p).toDouble() / total).coerceIn(0.05, 1.0)
     }
 
     /** The most [p] can get: the splitter's room less the other panes' minimum sizes. */

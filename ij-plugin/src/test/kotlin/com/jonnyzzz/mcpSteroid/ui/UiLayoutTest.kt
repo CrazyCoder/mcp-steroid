@@ -95,6 +95,22 @@ class UiLayoutTest {
     }
 
     @Test
+    fun `a pane in a splitter with no room asks the window for its need over its share`() = onEdt {
+        val tree = JTree(javax.swing.tree.DefaultMutableTreeNode("a root name long enough to be cut at the right by a narrow pane ".repeat(3)))
+        val scroll = JScrollPane(tree)
+        // The other pane's minimum leaves no room: the window grows, and the splitter gives the tree half of it.
+        val greedy = JPanel().apply { minimumSize = java.awt.Dimension(510, 10) }
+        val s = com.intellij.openapi.ui.Splitter(false, 0.5f).apply { firstComponent = scroll; secondComponent = greedy; setSize(1000, 300); doLayout() }
+        scroll.doLayout()
+        val root = FallbackUiWalker(onlyShowing = false).build(s)
+        val cut = UiLayout.cuts(root, refs(root)) { true }.single { it.what.contains("cut at the right") }
+        assertEquals(null, cut.fix)
+        val short = UiSplitters.shortfall(tree, UiSplitters.Axis.WIDTH)
+        val share = UiSplitters.size(UiSplitters.paneOf(tree, UiSplitters.Axis.WIDTH)!!).toDouble() / (1000 - s.dividerWidth)
+        assertEquals(kotlin.math.ceil(short / share).toInt().toDouble(), cut.need.toDouble(), 1.0)
+    }
+
+    @Test
     fun `a long list that scrolls is not cut`() = onEdt {
         val (s, _) = stackedTree(200, 300)
         val root = FallbackUiWalker(onlyShowing = false).build(s)

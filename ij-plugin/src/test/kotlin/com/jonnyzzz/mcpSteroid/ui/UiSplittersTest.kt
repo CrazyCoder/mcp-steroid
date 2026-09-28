@@ -144,6 +144,21 @@ class UiSplittersTest {
     }
 
     @Test
+    fun `a tree table's shortfall comes from its rows in view, not a stale preferred width`() = onEdt {
+        val root = DefaultMutableTreeNode("root").apply { add(DefaultMutableTreeNode("Unused local symbol with a long name")) }
+        val model = com.intellij.ui.treeStructure.treetable.ListTreeTableModel(root, arrayOf(com.intellij.ui.treeStructure.treetable.TreeColumnInfo("Name")))
+        val table = com.intellij.ui.treeStructure.treetable.TreeTable(model).apply { setRootVisible(false) }
+        val scroll = JScrollPane(table)
+        Splitter(false, 0.1f).apply { firstComponent = scroll; secondComponent = JPanel(); setSize(1000, 300); doLayout() }
+        scroll.doLayout()
+        table.doLayout()
+        val row = table.tree.getRowBounds(0)
+        // The Inspections tree reports a preferred width narrower than its rows paint.
+        table.tree.preferredSize = Dimension(40, table.tree.preferredSize.height)
+        assertEquals(row.x + row.width - table.columnModel.getColumn(0).width, UiSplitters.shortfall(table, Axis.WIDTH))
+    }
+
+    @Test
     fun `fit never shrinks a pane when the other pane's minimum leaves no room`() = onEdt {
         val tree = JTree(DefaultMutableTreeNode("a rather long root name that needs room")).apply { }
         val scroll = JScrollPane(tree)
