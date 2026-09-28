@@ -17,6 +17,14 @@ class IdeRunsTest {
     }
 
     @Test
+    fun `console text keeps no ANSI escapes`() {
+        val run = runs.start("refplay", "tabs-alpha.js", "Run")
+        run.append("tabs-alpha.js tick \u001B[33m7\u001B[39m\n", "stdout")
+        assertEquals(listOf("tabs-alpha.js tick 7"), run.text())
+        assertEquals("plain \u001B", IdeRuns.stripAnsi("plain \u001B"))
+    }
+
+    @Test
     fun `a failed run is told once with its last stderr lines`() {
         val session = Any()
         runs.noticeFor(session)

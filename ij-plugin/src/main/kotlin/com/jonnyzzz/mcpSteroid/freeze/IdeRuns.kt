@@ -55,7 +55,9 @@ class IdeRuns {
             partial.clear()
         }
 
-        private fun add(line: String, stream: String) {
+        private fun add(raw: String, stream: String) {
+            // A console paints colors from ANSI escapes; a report of its text reads the text alone.
+            val line = stripAnsi(raw)
             lines.addLast(if (stream == STDERR) "$ERR_MARK$line" else line)
             while (lines.size > MAX_LINES) { lines.removeFirst(); dropped++ }
         }
@@ -175,6 +177,12 @@ class IdeRuns {
         private val TIME = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault())
 
         fun getInstanceOrNull(): IdeRuns? = ApplicationManager.getApplication()?.let { service<IdeRuns>() }
+
+        /** An ANSI control sequence: ESC, `[`, parameters, intermediates and a final byte, such as a color change. */
+        private val ANSI = Regex("\u001B\\[[0-?]*[ -/]*[@-~]")
+
+        /** [text] without the ANSI control sequences a console paints as colors. */
+        fun stripAnsi(text: String): String = if ('\u001B' in text) ANSI.replace(text, "") else text
 
         private fun header(run: Run): String = buildString {
             append("'").append(run.name).append("' (").append(run.executor).append(')')

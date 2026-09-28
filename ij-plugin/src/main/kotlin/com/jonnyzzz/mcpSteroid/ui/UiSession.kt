@@ -465,13 +465,21 @@ class UiSession(
         // template that was up before the step, such as a rename whose options popup an ESCAPE closed, is not the step's.
         UiAction.RUN -> {
             val before = inplaceActive()
-            withEffects { actStep(step) }.let {
-                when {
-                    !inplaceActive() -> it
-                    before -> "$it; an in-place template is still active in the editor: press ESCAPE to end it"
-                    else -> "$it; started an in-place template: type the value, then press ENTER"
+            // A run, debug or stop action says which runs it started or stopped, or that it started none.
+            val runs = UiRunWatch(project, step.id!!)
+            val line = try {
+                withEffects { actStep(step) }.let {
+                    when {
+                        !inplaceActive() -> it
+                        before -> "$it; an in-place template is still active in the editor: press ESCAPE to end it"
+                        else -> "$it; started an in-place template: type the value, then press ENTER"
+                    }
                 }
+            } catch (e: Throwable) {
+                runs.close()
+                throw e
             }
+            line + (runs.report()?.let { "; $it" } ?: "")
         }
         UiAction.GET -> when {
             step.editors -> editorsReport(step)
@@ -1332,6 +1340,7 @@ class UiSession(
         val descriptor = descriptors.lastOrNull { it.displayName == name } ?: descriptors.lastOrNull { it.displayName.contains(name, ignoreCase = true) }
             ?: throw UiStepFailure("no run named \"$name\" has a console; runs: ${descriptors.joinToString { "\"${it.displayName}\"" }}")
         val console = descriptor.executionConsole
+        (console as? com.intellij.terminal.TerminalExecutionConsole)?.let { return terminalLine(it, descriptor.displayName, text, nth, label, window) }
         val editor = (console as? com.intellij.execution.impl.ConsoleViewImpl)?.editor
             ?: throw UiStepFailure("the console of '${descriptor.displayName}' is a ${console?.let { UiComponentFacts.simpleClassName(it.component) } ?: "console"} without an editor; outline it with a locator")
         if (!editor.contentComponent.isShowing) throw UiStepFailure("the console of '${descriptor.displayName}' is not showing; show its tab first")
@@ -1343,6 +1352,27 @@ class UiSession(
             ?: throw UiStepFailure(if (lines.isEmpty()) "no line of the console of '${descriptor.displayName}' holds \"$text\"" else "\"$text\" is on ${lines.size} lines; nth $nth asked")
         if (!SwingUtilities.isDescendingFrom(editor.contentComponent, window)) throw UiStepFailure("the console of '${descriptor.displayName}' is not in the pictured ${describeWindow(window)}")
         return CodeHighlight(editor, UiCodeRange.linesArea(editor, (line + 1)..(line + 1)), "line ${line + 1} of the console of '${descriptor.displayName}'", label)
+    }
+
+    /**
+     * The lines of a terminal-based console, as a Node.js run shows, that hold [text], among those on its screen: the
+     * last of them unless [nth] counts back further. Its cells are the panel's size shared out over the screen's
+     * columns and rows. EDT.
+     */
+    private fun terminalLine(console: com.intellij.terminal.TerminalExecutionConsole, name: String, text: String, nth: Int, label: String?, window: Window): Located {
+        val panel = console.terminalWidget.terminalPanel
+        if (!panel.isShowing) throw UiStepFailure("the console of '$name' is not showing; show its tab first")
+        if (!SwingUtilities.isDescendingFrom(panel, window)) throw UiStepFailure("the console of '$name' is not in the pictured ${describeWindow(window)}")
+        val buffer = panel.terminalTextBuffer
+        // Line by line: the buffer's screen text call is newer than the oldest IDE build the plugin supports.
+        val screen = (0 until buffer.height).map { buffer.getLine(it).text }
+        val lines = screen.indices.filter { screen[it].contains(text) }
+        val line = lines.reversed().getOrNull(nth)
+            ?: throw UiStepFailure(if (lines.isEmpty()) "no line on the screen of the console of '$name' holds \"$text\"; scroll it to the line first" else "\"$text\" is on ${lines.size} lines; nth $nth asked")
+        val cellHeight = panel.pixelHeight / maxOf(1, buffer.height)
+        val cellWidth = panel.pixelWidth / maxOf(1, buffer.width)
+        val width = maxOf(1, screen[line].trimEnd().length) * cellWidth
+        return LocalHighlight(panel, Rectangle(0, line * cellHeight, width, cellHeight), "line ${line + 1} of the screen of the console of '$name'", label)
     }
 
     /**
