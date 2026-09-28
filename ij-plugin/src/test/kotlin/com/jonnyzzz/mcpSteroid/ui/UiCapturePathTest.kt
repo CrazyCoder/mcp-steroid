@@ -8,24 +8,30 @@ import org.junit.Test
 import java.nio.file.Path
 
 class UiCapturePathTest {
+    /** An absolute folder on any OS: "C:/..." is relative on Linux and macOS. */
+    private val root: Path = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().resolve("capture-paths")
+    private val scenarios = root.resolve("docs").resolve("scenarios")
+
     @Test
     fun `a relative out resolves against the scenario folder`() {
-        assertEquals(Path.of("C:/docs/scenarios/img/a.png"), UiCapturePaths.resolve("img/a.png", Path.of("C:/docs/scenarios")))
-        assertEquals(Path.of("C:/docs/img/a.png"), UiCapturePaths.resolve("../img/a.png", Path.of("C:/docs/scenarios")))
+        assertEquals(scenarios.resolve("img").resolve("a.png"), UiCapturePaths.resolve("img/a.png", scenarios))
+        assertEquals(root.resolve("docs").resolve("img").resolve("a.png"), UiCapturePaths.resolve("../img/a.png", scenarios))
     }
 
     @Test
     fun `an absolute out is kept`() {
-        assertEquals(Path.of("C:/pics/a.png"), UiCapturePaths.resolve("C:/pics/a.png", null))
+        val pic = root.resolve("pics").resolve("a.png")
+        assertEquals(pic, UiCapturePaths.resolve(pic.toString(), null))
     }
 
     @Test
     fun `an out without an extension is a png, and a jpg stays a jpg`() {
-        assertEquals(Path.of("C:/pics/a.png"), UiCapturePaths.resolve("C:/pics/a", null))
-        assertEquals(Path.of("C:/pics/v1.2/a.png"), UiCapturePaths.resolve("C:/pics/v1.2/a", null))
-        assertEquals(Path.of("C:/pics/a.jpg"), UiCapturePaths.resolve("C:/pics/a.jpg", null))
-        assertEquals("png", UiCapturePaths.format(Path.of("C:/pics/a.png")))
-        assertEquals("jpg", UiCapturePaths.format(Path.of("C:/pics/a.JPEG")))
+        val pics = root.resolve("pics")
+        assertEquals(pics.resolve("a.png"), UiCapturePaths.resolve(pics.resolve("a").toString(), null))
+        assertEquals(pics.resolve("v1.2").resolve("a.png"), UiCapturePaths.resolve(pics.resolve("v1.2").resolve("a").toString(), null))
+        assertEquals(pics.resolve("a.jpg"), UiCapturePaths.resolve(pics.resolve("a.jpg").toString(), null))
+        assertEquals("png", UiCapturePaths.format(pics.resolve("a.png")))
+        assertEquals("jpg", UiCapturePaths.format(pics.resolve("a.JPEG")))
     }
 
     @Test

@@ -161,7 +161,7 @@ object UiCapture {
         return spot
     }
 
-    /** A copy of [canvas] with each mark outlined, its number in a round badge and its label beside the badge. */
+    /** A copy of [canvas] with each mark outlined, its number in a round badge beside the outline, and its label. */
     fun highlight(canvas: Canvas, marks: List<Mark>): Canvas {
         val copy = BufferedImage(canvas.image.width, canvas.image.height, BufferedImage.TYPE_INT_ARGB)
         val g = copy.createGraphics()

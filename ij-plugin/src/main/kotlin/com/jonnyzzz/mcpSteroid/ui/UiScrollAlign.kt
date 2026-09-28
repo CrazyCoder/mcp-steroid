@@ -45,7 +45,7 @@ object UiScrollAlign {
         return whole to (extent != null && !shown.contains(whole))
     }
 
-    /** [c]'s size, the part of it its viewport shows, and the viewport's extent, for [wholeArea]. EDT. */
+    /** The area of the whole control [c] to outline and whether to scroll it first, as [wholeArea] gives them. EDT. */
     fun wholeAreaOf(c: Component): Pair<Rectangle, Boolean> {
         val port = SwingUtilities.getAncestorOfClass(JViewport::class.java, c) as? JViewport
         val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)

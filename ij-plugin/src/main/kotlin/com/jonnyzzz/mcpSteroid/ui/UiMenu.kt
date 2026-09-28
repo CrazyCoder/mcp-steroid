@@ -184,7 +184,7 @@ class UiMenu {
             ?: throw UiStepFailure("the main menu opens from the IDE window, and no IDE window holds the focus")
         val mode = withContext(edtAny) { mode(frame) }
         if (mode is Mode.Outside) throw UiStepFailure("the main menu is ${mode.where}, outside the IDE window, so a picture cannot show it open")
-        MenuSelectionManager.defaultManager().let { withContext(edtAny) { it.clearSelectedPath() } }
+        withContext(edtAny) { MenuSelectionManager.defaultManager().clearSelectedPath() }
         var top = withContext(edtAny) { barMenu(frame, trail.first()) }
         if (top == null) {
             val button = withContext(edtAny) { mainMenuButton(frame) }

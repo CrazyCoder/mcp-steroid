@@ -779,9 +779,13 @@ class UiSession(
             return withContext(edtAny) {
                 val area = pick?.let { UiRows.bounds(c, it.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup: pick one with select") }
                     ?: Rectangle(0, 0, c.width, c.height)
-                val port = UiScrollAlign.scroll(c, area, align) ?: throw UiStepFailure("${describe(node)} is not in a scroll pane")
                 val what = pick?.let { "row #${it.index} \"${it.text.take(80)}\" of " }.orEmpty() + describe(node)
-                "scrolled $what to the ${if (align == "top") "top" else "middle"} of its view; ${position(port)}; ${UiScrollAlign.boundsNote(onScreen(c, area))}"
+                // A control in no scroll pane shows where it is: the step reports that, and its bounds, which a JetBrains
+                // Client's highlight on a host page reads.
+                val port = UiScrollAlign.scroll(c, area, align)
+                val moved = if (port == null) "$what is in no scroll pane, so it stays where it is"
+                else "scrolled $what to the ${if (align == "top") "top" else "middle"} of its view; ${position(port)}"
+                "$moved; ${UiScrollAlign.boundsNote(onScreen(c, area))}"
             }
         }
         if (pages == null) {
