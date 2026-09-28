@@ -167,7 +167,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
     val scenario = InputSchemaElement.param("scenario")
         .description(
             "Path of a scenario file to replay, absolute or relative to the project: a JSON object with title and " +
-                "steps, described in mcp-steroid://ide/ui-scenarios. Replaces steps."
+                "steps, described in mcp-steroid://ide/ui-scenarios. Replaces steps. A folder replays every *.scenario.json " +
+                "under it, and a JSON array lists paths of files or folders; the result then starts with one verdict per file."
         )
         .cliSynopsis("scenario file to replay")
         .string()

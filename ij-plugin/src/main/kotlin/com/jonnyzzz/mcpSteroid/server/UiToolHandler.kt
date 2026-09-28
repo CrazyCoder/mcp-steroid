@@ -41,6 +41,7 @@ class UiToolHandlerIJ : UiToolHandler {
     private val pretty = Json { prettyPrint = true }
 
     override suspend fun handleUi(projectName: String, params: UiParams): ToolCallResult {
+        params.scenario?.let { spec -> replayBatch(projectName, params, spec)?.let { return it } }
         val project = service<ProjectScopedToolHandler>().resolveProject(projectName)
         val executionId = project.executionStorage.writeToolCall(
             toolName = "steroid_ui",
@@ -203,6 +204,31 @@ class UiToolHandlerIJ : UiToolHandler {
             fresh.joinToString("\n") { "- $it" } +
             (if (stuck) "\nA file the Client shows no editor of opens again once its tab is clicked." else "") +
             "\n{\"action\":\"get\",\"editors\":true} lists both sides."
+    }
+
+    /**
+     * Replays each scenario file of a folder or a list as its own call, and answers with [UiScenarioBatch.render]'s
+     * summary and the reports. Null when [spec] names a single file, which the plain scenario path replays.
+     */
+    private suspend fun replayBatch(projectName: String, params: UiParams, spec: String): ToolCallResult? {
+        val project = service<ProjectScopedToolHandler>().resolveProject(projectName)
+        val bridge = if (currentSplitRole() == SplitRole.FRONTEND) SPLIT_FRONTEND_BRIDGE_EP.extensionList.firstOrNull() else null
+        val base = (bridge?.backendPathFor(project) ?: project.basePath)?.let { Path.of(it) }
+        val error = { message: String -> ToolCallResult.builder().addTextContent("ERROR: $message").markAsError().build() }
+        val files = try {
+            withContext(Dispatchers.IO) { UiScenarioBatch.expand(spec, base) } ?: return null
+        } catch (e: IllegalArgumentException) {
+            return error(e.message ?: "cannot read the scenario list")
+        }
+        if (!params.steps.isNullOrBlank()) return error("pass steps or scenario, not both")
+        if (params.fromStep != null || params.toStep != null) return error("from_step and to_step pick the steps of one scenario, not of several files")
+        val reports = files.map { file ->
+            val result = handleUi(projectName, params.copy(scenario = file.toString()))
+            file to result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
+        }
+        val builder = ToolCallResult.builder().addTextContent(UiScenarioBatch.render(reports, base))
+        if (reports.any { (_, report) -> UiScenarioBatch.isBad(UiScenarioBatch.verdictOf(report)) }) builder.markAsError()
+        return builder.build()
     }
 
     private suspend fun loadScenario(base: String?, path: String): UiScenario {

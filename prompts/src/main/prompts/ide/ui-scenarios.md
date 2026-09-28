@@ -85,7 +85,10 @@ to the other evidence of the issue; its path is absolute or relative to the proj
 ## Replay and verdicts
 
 Pass `scenario` instead of `steps`. `from_step` and `to_step` run part of it, numbered from 1, as when
-repairing one step; the cleanup runs only when the last step runs. The response lists each step with its
+repairing one step; the cleanup runs only when the last step runs. To replay several, pass a folder, which
+replays every `*.scenario.json` under it in path order, or a JSON array of files and folders. Each file replays
+as its own call would, and the result starts with a count per verdict and one verdict line per file, followed
+by each file's report. The response lists each step with its
 intent and ends with one verdict:
 
 | Verdict | Meaning |
