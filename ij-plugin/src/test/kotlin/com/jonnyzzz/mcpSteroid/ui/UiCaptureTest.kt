@@ -71,6 +71,51 @@ class UiCaptureTest {
     }
 
     @Test
+    fun `a badge that would cover a neighbour's text goes below the outline`() {
+        val within = Rectangle(0, 0, 400, 200)
+        val mark = Rectangle(100, 20, 80, 24)
+        val neighbours = listOf(Rectangle(20, 20, 76, 24), Rectangle(184, 20, 80, 24))
+        val b = UiCapture.badgeBounds(mark, 18, within, emptyList(), neighbours)
+        assertTrue("below the mark: $b", b.y >= mark.y + mark.height)
+        assertTrue(neighbours.none { it.intersects(b) })
+    }
+
+    @Test
+    fun `with no free spot a badge still lands inside the picture`() {
+        val within = Rectangle(0, 0, 80, 40)
+        val b = UiCapture.badgeBounds(Rectangle(10, 10, 50, 20), 18, within, emptyList(), listOf(within))
+        assertTrue(within.contains(b))
+    }
+
+    @Test
+    fun `a label that would cover a neighbour's text goes below with its badge`() {
+        val c = canvas(600, 200)
+        val mark = Rectangle(300, 80, 80, 24)
+        val neighbours = listOf(Rectangle(210, 80, 86, 24), Rectangle(384, 80, 90, 24))
+        val area = UiCapture.markArea(c, listOf(UiCapture.Mark(1, mark, "console")), neighbours)
+        assertTrue("the label hangs below: $area", area.y + area.height > mark.y + mark.height + 10)
+        assertTrue("and covers no neighbour sideways: $area", area.x >= 210 + 86 - 4)
+    }
+
+    @Test
+    fun `a pointer mark draws an arrow at the point, not a box`() {
+        val c = UiCapture.highlight(canvas(400, 300), listOf(UiCapture.Mark(1, Rectangle(200, 100, 1, 1), null, pointer = true)))
+        // The tip is at (200, 100) on screen, (100, 50) in the picture: the arrow's body runs down and right of it.
+        assertNotEquals(Color.WHITE.rgb, c.image.getRGB(103, 60))
+        // A box around the point would reach left of the tip; the arrow does not.
+        assertEquals(Color.WHITE.rgb, c.image.getRGB(92, 55))
+    }
+
+    @Test
+    fun `the area off the window is painted in the window's background`() {
+        // A headless test has no window: the canvas the painting starts from is what matters.
+        val red = Color(200, 20, 20)
+        val c = UiCapture.blankCanvas(Rectangle(10, 10, 50, 40), 2.0, red)
+        assertEquals(red.rgb, c.image.getRGB(50, 40))
+        assertEquals(100, c.image.width)
+    }
+
+    @Test
     fun `a label goes right of its mark, on its badge's line`() {
         val c = canvas(800, 600)
         val mark = Rectangle(300, 200, 100, 20)
