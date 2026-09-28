@@ -333,6 +333,11 @@ intellijPlatform {
             FailureLevel.COMPATIBILITY_PROBLEMS,
             FailureLevel.OVERRIDE_ONLY_API_USAGES,
         )
+        // Offline: every plugin this one depends on is bundled with the IDE, and online the verifier asks the
+        // Marketplace for the latest compatible version of each dependency it resolves, with retries and
+        // sleeps. Measured on IU-262: 204 s online, 23 s offline, with the same result. A dependency on a
+        // plugin that is not bundled would show as missing offline; -PverifierOnline restores the lookups.
+        if (!providers.gradleProperty("verifierOnline").isPresent) freeArgs = listOf("-offline")
         ides {
             // Verifier IDEs go through `intellij-downloader` too. Each entry is
             // downloaded + unpacked into `build/local-ides/<P>-<build>-<os>-<arch>/`
@@ -342,7 +347,16 @@ intellijPlatform {
             // a single-place edit covered by `McpSteroidIdeTargetsTest`. The
             // product axis follows `targetIdeProduct` so a PyCharm build
             // verifies against PyCharm IDEs, not IDEA ones (audit #11).
-            McpSteroidIdeTargets.verifierTargets.forEach { target ->
+            // -PverifyTargets=262 (or 262,263) checks only those majors, for a quicker check while developing.
+            // A release checks every verifier target: the gate is all of them (release-instructions.md, 5a).
+            val only = providers.gradleProperty("verifyTargets").orNull
+                ?.split(',')?.map(String::trim)?.filter(String::isNotEmpty)?.toSet()
+            val targets = McpSteroidIdeTargets.verifierTargets.filter { only == null || it.major in only }
+            require(targets.isNotEmpty()) {
+                "-PverifyTargets=${only?.joinToString(",")} names no verifier target; the majors are " +
+                    McpSteroidIdeTargets.verifierTargets.joinToString { it.major }
+            }
+            targets.forEach { target ->
                 local(ideRootProviderFor(target, verifierIdeProduct))
             }
         }
@@ -765,6 +779,12 @@ tasks.buildPlugin {
 }
 
 tasks.verifyPlugin {
+    // Offline, the verifier still opens every plugin archive in its home's download cache at start: about
+    // 2 minutes for the ~4 GB that online runs leave in ~/.pluginVerifier. An offline run uses none of them,
+    // so it gets a home of its own, which stays empty.
+    if (!providers.gradleProperty("verifierOnline").isPresent) {
+        jvmArgs("-Dplugin.verifier.home.dir=${layout.buildDirectory.dir("plugin-verifier-home").get().asFile.absolutePath}")
+    }
     dependsOn(verifyBundledKotlinCompatibility)
     dependsOn(verifyBundledKotlinxRuntime)
     dependsOn(verifyBundledLibraries)
