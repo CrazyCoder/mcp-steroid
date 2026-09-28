@@ -289,6 +289,17 @@ class McpToolsCliHelpTest {
     }
 
     @Test
+    fun `an alternation too long for one line continues with a bar under its opening bracket`() {
+        // refactor's --op lists more values than fit after the usage indent.
+        val lines = section().lines()
+        val first = lines.indexOfFirst { "--op=<rename | " in it }
+        val open = lines[first].indexOf("--op=<") + "--op=".length
+        val next = lines[first + 1]
+        assertEquals(" ".repeat(open) + "| ", next.take(open + 2), "the continuation of --op:\n${lines[first]}\n$next")
+        assertTrue("inspect>" in lines[first + 1] || "inspect>" in lines[first + 2], "every value is kept:\n${lines.subList(first, first + 3).joinToString("\n")}")
+    }
+
+    @Test
     fun `no rendered line exceeds the help width`() {
         val tooWide = section().lines().filter { it.length > 100 }
         assertEquals(emptyList(), tooWide, "generated help lines must stay within 100 columns")

@@ -84,9 +84,10 @@ private class HelpEntry(val label: String, val synopsis: String)
 
 /**
  * Appends `prefix` followed by [tokens], breaking to a new line — indented under the first token — before
- * a token would pass [HELP_WIDTH]. Wrapping happens between whole tokens and never inside one: a token such
- * as `[--modal=<smart_non_modal | non_modal | unleashed>]` contains spaces but is a single alternation that
- * would read as two flags if it were split.
+ * a token would pass [HELP_WIDTH]. Wrapping happens between whole tokens: a token such as
+ * `[--modal=<smart_non_modal | non_modal | unleashed>]` contains spaces but is a single alternation that
+ * would read as two flags if it were split. Only a token too long for a line of its own is split, by
+ * [splitAlternation], with each continuation starting with `|` under its `<`, which no flag does.
  */
 private fun StringBuilder.appendUsageLine(prefix: String, tokens: List<String>) {
     val indent = " ".repeat(prefix.length + 1)
@@ -94,12 +95,38 @@ private fun StringBuilder.appendUsageLine(prefix: String, tokens: List<String>) 
     for (token in tokens) {
         if (line.length > prefix.length && line.length + 1 + token.length > HELP_WIDTH) {
             appendLine(line)
-            line = StringBuilder(indent).append(token)
+            line = StringBuilder(indent)
         } else {
-            line.append(' ').append(token)
+            line.append(' ')
+        }
+        val pieces = if (line.length + token.length > HELP_WIDTH) splitAlternation(token, line.length) else listOf(token)
+        line.append(pieces.first())
+        for (piece in pieces.drop(1)) {
+            appendLine(line)
+            line = StringBuilder(piece)
         }
     }
     appendLine(line)
+}
+
+/**
+ * [token], which starts at column [start] and would pass [HELP_WIDTH], as lines broken before its ` | `
+ * separators. The first piece has no indent; each later one is indented to the token's `<` and starts
+ * with `| `. A token without an alternation stays whole.
+ */
+private fun splitAlternation(token: String, start: Int): List<String> {
+    val open = token.indexOf('<')
+    val parts = token.split(" | ")
+    if (open < 0 || parts.size < 2) return listOf(token)
+    val continuation = " ".repeat(start + open)
+    val lines = mutableListOf(StringBuilder(parts.first()))
+    for (part in parts.drop(1)) {
+        val current = lines.last()
+        val lineStart = if (lines.size == 1) start else 0
+        if (lineStart + current.length + 3 + part.length > HELP_WIDTH) lines += StringBuilder(continuation).append("| ").append(part)
+        else current.append(" | ").append(part)
+    }
+    return lines.map { it.toString() }
 }
 
 /**
