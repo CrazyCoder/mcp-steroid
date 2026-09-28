@@ -62,7 +62,7 @@ A script's output never mixes with MCP Steroid's own lines: read `result` or `st
 
 ## Example
 
-```json
+```
 {"contract": 1, "tool": "steroid_execute_code", "ok": true,
  "execution_id": "eid_20260928T010203-123-mcp-t1",
  "stdout": "{\"files\":3}", "result": {"files": 3},
