@@ -95,11 +95,14 @@ those artifacts.
    ./gradlew :ij-plugin:verifyPlugin
    ```
 
-   The verifier runs offline, because every plugin MCP Steroid depends on is bundled with the IDE,
-   and it keeps its own empty home under `ij-plugin/build/plugin-verifier-home`. Online, it asks the
-   Marketplace about each dependency it resolves, and offline with the shared `~/.pluginVerifier` home
-   it opens every cached plugin archive at start; each costs minutes and changes no result.
-   `-PverifierOnline` restores both, for a plugin that depends on one that is not bundled.
+   The verifier runs offline, because every plugin MCP Steroid depends on is bundled with the IDE.
+   The `verifyPluginPerIde` task runs it once per IDE, each in its own JVM with an empty home under
+   `ij-plugin/build/plugin-verifier-home`, and writes each IDE's output to
+   `ij-plugin/build/tmp/verifyPluginPerIde/`. Online, the verifier asks the Marketplace about each
+   dependency it resolves; offline with the shared `~/.pluginVerifier` home, it opens every cached
+   plugin archive at start; and one JVM checks the IDEs more slowly together than separate JVMs do.
+   `-PverifierOnline` runs the stock single-JVM task online with the shared home, for a plugin that
+   depends on one that is not bundled.
    `-PverifyTargets=262` (or `262,263`) checks only those majors while developing; a release
    checks all of them.
 

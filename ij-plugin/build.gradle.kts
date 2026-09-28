@@ -333,11 +333,6 @@ intellijPlatform {
             FailureLevel.COMPATIBILITY_PROBLEMS,
             FailureLevel.OVERRIDE_ONLY_API_USAGES,
         )
-        // Offline: every plugin this one depends on is bundled with the IDE, and online the verifier asks the
-        // Marketplace for the latest compatible version of each dependency it resolves, with retries and
-        // sleeps. Measured on IU-262: 204 s online, 23 s offline, with the same result. A dependency on a
-        // plugin that is not bundled would show as missing offline; -PverifierOnline restores the lookups.
-        if (!providers.gradleProperty("verifierOnline").isPresent) freeArgs = listOf("-offline")
         ides {
             // Verifier IDEs go through `intellij-downloader` too. Each entry is
             // downloaded + unpacked into `build/local-ides/<P>-<build>-<os>-<arch>/`
@@ -778,12 +773,46 @@ tasks.buildPlugin {
     finalizedBy(verifyClassFileVersions)
 }
 
+// By default :verifyPlugin runs the verifier offline, one JVM per IDE, through verifyPluginPerIde, and
+// the stock task only runs with -PverifierOnline.
+// - Offline: every plugin this one depends on is bundled with the IDE, and online the verifier asks the
+//   Marketplace for the latest compatible version of each dependency it resolves, with retries and sleeps.
+//   Measured on IU-262: 204 s online, 23 s offline, with the same result. A dependency on a plugin that is
+//   not bundled would show as missing offline.
+// - Own homes: offline, the verifier still opens every plugin archive in its home's download cache at
+//   start, about 2 minutes for the ~4 GB that online runs leave in ~/.pluginVerifier. An offline run uses
+//   none of them, so each IDE's verifier gets an empty home under build/plugin-verifier-home.
+// - One JVM per IDE: see VerifyPluginPerIdeTask. All three majors: 70 s, against 119 s in one JVM.
+// Every input comes from the stock task, so the pluginVerification block above configures both paths.
+val verifierOnline = providers.gradleProperty("verifierOnline").isPresent
+val verifyPluginPerIde = tasks.register<VerifyPluginPerIdeTask>("verifyPluginPerIde") {
+    group = "verification"
+    description = "Run the IntelliJ Plugin Verifier offline, one JVM per IDE in pluginVerification.ides"
+    // The realized task, not its provider: a value mapped from the provider would depend on verifyPlugin.
+    val stock = tasks.verifyPlugin.get()
+    verifierClasspath.from(stock.pluginVerifierExecutable)
+    archiveFile.set(stock.archiveFile)
+    // A non-directory entry is a file that holds the IDE path, as the stock task reads it.
+    ides.from(provider { stock.ides.files.map { if (it.isDirectory) it else file(it.readText().trim()) } })
+    runtimeDirectory.set(stock.runtimeDirectory)
+    reportsDirectory.set(stock.verificationReportsDirectory)
+    homesDirectory.set(layout.buildDirectory.dir("plugin-verifier-home"))
+    logsDirectory.set(layout.buildDirectory.dir("tmp/verifyPluginPerIde"))
+    options.set(provider {
+        listOf(
+            "-subsystems-to-check", stock.subsystemsToCheck.get().toString(),
+            "-verification-reports-formats", stock.verificationReportsFormats.get().joinToString(","),
+            "-offline",
+        ) + stock.freeArgs.get()
+    })
+    failureHeadings.set(stock.failureLevel.map { levels -> levels.map { it.sectionHeading } })
+    javaLauncher.set(stock.javaLauncher)
+}
+
 tasks.verifyPlugin {
-    // Offline, the verifier still opens every plugin archive in its home's download cache at start: about
-    // 2 minutes for the ~4 GB that online runs leave in ~/.pluginVerifier. An offline run uses none of them,
-    // so it gets a home of its own, which stays empty.
-    if (!providers.gradleProperty("verifierOnline").isPresent) {
-        jvmArgs("-Dplugin.verifier.home.dir=${layout.buildDirectory.dir("plugin-verifier-home").get().asFile.absolutePath}")
+    if (!verifierOnline) {
+        enabled = false
+        dependsOn(verifyPluginPerIde)
     }
     dependsOn(verifyBundledKotlinCompatibility)
     dependsOn(verifyBundledKotlinxRuntime)
