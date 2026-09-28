@@ -31,6 +31,19 @@ object UiScrollAlign {
         return port
     }
 
+    /**
+     * The screen bounds a scroll report ends with, such as `screen 120,340 200x24`: where a JetBrains Client draws the
+     * outline of a control of a host Settings page, which exists only on the backend.
+     */
+    fun boundsNote(r: Rectangle): String = "screen ${r.x},${r.y} ${r.width}x${r.height}"
+
+    /** The screen bounds in a scroll [report], or null when it has none. */
+    fun parseBounds(report: String): Rectangle? = BOUNDS.find(report)?.destructured?.let { (x, y, w, h) ->
+        Rectangle(x.toInt(), y.toInt(), w.toInt(), h.toInt())
+    }
+
+    private val BOUNDS = Regex("""screen (-?\d+),(-?\d+) (\d+)x(\d+)""")
+
     /** Whether [area], in [c]'s coordinates, is all in the visible part of [c]'s viewport, or [c] is in none. EDT. */
     fun inView(c: Component, area: Rectangle): Boolean {
         val port = SwingUtilities.getAncestorOfClass(JViewport::class.java, c) as? JViewport ?: return true

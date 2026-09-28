@@ -28,6 +28,14 @@ object UiSettingsParts {
         return Rectangle(panel.locationOnScreen, panel.size)
     }
 
+    /**
+     * Whether [window] shows a page of the Remote Development backend in a JetBrains Client: Lux draws it from the
+     * backend's components, so the Client holds a Lux panel in their place. EDT.
+     */
+    fun hostPage(window: Window): Boolean = UIUtil.uiTraverser(window).any { it.isShowing && it.javaClass.simpleName.startsWith(LUX) }
+
+    private const val LUX = "Lux"
+
     /** Whether [c] holds the Settings page editor, whose class is `ConfigurableEditor` or a subclass of it. EDT. */
     private fun holdsEditor(c: Container): Boolean = UIUtil.uiTraverser(c).any { child ->
         child.isShowing && generateSequence<Class<*>>(child.javaClass) { it.superclass }.any { it.simpleName == EDITOR_CLASS }

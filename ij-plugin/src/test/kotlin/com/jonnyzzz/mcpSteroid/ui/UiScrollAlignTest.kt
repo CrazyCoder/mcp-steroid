@@ -16,6 +16,14 @@ class UiScrollAlignTest {
     }
 
     @Test
+    fun `a report's screen bounds read back as written`() {
+        val r = java.awt.Rectangle(-120, 340, 200, 24)
+        val report = "scrolled JCheckBox \"Smart tabs\" into view; ${UiScrollAlign.boundsNote(r)}; focus: MyTree"
+        assertEquals(r, UiScrollAlign.parseBounds(report))
+        assertEquals(null, UiScrollAlign.parseBounds("scrolled into view"))
+    }
+
+    @Test
     fun `the view stays within the content`() {
         assertEquals(1700, UiScrollAlign.viewY(1990, 10, 300, 2000, "top"))
         assertEquals(0, UiScrollAlign.viewY(10, 10, 300, 2000, "center"))

@@ -46,7 +46,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.awt.Component
 import java.awt.Dialog
 import java.awt.Frame
@@ -778,14 +781,15 @@ class UiSession(
                     ?: Rectangle(0, 0, c.width, c.height)
                 val port = UiScrollAlign.scroll(c, area, align) ?: throw UiStepFailure("${describe(node)} is not in a scroll pane")
                 val what = pick?.let { "row #${it.index} \"${it.text.take(80)}\" of " }.orEmpty() + describe(node)
-                "scrolled $what to the ${if (align == "top") "top" else "middle"} of its view; ${position(port)}"
+                "scrolled $what to the ${if (align == "top") "top" else "middle"} of its view; ${position(port)}; ${UiScrollAlign.boundsNote(onScreen(c, area))}"
             }
         }
         if (pages == null) {
             val row = rowArea(node, step)
             return withContext(edtAny) {
                 if (row == null) (c as? JComponent)?.scrollRectToVisible(Rectangle(0, 0, c.width, c.height))
-                "scrolled ${row?.let { "${it.label} of " }.orEmpty()}${describe(node)} into view" + (viewport(c)?.let { "; ${position(it)}" }.orEmpty())
+                "scrolled ${row?.let { "${it.label} of " }.orEmpty()}${describe(node)} into view" + (viewport(c)?.let { "; ${position(it)}" }.orEmpty()) +
+                    "; " + UiScrollAlign.boundsNote(onScreen(c, row?.area ?: Rectangle(0, 0, c.width, c.height)))
             }
         }
         return withContext(edtAny) {
@@ -1017,7 +1021,8 @@ class UiSession(
         val window = withContext(edtAny) { (node?.let { windowOf(it.component) } ?: scopeWindows().firstOrNull())?.let(UiCapture::pictured) }
             ?: throw UiStepFailure("no window is showing")
         val highlights = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
-        val cropControl = (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
+        val cropOnBackend = (step.crop as? UiCrop.Control)?.let { backendBounds(it.target, null, null, window)?.first }
+        val cropControl = if (cropOnBackend != null) null else (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
         withContext(edtAny) { highlights.forEach { it.bringIntoView() } }
         UiSettle.settle()
         val (canvas, facts, line) = withContext(edtAny) {
@@ -1031,7 +1036,7 @@ class UiSession(
                 UiCrop.Highlights -> UiCapture.markArea(painted, marks)
                 UiCrop.Popups -> UiCapture.popupArea(window)?.let { UiCapture.withMarks(painted, it, marks) }
                     ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
-                is UiCrop.Control -> {
+                is UiCrop.Control -> if (cropOnBackend != null) UiCapture.withMarks(painted, cropOnBackend, marks) else {
                     val c = cropControl!!.component
                     if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")
                     // A tree or list in a scroll pane is as tall as all its rows: the part in view is what shows.
@@ -1080,15 +1085,31 @@ class UiSession(
         return line + change
     }
 
-    /** A highlight found: its component, the area of it to outline in its coordinates, how to name it, and its label. */
-    private class Located(val component: Component, val area: Rectangle, val what: String, val label: String?) {
-        /** Scrolls the area to the middle of its view when part of it is out of view. EDT. */
-        fun bringIntoView() {
+    /** [area], in [c]'s coordinates, on screen. EDT. */
+    private fun onScreen(c: Component, area: Rectangle): Rectangle = Rectangle(area).apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }
+
+    /** A highlight found: where to outline it, how to name it, and its label. */
+    private sealed class Located(val what: String, val label: String?) {
+        /** Scrolls the highlight to the middle of its view when part of it is out of view. EDT. */
+        abstract fun bringIntoView()
+
+        /** EDT. */
+        abstract fun screenBounds(): Rectangle
+    }
+
+    /** A highlight in this process: its component and the area of it to outline, in its coordinates. */
+    private inner class LocalHighlight(val component: Component, val area: Rectangle, what: String, label: String?) : Located(what, label) {
+        override fun bringIntoView() {
             if (!UiScrollAlign.inView(component, area)) UiScrollAlign.scroll(component, area, "center")
         }
 
-        /** EDT. */
-        fun screenBounds(): Rectangle = Rectangle(area).apply { translate(component.locationOnScreen.x, component.locationOnScreen.y) }
+        override fun screenBounds(): Rectangle = onScreen(component, area)
+    }
+
+    /** A highlight on a host Settings page, which the backend found and scrolled into view: its screen bounds. */
+    private class BackendHighlight(val bounds: Rectangle, what: String, label: String?) : Located(what, label) {
+        override fun bringIntoView() = Unit
+        override fun screenBounds(): Rectangle = Rectangle(bounds)
     }
 
     /**
@@ -1099,8 +1120,9 @@ class UiSession(
         if (h.breadcrumb) return withContext(edtAny) {
             val bar = UiSettingsParts.breadcrumbs(window) ?: throw UiStepFailure("no Settings page is showing, so there is no breadcrumb to highlight")
             val crumbs = UiSettingsParts.crumbsBounds(bar)
-            Located(bar, Rectangle(0, 0, crumbs.width, crumbs.height), "breadcrumb", h.label)
+            LocalHighlight(bar, Rectangle(0, 0, crumbs.width, crumbs.height), "breadcrumb", h.label)
         }
+        backendBounds(h.target!!, h.row, h.index, window)?.let { (bounds, what) -> return BackendHighlight(bounds, what, h.label) }
         val node = resolve(h.target!!, timeoutMs, requireEnabled = false)
         val pick = pickRow(node, UiStep(UiAction.SCREENSHOT, h.target, row = h.row, index = h.index, timeoutMs = timeoutMs))
         return withContext(edtAny) {
@@ -1112,8 +1134,35 @@ class UiSession(
             }
             val area = pick?.let { UiRows.bounds(c, it.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup; open it first") }
                 ?: Rectangle(0, 0, c.width, c.height)
-            Located(c, area, pick?.let { "row #${it.index} \"${it.text.take(60)}\" of ${describe(node)}" } ?: describe(node), h.label)
+            LocalHighlight(c, area, pick?.let { "row #${it.index} \"${it.text.take(60)}\" of ${describe(node)}" } ?: describe(node), h.label)
         }
+    }
+
+    /**
+     * In a JetBrains Client showing a host Settings page, whose controls exist only on the backend, the screen bounds of
+     * [target] (or its row) as the backend finds them after scrolling it to the middle of its view, and how the backend
+     * names it. Null when this is no JetBrains Client, no host page shows, or the Client has a match of its own.
+     */
+    private suspend fun backendBounds(target: UiTarget, row: String?, index: Int?, window: Window): Pair<Rectangle, String>? {
+        if (forward == null || !withContext(edtAny) { UiSettingsParts.hostPage(window) } || match(target) !is UiMatch.None) return null
+        val source = buildJsonObject {
+            put("action", "scroll")
+            target.ref?.let { put("ref", it) }
+            target.name?.let { put("name", it) }
+            target.text?.let { put("text", it) }
+            target.cls?.let { put("class", it) }
+            target.xpath?.let { put("xpath", it) }
+            target.nth?.let { put("nth", it) }
+            row?.let { put("row", it) }
+            index?.let { put("index", it) }
+            put("align", "center")
+            put("side", "backend")
+        }
+        val step = UiSteps.parse(JsonArray(listOf(source))).single()
+        val report = forward.invoke(step)
+        if (!report.passed) throw UiStepFailure("on the backend's host page: ${report.text}")
+        val bounds = UiScrollAlign.parseBounds(report.text) ?: throw UiStepFailure("the backend gave no screen bounds: ${report.text}")
+        return bounds to "${target} on the backend's host page"
     }
 
     /** The window that holds [c], or [c] itself when it is one. EDT. */
