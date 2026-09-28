@@ -319,9 +319,9 @@ tree, is outlined as far as it shows. A highlight that is not showing, such as o
 step rather than outlining the wrong place. The badge with the number sits just left of its outline, and a
 label right of it on the same line; where they would cover the text of another control, such as the next tab
 of a tab row, they go below the outline, or above it. Number the highlights when they are steps to follow in
-order; outline one area, or several with no order, without numbers. In Split Mode the JetBrains Client takes the picture and
-saves the file on its machine; a highlight on a host Settings page, whose controls exist only on the backend,
-is found there.
+order; outline one area, or several with no order, without numbers. In Split Mode the JetBrains Client takes
+the picture and saves the file on its machine; a highlight on a host Settings page, whose controls exist only
+on the backend, is found there.
 
 The report ends with a `cut:` line for each content the picture shows cut, with the step that makes room, so a
 bad picture is known without looking at it:
@@ -331,7 +331,9 @@ cut: XDebuggerTree [ref=e109] shows 3 of 8 rows; {"action":"splitter","ref":"e10
 cut: the header "Default parameter" of TableView [ref=e223] is cut; {"action":"window","width":612} makes room
 ```
 
-Run the step and take the picture again, or pass `"fit": true` to run them first.
+Run the step and take the picture again, or pass `"fit": true` to run them first. In Split Mode the lines
+cover what the JetBrains Client draws: the controls of a host Settings page live on the backend and give no
+`cut:` line, so read that part of the picture.
 
 ### Code, the click point, inspections and consoles
 

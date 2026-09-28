@@ -71,7 +71,8 @@ pictures for a visual review (`screenshot`), and keep the steps as a scenario th
 [IDE scenarios](mcp-steroid://ide/ui-scenarios).
 
 To show a person a setting, a menu or a dialog, save a capture in one call and leave the IDE as it was: open it,
-then take a `screenshot` with the controls to point at outlined (numbered when there are several), and pass `"restore": true`:
+then take a `screenshot` with the controls to point at outlined (numbered when there are several), and pass
+`"restore": true`:
 
 ```
 [{"action":"settings","page":"editor.preferences.appearance"},
