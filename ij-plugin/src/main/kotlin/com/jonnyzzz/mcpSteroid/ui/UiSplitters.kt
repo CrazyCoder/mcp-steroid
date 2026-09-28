@@ -111,13 +111,8 @@ object UiSplitters {
     /** The most [p] can get: the splitter's room less the other panes' minimum sizes. */
     private fun room(p: Pane): Int = total(p.splitter) - others(p).sumOf { along(p.axis, it.minimumSize) }
 
-    private fun others(p: Pane): List<Component> = panes(p.splitter as JComponent).filter { it !== p.child }
-
-    /**
-     * Whether the other panes of [p] now show less than they want, as a pane that gave its room to [p] does: then only
-     * a larger window gives both room. The pixels they lack, or 0.
-     */
-    fun othersShort(p: Pane): Int = others(p).sumOf { (along(p.axis, it.preferredSize) - along(p.axis, it.size)).coerceAtLeast(0) }
+    /** The panes of [p]'s splitter other than [p]. */
+    fun others(p: Pane): List<Component> = panes(p.splitter as JComponent).filter { it !== p.child }
 
     /** Gives [p] [px] pixels by moving its splitter's divider, as a drag does. */
     fun setSize(p: Pane, px: Int): Result {

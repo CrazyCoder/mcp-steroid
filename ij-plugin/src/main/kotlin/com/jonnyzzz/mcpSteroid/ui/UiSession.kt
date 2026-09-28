@@ -1002,11 +1002,14 @@ class UiSession(
             }
             val axis = if (pane.axis == UiSplitters.Axis.HEIGHT) "high" else "wide"
             val paneNode = FallbackUiWalker().leaf(pane.child)
-            val short = UiSplitters.othersShort(pane)
+            // A console or an editor wants any size; only content the other pane now cuts calls for a larger window.
+            val refOf = { n: UiNode -> registry.refFor(n.component) }
+            val otherCuts = UiSplitters.others(pane).flatMap { UiLayout.cuts(FallbackUiWalker().build(it), refOf) }
             "moved the divider of ${UiComponentFacts.simpleClassName(s)} [ref=${registry.refFor(s)}]: the pane with ${describe(paneNode)} is ${r.after} px $axis, " +
                 "was ${r.before} px (proportion ${UiSplitters.format(r.proportionAfter)}, was ${UiSplitters.format(r.proportionBefore)})" +
                 (r.heldBack?.let { "; held back: $it" } ?: "") +
-                (if (short > 0) "; the other pane now shows $short px less than it wants, so a larger window gives both room: ${UiLayout.windowStep(SwingUtilities.getWindowAncestor(s))}" else "")
+                (if (otherCuts.isNotEmpty()) "; the other pane now cuts content (${otherCuts.first().what}), so a larger window gives both room: " +
+                    UiLayout.windowStep(SwingUtilities.getWindowAncestor(s)) else "")
         }
         UiSettle.barrier()
         return line
@@ -1167,7 +1170,8 @@ class UiSession(
                 made.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = "made room: "),
             )
             // What the picture shows cut, each with the step that fixes it, so a bad picture is known without reading it.
-            val cut = pictureProblems(window, canvas.bounds).map { "\ncut: " + it.line.removePrefix("layout: ") }
+            // The crop's own area: its margin shows the edge of what lies around it, whose cuts are not the picture's.
+            val cut = pictureProblems(window, area ?: canvas.bounds).map { "\ncut: " + it.line.removePrefix("layout: ") }
             Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
                 what.joinToString("") { "; $it" } + cut.joinToString(""))
         }
@@ -1343,15 +1347,16 @@ class UiSession(
 
     /**
      * The screen bounds of the text other controls in [window] and its popups show, such as neighbouring tabs, which a
-     * badge or label should not cover. The highlighted controls, and what holds them or lies inside them, are left out. EDT.
+     * badge or label should not cover. The highlighted controls and what holds them are left out; text inside a
+     * highlight's outline is its own, which the layout leaves out, while the other tabs of a highlighted tab row are
+     * obstacles. EDT.
      */
     private fun textObstacles(window: Window, highlights: List<Located>): List<Rectangle> {
         val marked = highlights.mapNotNull { it.component }
         return (listOf(window) + UiCapture.popupsOf(window)).asSequence()
             .flatMap { UIUtil.uiTraverser(it).asSequence() }
             .filter { c ->
-                c.isShowing && c.width > 0 && c.height > 0 && showsText(c) &&
-                    marked.none { m -> SwingUtilities.isDescendingFrom(c, m) || SwingUtilities.isDescendingFrom(m, c) }
+                c.isShowing && c.width > 0 && c.height > 0 && showsText(c) && marked.none { m -> SwingUtilities.isDescendingFrom(m, c) }
             }
             .map { onScreen(it, Rectangle(0, 0, it.width, it.height)) }
             .take(MAX_OBSTACLES)
