@@ -65,12 +65,16 @@ class RoutedToolTest {
     private val ideErrors = monitor?.ideErrors
     private val ideBanners = monitor?.ideBanners
     private val ideMemory = monitor?.ideMemory
+    private val ideNotifications = monitor?.ideNotifications
+    private val editorProblems = monitor?.editorProblems
 
     @Before
     fun hideIdeErrors() {
         monitor?.ideErrors = { null }
         monitor?.ideBanners = { null }
         monitor?.ideMemory = { null }
+        monitor?.ideNotifications = { null }
+        monitor?.editorProblems = { null }
     }
 
     @After
@@ -78,6 +82,8 @@ class RoutedToolTest {
         if (ideErrors != null) monitor?.ideErrors = ideErrors
         if (ideBanners != null) monitor?.ideBanners = ideBanners
         if (ideMemory != null) monitor?.ideMemory = ideMemory
+        if (ideNotifications != null) monitor?.ideNotifications = ideNotifications
+        if (editorProblems != null) monitor?.editorProblems = editorProblems
     }
 
     @Test

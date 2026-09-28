@@ -142,6 +142,12 @@ data class UiStep(
     val below: Long? = null,
     /** On a get step: the builds and syncs that finished, with the errors of each. */
     val builds: Boolean = false,
+    /** On a get step: the notifications the IDE showed, as the Notifications tool window lists them. */
+    val notifications: Boolean = false,
+    /** On a get step: the problems the editor highlights in an open file by its path, or in every open file for "". */
+    val problems: String? = null,
+    /** On a get of problems: the least severe level to list, one of [UiSteps.SEVERITIES]; errors only without it. */
+    val severity: String? = null,
     /** On a get step: the diff of the project files the run changed so far. */
     val changes: Boolean = false,
     /**
@@ -229,8 +235,10 @@ object UiSteps {
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
         "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
-        "builds", "changes", "console", "lines", "changed", "diff", "golden",
+        "builds", "changes", "console", "lines", "changed", "diff", "golden", "notifications", "problems", "severity",
     )
+    /** The levels a get of problems takes as its severity, from the most severe. */
+    val SEVERITIES = listOf("error", "warning", "weak_warning", "info")
     /** How many console lines a get reads without [UiStep.lines], and at most. */
     const val DEFAULT_CONSOLE_LINES = 40
     const val MAX_CONSOLE_LINES = 2_000
@@ -360,6 +368,14 @@ object UiSteps {
             memoryMetric = (obj["memory"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
             below = obj.long("below"),
             builds = obj.boolean("builds") ?: false,
+            notifications = obj.boolean("notifications") ?: false,
+            // true for every open file, "" as well; a path for one file.
+            problems = (obj["problems"] as? JsonPrimitive)?.let { p ->
+                if (p.isString) p.content
+                else if (p.booleanOrNull == true) ""
+                else throw IllegalArgumentException("problems is true, for every open file, or a file's path")
+            },
+            severity = obj.string("severity"),
             changes = obj.boolean("changes") ?: false,
             console = obj.string("console"),
             lines = obj.int("lines"),
@@ -463,6 +479,7 @@ object UiSteps {
             if (step.action != UiAction.EXPECT) require(!step.memory && step.memoryMetric == null) { "memory goes with get and expect, not $action" }
             if (step.action != UiAction.EXPECT) require(step.log == null) { "log goes with expect, get and set, not $action" }
             require(!step.builds && !step.changes) { "builds and changes go with get, not $action" }
+            require(!step.notifications && step.problems == null && step.severity == null) { "notifications, problems and severity go with get, not $action" }
             if (step.action != UiAction.EXPECT) require(step.console == null) { "console goes with get and expect, not $action" }
         }
         if (step.lines != null) {
@@ -497,13 +514,21 @@ object UiSteps {
                     step.registry, step.advanced, step.option, step.inspection, step.component, step.log,
                     step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors }, "memory".takeIf { step.memory },
                     "builds".takeIf { step.builds }, "changes".takeIf { step.changes }, step.console,
+                    "notifications".takeIf { step.notifications }, step.problems,
                 )
                 require(kinds.size == 1) {
-                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors, memory, builds, changes or console"
+                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors, memory, builds, changes, console, notifications or problems"
                     else "set needs exactly one of registry, advanced, option, inspection, component or log"
                 }
-                if (step.action == UiAction.SET) require(!step.editors && !step.memory && step.file == null && !step.builds && !step.changes && step.console == null) {
-                    "editors, memory, file, builds, changes and console go with get, not set"
+                if (step.action == UiAction.SET) require(
+                    !step.editors && !step.memory && step.file == null && !step.builds && !step.changes && step.console == null &&
+                        !step.notifications && step.problems == null && step.severity == null,
+                ) {
+                    "editors, memory, file, builds, changes, console, notifications, problems and severity go with get, not set"
+                }
+                step.severity?.let {
+                    require(step.problems != null) { "severity goes with a get of problems" }
+                    require(it in SEVERITIES) { "severity is one of ${SEVERITIES.joinToString()}, was $it" }
                 }
                 if (step.action == UiAction.SET && step.log != null) require(step.value?.lowercase() in LOG_LEVELS) {
                     "a log category's level is one of ${LOG_LEVELS.joinToString()}"

@@ -28,8 +28,8 @@ then exactly one text content item that holds one JSON object, the envelope, wit
 | `notices` | array | The IDE's notices, each with `kind`, `side` and `text`; see below |
 | `text` | string | Only in an envelope the tool did not build itself: the text of an error the call ran into before the tool ran, such as an unknown project |
 
-`notices[].kind` is `IDE_FREEZE`, `IDE_ERRORS`, `EDITOR_BANNERS`, `LOW_MEMORY` or `EDITOR_STATE`, or another name
-in the same upper-case form. `side` is `backend` or `frontend` in Split Mode and absent in a regular IDE. `text`
+`notices[].kind` is `IDE_FREEZE`, `IDE_ERRORS`, `EDITOR_BANNERS`, `EDITOR_ERRORS`, `IDE_NOTIFICATIONS`,
+`BUILD_FAILED`, `RUN_FAILED`, `LOW_MEMORY` or `EDITOR_STATE`, or another name in the same upper-case form. `side` is `backend` or `frontend` in Split Mode and absent in a regular IDE. `text`
 is the notice as a model reads it.
 
 A call that a UI freeze holds up is answered with `still_running` set to true and the freeze in `notices`; the

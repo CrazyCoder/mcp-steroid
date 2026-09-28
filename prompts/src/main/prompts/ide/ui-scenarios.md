@@ -245,6 +245,15 @@ window opened. A set reports the value before and after, and a scenario's replay
 - `{"action":"get","builds":true}` lists the recent builds and syncs, the IDE's own and Maven's and Gradle's, each
   with its outcome and first errors as `path:line: message`. A `BUILD FAILED` notice in front of a tool result
   names the failures since the previous call.
+- `{"action":"get","problems":"src/A.kt"}` lists the errors the editor highlights in an open file as
+  `path:line:column: SEVERITY text`, and `"problems":true` in every open file. `"severity":"warning"`,
+  `"weak_warning"` or `"info"` adds the lower levels. The problems are what the editor's analysis found the last
+  time it ran; a closed file has none, so the step says to open it. In Split Mode it runs on the backend. An
+  `EDITOR ERRORS` notice in front of a tool result counts the errors per open file when one is new, with the
+  first of each.
+- `{"action":"get","notifications":true}` lists the notifications the IDE showed, the newest first, with their
+  actions. An `IDE NOTIFICATIONS` notice names the ones shown since the previous call, errors and warnings first;
+  in Split Mode the JetBrains Client tells them, the backend's own included.
 - `{"action":"get","console":"App","lines":40}` reads the last lines of the latest run named App, `""` for the
   latest run, with its state and exit code; error lines start with `! `. A `RUN FAILED` notice names the runs that
   exited with an error since the previous call.

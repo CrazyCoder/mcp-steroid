@@ -147,7 +147,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           editor providers and open editors), "memory":true (heap, heap after the last GC, direct buffers,
           threads, OS memory and the GC's load, as the memory indicator shows them), "builds":true (the recent
           builds and syncs with their first errors), "console":"App" with optional "lines" (a run's last output
-          lines and exit code; "" for the latest run) and "changes":true (the diff of the files the steps changed)
+          lines and exit code; "" for the latest run), "notifications":true (the notifications the IDE showed),
+          "problems":"path" or true (the errors the editor highlights in an open file, or in every open file;
+          "severity":"warning", "weak_warning" or "info" adds the lower levels) and "changes":true (the diff of
+          the files the steps changed)
         - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project, or
           with "delete":true deletes it
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
@@ -168,7 +171,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         mcp-steroid://ide/editor-actions lists what applies at the caret and the common action ids. A step that
         changed project files ends with them, such as "changed src/A.kt (+5 -1)", and the response ends with
         the diff under "code changes:". Tool results start with BUILD FAILED and RUN FAILED notices for builds,
-        syncs and runs that failed since the previous call.
+        syncs and runs that failed since the previous call, EDITOR ERRORS when an open file shows a new error,
+        and IDE NOTIFICATIONS for the notifications the IDE showed.
 
         Every call with steps records them to the task's recording file, named in the response, with refs
         replaced by names so that they replay in another session. A scenario file of such steps is any

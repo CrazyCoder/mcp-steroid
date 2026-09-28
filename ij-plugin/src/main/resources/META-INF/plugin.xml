@@ -169,12 +169,18 @@
         <!-- The platform's UI freeze reports, surfaced to agents in every tool result -->
         <listener class="com.jonnyzzz.mcpSteroid.freeze.FreezeListener"
                   topic="com.intellij.diagnostic.IdePerformanceListener"/>
+        <!-- Notifications shown without a project, surfaced to agents in every tool result -->
+        <listener class="com.jonnyzzz.mcpSteroid.freeze.IdeNotifications$AppListener"
+                  topic="com.intellij.notification.Notifications"/>
     </applicationListeners>
 
     <projectListeners>
         <!-- The output of runs, kept for a get of a console, and failed runs surfaced to agents in every tool result -->
         <listener class="com.jonnyzzz.mcpSteroid.freeze.IdeRuns$Listener"
                   topic="com.intellij.execution.ExecutionListener"/>
+        <!-- A project's notifications, which only its own message bus carries -->
+        <listener class="com.jonnyzzz.mcpSteroid.freeze.IdeNotifications$ProjectListener"
+                  topic="com.intellij.notification.Notifications"/>
     </projectListeners>
 
 </idea-plugin>

@@ -39,6 +39,7 @@ class UiScenarioSchemaTest {
         assertEquals(UiSteps.SIDES, enumOf(defs["side"]!!))
         assertEquals(UiSteps.MENU_MODES, enumOf(defs["menuMode"]!!))
         assertEquals(UiSteps.MEMORY_METRICS, enumOf(step["memory"]!!.jsonObject["anyOf"]!!.jsonArray[1]))
+        assertEquals(UiSteps.SEVERITIES.toSet(), enumOf(step["severity"]!!))
         assertEquals(UiScenario.FIELDS, schema["properties"]!!.jsonObject.keys)
         val setup = defs["setup"]!!.jsonObject["properties"]!!.jsonObject
         assertEquals(UiScenario.SETUP_FIELDS, setup.keys)

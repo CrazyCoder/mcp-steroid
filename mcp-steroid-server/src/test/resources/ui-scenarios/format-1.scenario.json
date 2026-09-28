@@ -86,6 +86,8 @@
     {"action": "get", "memory": true},
     {"action": "expect", "memory": "heap_after_gc", "below": 4096},
     {"action": "get", "builds": true},
+    {"action": "get", "notifications": true},
+    {"action": "get", "problems": "src/A.kt", "severity": "warning"},
     {"action": "get", "changes": true},
     {"action": "get", "console": "App", "lines": 20},
     {"action": "expect", "console": "App", "contains": "total: 5"},

@@ -56,7 +56,8 @@ data class Freeze(
  * and dumps threads while it lasts; [FreezeListener] forwards those reports here. Each dump is read for
  * who holds the lock. A steroid_execute_code script that holds a read lock the UI waits for is cancelled.
  * [guard] puts the freeze in front of every tool result, and answers a call that is still waiting once
- * the freeze has been known for [EARLY_ANSWER_MS]. It also carries the [IdeMemory], [IdeErrors], [IdeBuilds], [IdeRuns] and [IdeBanners] notices.
+ * the freeze has been known for [EARLY_ANSWER_MS]. It also carries the [IdeMemory], [IdeErrors], [IdeBuilds], [IdeRuns],
+ * [IdeEditorProblems], [IdeBanners] and [IdeNotifications] notices.
  */
 @Service(Service.Level.APP)
 class FreezeMonitor(private val scope: CoroutineScope) {
@@ -135,6 +136,12 @@ class FreezeMonitor(private val scope: CoroutineScope) {
     @TestOnly
     internal var ideRuns: () -> IdeRuns? = IdeRuns::getInstanceOrNull
 
+    @TestOnly
+    internal var ideNotifications: () -> IdeNotifications? = IdeNotifications::getInstanceOrNull
+
+    @TestOnly
+    internal var editorProblems: () -> IdeEditorProblems? = IdeEditorProblems::getInstanceOrNull
+
     /**
      * Runs [call] and puts any freeze, the errors the IDE logged and the builds and runs that failed since [session]'s
      * last call, and the warning banners above open editors and the memory pressure it was not told about, in front of its result. A call
@@ -155,11 +162,13 @@ class FreezeMonitor(private val scope: CoroutineScope) {
         val memory = ideMemory()
         val builds = ideBuilds()
         val runs = ideRuns()
+        val notifications = ideNotifications()
+        val problems = editorProblems()
         val startedAtMs = System.currentTimeMillis()
         // Each notice is marked told when it is read, so a result reads them once.
         fun notices() = listOfNotNull(
             noticeFor(session), memory?.noticeFor(session), errors?.noticeFor(session), builds?.noticeFor(session), runs?.noticeFor(session),
-            banners?.noticeFor(session),
+            problems?.noticeFor(session), banners?.noticeFor(session), notifications?.noticeFor(session),
         )
         // An answer the monitor makes itself, as text or as an envelope.
         fun answer(notices: List<String>, text: String, how: ToolOutputContract.Interruption) =
@@ -176,8 +185,9 @@ class FreezeMonitor(private val scope: CoroutineScope) {
             }
             val result = run.await()
             if (reportsIdeErrors) errors?.reportedBy(session, startedAtMs, System.currentTimeMillis())
-            // After the call, which may have opened a file or changed the setup a banner is about.
+            // After the call, which may have opened a file, changed the setup a banner is about, or edited code.
             banners?.refresh()
+            problems?.refresh()
             val told = notices()
             if (jsonOutput) return ToolOutputContract.withNotices(tool, result, told)
             if (told.isEmpty()) return result

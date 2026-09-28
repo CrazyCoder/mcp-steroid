@@ -24,7 +24,9 @@ import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
 import com.intellij.openapi.util.Disposer
 import com.jonnyzzz.mcpSteroid.freeze.IdeBuilds
+import com.jonnyzzz.mcpSteroid.freeze.IdeEditorProblems
 import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
+import com.jonnyzzz.mcpSteroid.freeze.IdeNotifications
 import com.jonnyzzz.mcpSteroid.freeze.IdeRuns
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiEditorState
@@ -337,7 +339,19 @@ class UiSession(
         else -> step.action in BACKEND_HOME ||
             step.action == UiAction.EXPECT && (step.file != null && step.diff == null || step.banner != null || step.console != null) ||
             (step.action == UiAction.GET || step.action == UiAction.SET) && step.inspection != null ||
-            step.action == UiAction.GET && (step.file != null || step.builds || step.console != null)
+            step.action == UiAction.GET && (step.file != null || step.builds || step.console != null || step.problems != null)
+    }
+
+    /**
+     * The problems the editor highlights at [severity] and above in the open file [path], or in every open file for "".
+     * The editor analyzes only open files, so a closed one fails with how to open it.
+     */
+    private suspend fun problemsReport(path: String, severity: String): String {
+        val min = IdeEditorProblems.SEVERITIES[severity] ?: throw UiStepFailure("unknown severity $severity")
+        if (path.isEmpty()) return IdeEditorProblems.renderList(IdeEditorProblems.read(project, min), severity, "the open files")
+        val file = withContext(Dispatchers.IO) { CodeLocation.findFile(project, path) } ?: throw UiStepFailure("no file $path in the project")
+        if (file !in IdeEditorProblems.openFiles(project)) throw UiStepFailure("$path is not open in an editor, and the editor analyzes only open files; open it with {\"action\":\"goto\",\"file\":\"$path\",\"line\":1}")
+        return IdeEditorProblems.renderList(IdeEditorProblems.read(project, min, only = file), severity, path)
     }
 
     /**
@@ -443,6 +457,9 @@ class UiSession(
             step.editors -> editorsReport(step)
             step.memory -> IdeMemory.getInstanceOrNull()?.report() ?: throw UiStepFailure("the IDE application is not available")
             step.builds -> IdeBuilds.getInstanceOrNull()?.recent(BUILDS_LISTED)?.let(IdeBuilds::renderRecent) ?: throw UiStepFailure("the IDE application is not available")
+            step.notifications -> IdeNotifications.getInstanceOrNull()?.recent(NOTIFICATIONS_LISTED)?.let(IdeNotifications::renderRecent)
+                ?: throw UiStepFailure("the IDE application is not available")
+            step.problems != null -> problemsReport(step.problems!!, step.severity ?: "error")
             step.changes -> codeChanges()?.runChanges()?.let { if (it.isEmpty()) "the run changed no project file" else UiCodeChanges.render(it, maxLines = Int.MAX_VALUE) }
                 ?: throw UiStepFailure(NO_CHANGES)
             step.console != null -> IdeRuns.getInstanceOrNull()?.report(project.name, step.console!!, step.lines ?: UiSteps.DEFAULT_CONSOLE_LINES)
@@ -1321,6 +1338,7 @@ class UiSession(
         private const val CHECK = "check"
         private const val EDITOR_WAIT_MS = 3_000L
         private const val BUILDS_LISTED = 10
+        private const val NOTIFICATIONS_LISTED = 20
         private const val SUBMENU_WAIT_MS = 2_000L
         private const val CLOSE_WAIT_MS = 3_000L
         private const val NO_CHANGES = "in Split Mode the steps' code changes are not tracked: the JetBrains Client holds no project files, " +
