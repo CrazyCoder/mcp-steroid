@@ -32,6 +32,49 @@ class UiRowsTest {
         return result!!.getOrThrow()
     }
 
+    private fun inspectionsLike(): com.intellij.ui.treeStructure.treetable.TreeTable {
+        val root = DefaultMutableTreeNode("root").apply {
+            add(DefaultMutableTreeNode("Java").apply {
+                add(DefaultMutableTreeNode("Probable bugs").apply { add(DefaultMutableTreeNode("Nullability problems")) })
+            })
+            add(DefaultMutableTreeNode("Kotlin"))
+        }
+        val model = com.intellij.ui.treeStructure.treetable.ListTreeTableModel(root, arrayOf(com.intellij.ui.treeStructure.treetable.TreeColumnInfo("Name")))
+        return com.intellij.ui.treeStructure.treetable.TreeTable(model).apply { setRootVisible(false) }
+    }
+
+    @Test
+    fun `a tree table's rows read as a tree's, with depth and expansion`() = onEdt {
+        val table = inspectionsLike()
+        assertEquals(listOf("Java", "Kotlin"), UiRows.rows(table))
+        val view = UiRows.view(table)!!
+        assertEquals(false, view.rows[0].expanded)
+        assertEquals(null, view.rows[1].expanded)
+        assertSame(table.tree, UiRows.treeOf(table))
+    }
+
+    @Test
+    fun `a tree table path finds a row once its parents are expanded`() = onEdt {
+        val table = inspectionsLike()
+        val tree = UiRows.treeOf(table)!!
+        tree.expandRow(0)
+        tree.expandRow(1)
+        val rows = UiRows.rows(table)!!
+        val index = UiRows.find(table, rows, "Java > Probable bugs > Nullability problems")
+        assertEquals("Nullability problems", rows[index])
+        UiRows.select(table, index)
+        assertTrue(UiRows.isSelected(table, index))
+        assertEquals(table.getCellRect(index, 0, true), UiRows.bounds(table, index))
+    }
+
+    @Test
+    fun `a cell that paints only an icon is left out of the row`() = onEdt {
+        val model = javax.swing.table.DefaultTableModel(arrayOf(arrayOf<Any>("Lossy encoding", com.intellij.util.ui.EmptyIcon.ICON_16, "x")), arrayOf("n", "i", "v"))
+        val table = JTable(model)
+        table.columnModel.getColumn(1).cellRenderer = javax.swing.table.TableCellRenderer { _, v, _, _, _, _ -> JLabel(v as javax.swing.Icon) }
+        assertEquals(listOf("x"), UiRows.cells(table, 0))
+    }
+
     @Test
     fun `list rows are read through the renderer`() {
         val list = JList(arrayOf("a", "b")).apply {

@@ -685,7 +685,9 @@ class UiSession(
                 if (step.index != null && current === step) withContext(edtAny) { UiPortable.stableRow(c, rows, index) }?.let { portableRow = it }
                 return RowPick(index, rows[index], emptyList())
             }
-            if (wanted != null && c is JTree && UiRows.PATH_SEPARATOR in wanted) return expandPath(c, wanted, step.timeoutMs)
+            // A tree table's rows are its tree's, so the tree's row found is the table's row too.
+            val tree = withContext(edtAny) { UiRows.treeOf(c) }
+            if (wanted != null && tree != null && UiRows.PATH_SEPARATOR in wanted) return expandPath(tree, wanted, step.timeoutMs)
             if (late) {
                 val shown = rows.withIndex().take(20).joinToString("; ") { (i, row) -> "#$i $row" }
                 throw UiStepFailure("no row ${wanted?.let { "\"$it\"" } ?: "#$index"} in ${describe(node)} after ${step.timeoutMs} ms; rows: $shown" +
@@ -745,7 +747,7 @@ class UiSession(
      * name is its selected tab's title, so a click by that name means the tab, not the middle of the pane's content.
      */
     private fun tabOf(node: UiNode, step: UiStep): UiStep {
-        if (node.component !is JTabbedPane || step.row != null || step.index != null) return step
+        if (node.component !is JTabbedPane && node.component !is com.intellij.ui.tabs.JBTabs || step.row != null || step.index != null) return step
         val tab = step.target?.name ?: step.target?.text
             ?: throw UiStepFailure("${describe(node)} is clicked on a tab: pass \"row\" with the tab's title, or a row ref")
         return step.copy(row = tab)

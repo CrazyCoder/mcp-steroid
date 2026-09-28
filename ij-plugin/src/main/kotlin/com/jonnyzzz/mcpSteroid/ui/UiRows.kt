@@ -2,8 +2,11 @@
 package com.jonnyzzz.mcpSteroid.ui
 
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.ui.EditorTextField
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.popup.PopupFactoryImpl
+import com.intellij.ui.tabs.JBTabs
+import com.intellij.ui.treeStructure.treetable.TreeTable
 import java.awt.Component
 import java.awt.Container
 import java.awt.Point
@@ -52,11 +55,17 @@ object UiRows {
     fun rows(c: Component): List<String>? = when (c) {
         is JList<*> -> (0 until minOf(c.model.size, MAX_ROWS)).map { listRow(c, it) }
         is JTree -> (0 until minOf(c.rowCount, MAX_ROWS)).map { treeRow(c, it) }
+        // A tree table's rows are its tree's, row for row, as the Inspections tree shows its groups.
+        is TreeTable -> (0 until minOf(c.tree.rowCount, MAX_ROWS)).map { treeRow(c.tree, it) }
         is JTable -> (0 until minOf(c.rowCount, MAX_ROWS)).map { tableRow(c, it) }
         is JComboBox<*> -> (0 until minOf(c.itemCount, MAX_ROWS)).map { comboRow(c, it) }
         is JTabbedPane -> (0 until c.tabCount).map { tabRow(c, it) }
+        is JBTabs -> c.tabs.map { UiComponentFacts.clean(it.text) }
         else -> null
     }
+
+    /** The tree of [c]: [c] itself, or the tree a tree table draws its first column with. */
+    fun treeOf(c: Component): JTree? = c as? JTree ?: (c as? TreeTable)?.tree
 
     /**
      * Where row [index] of [c] is, in [c]'s coordinates: a list's cell, a tree row's node, a table row's first cell, a
@@ -67,6 +76,8 @@ object UiRows {
         is JTree -> c.getRowBounds(index)
         is JTable -> if (index in 0 until c.rowCount) c.getCellRect(index, 0, true) else null
         is JTabbedPane -> if (index in 0 until c.tabCount) c.getBoundsAt(index) else null
+        is JBTabs -> c.tabs.getOrNull(index)?.let { c.getTabLabel(it) }?.takeIf { it.isShowing }
+            ?.let { SwingUtilities.convertRectangle(it.parent, it.bounds, c) }
         else -> null
     }
 
@@ -87,6 +98,7 @@ object UiRows {
             is JTree -> c.rowCount
             is JTable -> c.rowCount
             is JTabbedPane -> c.tabCount
+            is JBTabs -> c.tabCount
             else -> return null
         }
         if (total == 0) return null
@@ -100,9 +112,10 @@ object UiRows {
      * `A > B > C` names a row by its path. Several matching rows are an error that lists them by index.
      */
     fun find(c: Component, rows: List<String>, wanted: String): Int {
-        val candidates = if (c is JTree && PATH_SEPARATOR in wanted) {
+        val tree = treeOf(c)
+        val candidates = if (tree != null && PATH_SEPARATOR in wanted) {
             val want = wanted.split(PATH_SEPARATOR).map { it.trim() }
-            val paths = rows.indices.map { treeSegments(c, it) }
+            val paths = rows.indices.map { treeSegments(tree, it) }
             paths.indices.filter { paths[it] == want }
                 .ifEmpty { paths.indices.filter { pathEndsWith(paths[it], want) { have, w -> have.startsWith("$w ") } } }
                 .ifEmpty { paths.indices.filter { pathEndsWith(paths[it], want) { have, w -> have.contains(w) } } }
@@ -114,7 +127,7 @@ object UiRows {
             1 -> candidates.single()
             else -> throw UiStepFailure(
                 "${candidates.size} rows match \"$wanted\"; pass \"index\" or a longer row text: " +
-                    candidates.take(10).joinToString("; ") { "#$it ${if (c is JTree) treePath(c, it) else rows[it]}" }
+                    candidates.take(10).joinToString("; ") { "#$it ${if (tree != null) treePath(tree, it) else rows[it]}" }
             )
         }
     }
@@ -139,6 +152,7 @@ object UiRows {
                 c.hidePopup()
             }
             is JTabbedPane -> c.selectedIndex = index
+            is JBTabs -> c.select(c.tabs[index], false)
             else -> throw UiStepFailure("${UiComponentFacts.simpleClassName(c)} has no rows")
         }
     }
@@ -159,6 +173,7 @@ object UiRows {
         is JTable -> c.isRowSelected(index)
         is JComboBox<*> -> c.selectedIndex == index
         is JTabbedPane -> c.selectedIndex == index
+        is JBTabs -> c.selectedInfo != null && c.selectedInfo === c.tabs.getOrNull(index)
         else -> false
     }
 
@@ -216,8 +231,16 @@ object UiRows {
             val depth = (path?.pathCount ?: 1) - if (c.isRootVisible) 1 else 2
             UiRow(i, treeRow(c, i), depth.coerceAtLeast(0), c.isRowSelected(i), if (leaf) null else c.isExpanded(i))
         }
+        is TreeTable -> {
+            val tree = c.tree
+            val path = tree.getPathForRow(i)
+            val leaf = path?.let { tree.model.isLeaf(it.lastPathComponent) } ?: true
+            val depth = (path?.pathCount ?: 1) - if (tree.isRootVisible) 1 else 2
+            UiRow(i, treeRow(tree, i), depth.coerceAtLeast(0), c.isRowSelected(i), if (leaf) null else tree.isExpanded(i), cells(c, i))
+        }
         is JTable -> UiRow(i, tableRow(c, i), 0, c.isRowSelected(i), null, cells(c, i))
         is JTabbedPane -> UiRow(i, tabRow(c, i), 0, c.selectedIndex == i, null)
+        is JBTabs -> UiRow(i, UiComponentFacts.clean(c.tabs[i].text), 0, isSelected(c, i), null)
         else -> error("no rows in ${c.javaClass.name}")
     }
 
@@ -257,13 +280,15 @@ object UiRows {
     fun cells(c: Component, row: Int): List<String> {
         val table = c as? JTable ?: return emptyList()
         if (row !in 0 until table.rowCount) return emptyList()
-        return (1 until table.columnCount).map { column -> cell(table, row, column) }
+        return (1 until table.columnCount).mapNotNull { column -> cell(table, row, column) }
     }
 
-    private fun cell(table: JTable, row: Int, column: Int): String {
+    /** A cell's text, or null for one that paints only an icon, such as a severity column. */
+    private fun cell(table: JTable, row: Int, column: Int): String? {
         val shown = runCatching { table.prepareRenderer(table.getCellRenderer(row, column), row, column) }.getOrNull()
         // A checkbox cell shows no text, only its state.
         if (shown is AbstractButton && shown.text.isNullOrBlank()) return if (shown.isSelected) "[x]" else "[ ]"
+        if (shown is JLabel && shown.text.isNullOrBlank() && shown.icon != null) return null
         return shown?.let(::text) ?: table.getValueAt(row, column)?.toString().orEmpty()
     }
 
@@ -295,6 +320,8 @@ object UiRows {
     fun text(c: Component): String? {
         val own = when (c) {
             is SimpleColoredComponent -> c.getCharSequence(false).toString()
+            // An editor-based renderer, as Change Signature's cells are, whose own toString names its PSI file.
+            is EditorTextField -> c.text
             is JLabel -> c.text
             is JTextComponent -> c.text
             is Container -> c.components.asSequence().mapNotNull(::text).filter { it.isNotBlank() }.joinToString(" ").ifEmpty { null }
