@@ -41,7 +41,7 @@ have `ok` false and `text`.
 | Field | Type | Meaning |
 |---|---|---|
 | `execution_id` | string | The execution's id, for `steroid_execute_feedback` and the execution folder |
-| `stdout` | string | Exactly what the script printed with `println`, `printJson`, `printCsv` and `printToon`, one call per line, and nothing else |
+| `stdout` | string | Exactly what the script printed with `println`, `printJson`, `printCsv` and `printToon`, one call per line, and nothing else. Line breaks are `\n` on every OS |
 | `result` | any JSON | Present when `stdout` is one JSON document, as a script that ends with `printJson(value)` prints: that document, parsed |
 | `messages` | array of strings | What MCP Steroid itself said: warnings, notes and hints, such as a compiler warning |
 | `errors` | array | Each with `kind`, `message`, and for an exception `stack_trace`. `kind` is `exception` for an exception the script printed or hit, and `failed` for why the run failed |

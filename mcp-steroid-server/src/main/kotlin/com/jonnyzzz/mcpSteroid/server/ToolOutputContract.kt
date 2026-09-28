@@ -125,7 +125,10 @@ object ToolOutputContract {
     /** An error of a steroid_execute_code run: an exception it printed or hit, with its stack trace, or why it failed. */
     data class ExecError(val kind: String, val message: String, val stackTrace: String? = null)
 
-    /** The envelope of a steroid_execute_code run. */
+    /**
+     * The envelope of a steroid_execute_code run. Line breaks in `stdout` are `\n` on every OS: printJson pretty-prints
+     * with the platform's separator, which would make the same script's output differ between Windows and the rest.
+     */
     fun executeCode(
         executionId: String,
         ok: Boolean,
@@ -134,7 +137,7 @@ object ToolOutputContract {
         errors: List<ExecError>,
         images: List<Pair<String, String>>,
     ): JsonObject {
-        val out = stdout.joinToString("\n")
+        val out = stdout.joinToString("\n") { it.replace("\r\n", "\n") }
         return envelope("steroid_execute_code", ok, buildJsonObject {
             put("execution_id", executionId)
             put("stdout", out)

@@ -123,6 +123,9 @@ class ToolOutputContractTest {
         assertEquals("hello\nworld", text["stdout"]!!.jsonPrimitive.content)
         assertNull(text["result"])
         assertNull(ToolOutputContract.parsedOutput("{not json"))
+        // printJson pretty-prints with the OS separator; stdout is the same on every OS.
+        val windows = ToolOutputContract.executeCode("e", true, listOf("{\r\n  \"a\" : 1\r\n}", "done"), emptyList(), emptyList(), emptyList())
+        assertEquals("{\n  \"a\" : 1\n}\ndone", windows["stdout"]!!.jsonPrimitive.content)
     }
 
     @Test
