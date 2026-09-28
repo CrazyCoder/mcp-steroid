@@ -76,6 +76,30 @@
     "menuMode": {"enum": ["hamburger", "merged", "toolbar"]},
     "side": {"enum": ["frontend", "backend"]},
     "primitive": {"type": ["string", "number", "boolean"]},
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string"}, "name": {"type": "string"}, "text": {"type": "string"}, "class": {"type": "string"},
+        "xpath": {"type": "string"}, "nth": {"type": "integer", "minimum": 0}
+      },
+      "anyOf": [{"required": ["ref"]}, {"required": ["name"]}, {"required": ["text"]}, {"required": ["class"]}, {"required": ["xpath"]}]
+    },
+    "highlight": {
+      "anyOf": [
+        {"const": "breadcrumb", "description": "The breadcrumb bar of the Settings page shown."},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ref": {"type": "string"}, "name": {"type": "string"}, "text": {"type": "string"}, "class": {"type": "string"},
+            "xpath": {"type": "string"}, "nth": {"type": "integer", "minimum": 0},
+            "row": {"type": "string"}, "index": {"type": "integer", "minimum": 0}, "label": {"type": "string"}
+          },
+          "anyOf": [{"required": ["ref"]}, {"required": ["name"]}, {"required": ["text"]}, {"required": ["class"]}, {"required": ["xpath"]}]
+        }
+      ]
+    },
     "step": {
       "type": "object",
       "required": ["action"],
@@ -149,6 +173,15 @@
         "diff": {"type": "string", "minLength": 1},
         "golden": {"type": "string", "minLength": 1},
         "save": {"type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$"},
+        "out": {"type": "string", "pattern": "\\.[pP][nN][gG]$", "description": "The picture's path; relative to the scenario file's folder."},
+        "highlight": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/highlight"}},
+        "crop": {"anyOf": [{"enum": ["page", "highlights"]}, {"$ref": "#/$defs/locator"}]},
+        "margin": {"type": "integer", "minimum": 0, "maximum": 200},
+        "align": {"enum": ["top", "center"]},
+        "show": {"type": "boolean"},
+        "theme": {"type": "string", "minLength": 1},
+        "themes": {"type": "boolean"},
+        "dimension": {"type": "string", "minLength": 1},
         "side": {"$ref": "#/$defs/side"},
         "command": {"type": "string", "minLength": 1},
         "code": {"type": "string", "minLength": 1},
@@ -164,12 +197,12 @@
         {"if": {"properties": {"action": {"const": "goto"}}}, "then": {"required": ["file"]}},
         {"if": {"properties": {"action": {"const": "run"}}}, "then": {"required": ["id"]}},
         {"if": {"properties": {"action": {"const": "settings"}}}, "then": {"required": ["page"]}},
-        {"if": {"properties": {"action": {"const": "set"}}}, "then": {"required": ["value"]}},
+        {"if": {"properties": {"action": {"const": "set"}}}, "then": {"anyOf": [{"required": ["value"]}, {"required": ["theme"]}]}},
         {"if": {"properties": {"action": {"const": "toolwindow"}}}, "then": {"required": ["id"]}},
         {"if": {"properties": {"action": {"const": "write"}}}, "then": {"required": ["file"], "anyOf": [{"required": ["text"]}, {"required": ["delete"]}]}},
         {"if": {"properties": {"action": {"const": "perf"}}}, "then": {"required": ["command"]}},
         {"if": {"properties": {"action": {"const": "code"}}}, "then": {"required": ["code"]}},
-        {"if": {"properties": {"action": {"const": "screenshot"}}}, "then": {"required": ["save"]}}
+        {"if": {"properties": {"action": {"const": "screenshot"}}}, "then": {"anyOf": [{"required": ["save"]}, {"required": ["out"]}]}}
       ]
     }
   }

@@ -11,6 +11,53 @@ import org.junit.jupiter.api.assertThrows
 class UiStepsTest {
     private fun fails(json: String): String = assertThrows<IllegalArgumentException> { UiSteps.parse(json) }.message!!
 
+    private fun assertMentions(text: String, part: String) = assertTrue(part in text) { "\"$part\" is not in: $text" }
+
+    @Test
+    fun `a screenshot takes out, highlights, a crop and a margin`() {
+        val s = UiSteps.parse("""[{"action":"screenshot","out":"C:/pics/a.png","highlight":["breadcrumb",{"name":"Show line numbers","label":"Turn on"}],"crop":"page","margin":8}]""").single()
+        assertEquals("C:/pics/a.png", s.out)
+        assertEquals(listOf(UiHighlight(null, breadcrumb = true), UiHighlight(UiTarget(name = "Show line numbers"), label = "Turn on")), s.highlight)
+        assertEquals(UiCrop.Page, s.crop)
+        assertEquals(8, s.margin)
+    }
+
+    @Test
+    fun `a crop names a control by its locator, or the highlights`() {
+        assertEquals(UiCrop.Control(UiTarget(name = "Settings categories")), UiSteps.parse("""[{"action":"screenshot","save":"a","crop":{"name":"Settings categories"}}]""").single().crop)
+        assertEquals(UiCrop.Highlights, UiSteps.parse("""[{"action":"screenshot","save":"a","highlight":[{"text":"x","row":"Editor"}],"crop":"highlights"}]""").single().crop)
+    }
+
+    @Test
+    fun `capture fields are rejected where they do not belong`() {
+        assertMentions(fails("""[{"action":"screenshot"}]"""), "save or out")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","out":"C:/a.png"}]"""), "not both")
+        assertMentions(fails("""[{"action":"screenshot","out":"a.gif"}]"""), ".png")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","crop":"highlights"}]"""), "highlight")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","crop":"left"}]"""), "page")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[{"label":"x"}]}]"""), "locator")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[{"name":"a","shadow":1}]}]"""), "shadow")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[]}]"""), "highlight")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","margin":500}]"""), "margin")
+        assertMentions(fails("""[{"action":"click","name":"a","highlight":["breadcrumb"]}]"""), "screenshot")
+        assertMentions(fails("""[{"action":"scroll","name":"a","align":"bottom"}]"""), "top")
+        assertMentions(fails("""[{"action":"scroll","name":"a","align":"top","pages":1}]"""), "align")
+        assertMentions(fails("""[{"action":"click","name":"a","align":"top"}]"""), "scroll")
+        assertMentions(fails("""[{"action":"menu","show":true}]"""), "path")
+        assertMentions(fails("""[{"action":"set","theme":"Light","value":"x"}]"""), "value")
+        assertMentions(fails("""[{"action":"get","themes":true,"registry":"a"}]"""), "exactly one")
+        assertMentions(fails("""[{"action":"window","dimension":"SettingsEditor"}]"""), "width")
+    }
+
+    @Test
+    fun `theme steps, a menu shown and a window dimension parse`() {
+        assertEquals("Light", UiSteps.parse("""[{"action":"set","theme":"Light"}]""").single().theme)
+        assertTrue(UiSteps.parse("""[{"action":"get","themes":true}]""").single().themes)
+        assertTrue(UiSteps.parse("""[{"action":"menu","path":"View > Appearance","show":true}]""").single().show)
+        assertEquals("top", UiSteps.parse("""[{"action":"scroll","name":"a","align":"top"}]""").single().align)
+        assertEquals("SettingsEditor", UiSteps.parse("""[{"action":"window","dimension":"SettingsEditor","width":"900","height":"700"}]""").single().dimension)
+    }
+
     @Test
     fun `a flat click step parses into a step with a name target`() {
         val step = UiSteps.parse("""[{"action":"click","name":"OK"}]""").single()

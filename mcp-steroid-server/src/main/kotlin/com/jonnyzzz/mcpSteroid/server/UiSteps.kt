@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.server
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -79,6 +80,27 @@ data class UiTarget(
         xpath?.let { "xpath=$it" },
         nth?.let { "nth=$it" },
     ).joinToString(" ")
+}
+
+/** One highlight of a screenshot: a control by its locator, one of its rows, or the Settings page's breadcrumb. */
+data class UiHighlight(
+    val target: UiTarget?,
+    val breadcrumb: Boolean = false,
+    val row: String? = null,
+    val index: Int? = null,
+    /** Text drawn beside the highlight's number. */
+    val label: String? = null,
+)
+
+/** What a screenshot shows of its window: the Settings page, the area of its highlights, or one control. */
+sealed interface UiCrop {
+    object Page : UiCrop {
+        override fun toString() = "page"
+    }
+    object Highlights : UiCrop {
+        override fun toString() = "highlights"
+    }
+    data class Control(val target: UiTarget) : UiCrop
 }
 
 data class UiStep(
@@ -198,8 +220,26 @@ data class UiStep(
     val mode: String? = null,
     /** On a write step: delete the file instead of writing it. */
     val delete: Boolean = false,
-    /** On a screenshot step: the picture's file name, without folder or extension. Required there. */
+    /** On a screenshot step: the picture's file name in the execution folder, without folder or extension. */
     val save: String? = null,
+    /** On a screenshot step: the picture's path, a `.png`; relative to the scenario file's folder in a scenario. */
+    val out: String? = null,
+    /** On a screenshot step: the controls to outline, numbered in this order. */
+    val highlight: List<UiHighlight>? = null,
+    /** On a screenshot step: what part of the window the picture shows; the whole window without it. */
+    val crop: UiCrop? = null,
+    /** On a screenshot step with a crop: the padding around it, in pixels; [UiSteps.DEFAULT_MARGIN] without it. */
+    val margin: Int? = null,
+    /** On a scroll step: where the target goes in its view, one of [UiSteps.ALIGNS]. */
+    val align: String? = null,
+    /** On a menu step: open the path's menus and leave them open instead of running an item. */
+    val show: Boolean = false,
+    /** On a set step: the installed theme to switch to, by name or id, or [UiSteps.THEME_SYNC]. */
+    val theme: String? = null,
+    /** On a get step: the installed themes. */
+    val themes: Boolean = false,
+    /** On a window step: the key the IDE saves the window's size under, which the step writes too; a restore uses it. */
+    val dimension: String? = null,
     /**
      * Split Mode: `backend` runs the step on the Remote Development backend, where the project, its files and the
      * windows the backend draws are; the call's own side otherwise. Ignored in a regular IDE.
@@ -236,7 +276,18 @@ object UiSteps {
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
         "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
         "builds", "changes", "console", "lines", "changed", "diff", "golden", "notifications", "problems", "severity",
+        "out", "highlight", "crop", "margin", "align", "show", "theme", "themes", "dimension",
     )
+    private val HIGHLIGHT_FIELDS = TARGET_FIELDS + setOf("row", "index", "label")
+    /** The highlight of the Settings page's breadcrumb. */
+    const val BREADCRUMB = "breadcrumb"
+    /** The padding around a crop without a margin, and the margins a step takes, in pixels. */
+    const val DEFAULT_MARGIN = 16
+    val MARGINS = 0..200
+    /** Where a scroll with align puts its target: at the top of its view, or in the middle. */
+    val ALIGNS = setOf("top", "center")
+    /** The theme a set takes to follow the OS's light or dark mode again, which a restore uses. */
+    const val THEME_SYNC = "sync"
     /** The levels a get of problems takes as its severity, from the most severe. */
     val SEVERITIES = listOf("error", "warning", "weak_warning", "info")
     /** How many console lines a get reads without [UiStep.lines], and at most. */
@@ -403,6 +454,19 @@ object UiSteps {
             mode = obj.string("mode"),
             delete = obj.boolean("delete") ?: false,
             save = obj.string("save"),
+            out = obj.string("out"),
+            highlight = obj["highlight"]?.let { h ->
+                val items = h as? JsonArray ?: throw IllegalArgumentException("highlight is a JSON array of highlights")
+                require(items.isNotEmpty()) { "highlight lists at least one control, or leave it out" }
+                items.map(::parseHighlight)
+            },
+            crop = obj["crop"]?.let(::parseCrop),
+            margin = obj.int("margin"),
+            align = obj.string("align"),
+            show = obj.boolean("show") ?: false,
+            theme = obj.string("theme"),
+            themes = obj.boolean("themes") ?: false,
+            dimension = obj.string("dimension"),
             side = obj.string("side"),
             command = obj.string("command"),
             code = obj.string("code"),
@@ -414,8 +478,58 @@ object UiSteps {
         return split
     }
 
+    private fun locator(obj: JsonObject): UiTarget? = UiTarget(
+        ref = obj.string("ref"), name = obj.string("name"), text = obj.string("text"),
+        cls = obj.string("class"), xpath = obj.string("xpath"), nth = obj.int("nth"),
+    ).takeIf { it.ref != null || it.name != null || it.text != null || it.cls != null || it.xpath != null }
+
+    private fun parseHighlight(e: JsonElement): UiHighlight = when {
+        e is JsonPrimitive && e.isString && e.content == BREADCRUMB -> UiHighlight(null, breadcrumb = true)
+        e is JsonObject -> {
+            val unknown = e.keys - HIGHLIGHT_FIELDS
+            require(unknown.isEmpty()) { "a highlight has unknown field(s) ${unknown.joinToString()}; it takes ${HIGHLIGHT_FIELDS.sorted().joinToString()}" }
+            val target = locator(e) ?: throw IllegalArgumentException("a highlight needs a locator: ref, name, text, class or xpath, or is \"$BREADCRUMB\"")
+            UiHighlight(target, row = e.string("row"), index = e.int("index"), label = e.string("label"))
+        }
+        else -> throw IllegalArgumentException("a highlight is \"$BREADCRUMB\" or an object with a locator")
+    }
+
+    private fun parseCrop(e: JsonElement): UiCrop = when {
+        e is JsonPrimitive && e.isString && e.content == "page" -> UiCrop.Page
+        e is JsonPrimitive && e.isString && e.content == "highlights" -> UiCrop.Highlights
+        e is JsonObject -> {
+            val unknown = e.keys - TARGET_FIELDS
+            require(unknown.isEmpty()) { "crop takes a locator: ${TARGET_FIELDS.sorted().joinToString()}" }
+            UiCrop.Control(locator(e) ?: throw IllegalArgumentException("crop needs a locator: ref, name, text, class or xpath"))
+        }
+        else -> throw IllegalArgumentException("crop is \"page\", \"highlights\" or a locator object")
+    }
+
     private fun validate(step: UiStep) {
         val action = step.action.wire
+        val captureFields = listOfNotNull(step.out?.let { "out" }, step.highlight?.let { "highlight" }, step.crop?.let { "crop" }, step.margin?.let { "margin" })
+        if (step.action != UiAction.SCREENSHOT) require(captureFields.isEmpty()) { "${captureFields.joinToString()} go(es) with screenshot, not $action" }
+        step.out?.let { require(it.isNotBlank() && it.endsWith(".png", ignoreCase = true)) { "out is the path of a .png file, was \"$it\"" } }
+        step.margin?.let { require(it in MARGINS) { "margin is from ${MARGINS.first} to ${MARGINS.last} pixels, was $it" } }
+        if (step.crop == UiCrop.Highlights) require(!step.highlight.isNullOrEmpty()) { "crop \"highlights\" needs highlight" }
+        step.highlight?.forEach { require(it.row == null || it.index == null) { "a highlight takes row or index, not both" } }
+        step.align?.let {
+            require(step.action == UiAction.SCROLL) { "align goes with scroll, not $action" }
+            require(it in ALIGNS) { "align is top or center, was $it" }
+            require(step.pages == null) { "align places the target; drop pages" }
+        }
+        if (step.show) {
+            require(step.action == UiAction.MENU) { "show goes with menu, not $action" }
+            require(!step.path.isNullOrBlank()) { "menu with show needs a path, such as \"View > Appearance\"" }
+        }
+        if (step.theme != null) require(step.action == UiAction.SET) { "theme goes with set, not $action" }
+        if (step.themes) require(step.action == UiAction.GET) { "themes goes with get, not $action" }
+        step.dimension?.let {
+            require(step.action == UiAction.WINDOW) { "dimension goes with window, not $action" }
+            require(it.isNotBlank() && step.width?.toIntOrNull() != null && step.height?.toIntOrNull() != null) {
+                "window with dimension needs width and height in pixels"
+            }
+        }
         if (step.action in NEEDS_TARGET) require(step.target != null) { "$action needs a target: ref, name, text, class or xpath" }
         step.button?.let { require(it in BUTTONS) { "unknown button '$it'; use left, right or middle" } }
         require(step.count in 1..2) { "count must be 1 or 2, was ${step.count}" }
@@ -514,11 +628,11 @@ object UiSteps {
                     step.registry, step.advanced, step.option, step.inspection, step.component, step.log,
                     step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors }, "memory".takeIf { step.memory },
                     "builds".takeIf { step.builds }, "changes".takeIf { step.changes }, step.console,
-                    "notifications".takeIf { step.notifications }, step.problems,
+                    "notifications".takeIf { step.notifications }, step.problems, step.theme, "themes".takeIf { step.themes },
                 )
                 require(kinds.size == 1) {
-                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors, memory, builds, changes, console, notifications or problems"
-                    else "set needs exactly one of registry, advanced, option, inspection, component or log"
+                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors, memory, builds, changes, console, notifications, problems or themes"
+                    else "set needs exactly one of registry, advanced, option, inspection, component, log or theme"
                 }
                 if (step.action == UiAction.SET) require(
                     !step.editors && !step.memory && step.file == null && !step.builds && !step.changes && step.console == null &&
@@ -535,7 +649,8 @@ object UiSteps {
                 }
                 if (step.field != null) require(step.component != null) { "field goes with component" }
                 if (step.action == UiAction.SET) {
-                    require(step.value != null) { "set needs a value" }
+                    if (step.theme != null) require(step.value == null) { "set of a theme takes the theme's name in theme, not a value" }
+                    else require(step.value != null) { "set needs a value" }
                     if (step.component != null) require(!step.field.isNullOrBlank()) { "set on a component needs the field to change" }
                 }
             }
@@ -555,7 +670,10 @@ object UiSteps {
             }
             UiAction.PERF -> require(!step.command.isNullOrBlank()) { "perf needs a command, such as \"%openFile src/A.kt\"" }
             // A fixed name lines the pictures of two replays up with each other.
-            UiAction.SCREENSHOT -> require(step.save != null) { "screenshot needs save, the picture's name, such as \"settings-appearance\"" }
+            UiAction.SCREENSHOT -> {
+                require(step.save != null || step.out != null) { "screenshot needs save or out: the picture's name, such as \"settings-appearance\", or its path" }
+                require(step.save == null || step.out == null) { "pass save or out, not both" }
+            }
             UiAction.CODE -> {
                 require(!step.code.isNullOrBlank()) { "code needs code, the Kotlin body steroid_execute_code runs" }
                 step.modal?.let { require(it in MODALS) { "unknown modal '$it'; use one of ${MODALS.joinToString()}" } }

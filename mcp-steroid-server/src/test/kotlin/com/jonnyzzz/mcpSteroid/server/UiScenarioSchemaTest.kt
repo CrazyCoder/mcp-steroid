@@ -40,6 +40,9 @@ class UiScenarioSchemaTest {
         assertEquals(UiSteps.MENU_MODES, enumOf(defs["menuMode"]!!))
         assertEquals(UiSteps.MEMORY_METRICS, enumOf(step["memory"]!!.jsonObject["anyOf"]!!.jsonArray[1]))
         assertEquals(UiSteps.SEVERITIES.toSet(), enumOf(step["severity"]!!))
+        assertEquals(UiSteps.ALIGNS, enumOf(step["align"]!!))
+        assertEquals(UiSteps.BREADCRUMB, defs["highlight"]!!.jsonObject["anyOf"]!!.jsonArray[0].jsonObject["const"]!!.jsonPrimitive.content)
+        assertEquals(UiSteps.MARGINS.last, step["margin"]!!.jsonObject["maximum"]!!.jsonPrimitive.content.toInt())
         assertEquals(UiScenario.FIELDS, schema["properties"]!!.jsonObject.keys)
         val setup = defs["setup"]!!.jsonObject["properties"]!!.jsonObject
         assertEquals(UiScenario.SETUP_FIELDS, setup.keys)
@@ -69,6 +72,11 @@ class UiScenarioSchemaTest {
             """{"action":"menu","mode":"sideways"}""" to "mode",
             """{"action":"write","file":"a.txt"}""" to "anyOf",
             """{"action":"screenshot","save":".hidden"}""" to "save",
+            """{"action":"screenshot"}""" to "anyOf",
+            """{"action":"screenshot","out":"a.gif"}""" to "out",
+            """{"action":"screenshot","save":"a","highlight":[{"label":"x"}]}""" to "highlight",
+            """{"action":"screenshot","save":"a","crop":"left"}""" to "crop",
+            """{"action":"scroll","name":"a","align":"bottom"}""" to "align",
         )
         for ((json, where) in cases) {
             val found = errors(scenario(json))
