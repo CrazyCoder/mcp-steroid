@@ -32,6 +32,7 @@ enum class UiAction(val wire: String) {
     SET("set"),
     TOOLWINDOW("toolwindow"),
     WINDOW("window"),
+    MENU("menu"),
     WRITE("write"),
     PERF("perf"),
     CODE("code"),
@@ -162,6 +163,8 @@ data class UiStep(
     val maximize: Boolean? = null,
     /** On an expect step: no control in the window, or under the target, lies past an edge. */
     val layout: Boolean = false,
+    /** On a menu step: the item or submenu, as `View > Appearance > Compact Mode`. */
+    val path: String? = null,
     /** On a screenshot step: the picture's file name, without folder or extension. Required there. */
     val save: String? = null,
     /**
@@ -198,7 +201,7 @@ object UiSteps {
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
-        "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout",
+        "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path",
     )
     val SIDES = setOf("frontend", "backend")
     /**
@@ -336,6 +339,7 @@ object UiSteps {
             height = obj.string("height"),
             maximize = obj.boolean("maximize"),
             layout = obj.boolean("layout") ?: false,
+            path = obj.string("path"),
             save = obj.string("save"),
             side = obj.string("side"),
             command = obj.string("command"),
@@ -392,6 +396,7 @@ object UiSteps {
             require(step.width == null && step.height == null) { "maximize fills the screen; drop width and height" }
         }
         if (step.layout) require(step.action == UiAction.EXPECT) { "layout goes with expect, not $action" }
+        if (step.path != null) require(step.action == UiAction.MENU) { "path goes with menu, not $action" }
         step.save?.let {
             require(step.action == UiAction.SCREENSHOT) { "save goes with screenshot, not $action" }
             require(SAVE_NAME.matches(it) && !it.startsWith(".")) { "save is a plain file name of letters, digits, '.', '_' and '-', such as \"settings-appearance\"" }

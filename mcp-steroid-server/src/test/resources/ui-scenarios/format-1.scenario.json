@@ -90,7 +90,10 @@
     {"action": "window", "maximize": false},
     {"action": "window"},
     {"action": "expect", "layout": true},
-    {"action": "expect", "layout": true, "name": "Project Tool Window"}
+    {"action": "expect", "layout": true, "name": "Project Tool Window"},
+    {"action": "menu"},
+    {"action": "menu", "path": "View > Appearance"},
+    {"action": "menu", "path": "View > Appearance > Status Bar"}
   ],
   "cleanup": [
     {"action": "close"},

@@ -45,6 +45,15 @@ class UiStepsTest {
     }
 
     @Test
+    fun `a menu step takes an optional path, which no other step takes`() {
+        val step = UiSteps.parse("""[{"action":"menu","path":"View > Appearance > Status Bar"}]""").single()
+        assertEquals(UiAction.MENU, step.action)
+        assertEquals("View > Appearance > Status Bar", step.path)
+        assertNull(UiSteps.parse("""[{"action":"menu"}]""").single().path)
+        assertTrue(fails("""[{"action":"run","id":"About","path":"Help"}]""").contains("path goes with menu"))
+    }
+
+    @Test
     fun `an expect of layout takes a target as its scope and nothing else`() {
         val whole = UiSteps.parse("""[{"action":"expect","layout":true}]""").single()
         assertTrue(whole.layout)

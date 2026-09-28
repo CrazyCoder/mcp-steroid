@@ -118,6 +118,27 @@ A window stays on its screen and above its minimum size; the step reports the si
 got and the screen's usable area. `{"action":"expect","layout":true}` checks that the topmost window has
 no `layout:` line, and with a target, that nothing under it is `[outside]` or `[clipped]`.
 
+## Reach the main menu
+
+The IDE shows its main menu in one of several ways: merged into the main toolbar, where the menus that do not
+fit fold into the Main Menu button; under that button alone; as a menu bar of its own (View > Appearance >
+Main Menu picks one on Windows and Linux); or outside the IDE window, in the macOS screen menu bar or a Linux
+desktop's global menu, where no click reaches it. The snapshot of the IDE window ends with a `menu:` line
+when menus are folded, under the button or outside the window.
+
+A `menu` step reaches an item in all of them, because every one is built from the same action group:
+
+- `{"action":"menu","path":"View > Appearance > Status Bar"}` runs the item, as a click on it does, and
+  reports a checkable item's state before and after. Each segment is an item's text, without case or a
+  trailing ellipsis, else its start, else part of it; a miss lists the menu's items.
+- `{"action":"menu","path":"View > Appearance"}` lists a submenu's items with their action ids, shortcuts,
+  and `[disabled]`, `[checked]` or `[unchecked]`; `{"action":"menu"}` lists the menus, marking the ones folded
+  into the Main Menu button.
+
+An item that opens a dialog returns once the dialog shows, as a click does. The report says how a person opens
+the menu when it is not in view, such as `a person opens it from the Main Menu button, where Help is folded`.
+Prefer `run` with the action id when a report names the action, and `menu` when it names the menu path.
+
 ## Find the code and plugin behind a control
 
 An `inspect` step tells where a control comes from, as the IDE's UI Inspector (Ctrl+Alt+Click in internal

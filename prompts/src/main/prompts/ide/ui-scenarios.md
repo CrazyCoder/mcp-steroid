@@ -170,6 +170,9 @@ Other setup steps:
 - `{"action":"toolwindow","id":"Problems View","tab":"Project Errors"}` shows and activates a tool window and
   selects a tab; `"hide":true` hides it. An unknown id lists the ids. `"width"` or `"height"` sizes it, in
   logical pixels or `"fit"`.
+- `{"action":"menu","path":"View > Appearance > Status Bar"}` runs a main menu item by its path, whichever way
+  the IDE shows the menu, including the macOS screen menu bar; a checkable item's report gives its state before
+  and after, and the same step in `cleanup` puts it back. A path to a submenu lists its items.
 - `{"action":"window","width":1800,"height":1200}` sizes the topmost window, or the one a target or `title`
   names; `"maximize":true` fills the screen and `false` restores it. The report gives the size it had, which
   a cleanup step restores.

@@ -109,6 +109,7 @@ class UiSession(
     private val ideSteps = UiIdeSteps(project, taskId)
     private val config = UiConfig(project)
     private val editors = UiEditors(project)
+    private val menu = UiMenu()
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
     /** The step that runs, and what a replay of it names instead of its refs, row indexes, page names and option names. */
@@ -321,7 +322,8 @@ class UiSession(
             val refOf = { node: UiNode -> registry.refFor(node.component) }
             val text = UiSnapshotFormatter.format(header(window, model), model.root, refOf, budget.coerceAtLeast(1), withBounds)
             budget -= text.listedCount
-            text.text + UiLayout.summary(window, model.root, refOf, project).joinToString("") { "\n$it" }
+            text.text + UiLayout.summary(window, model.root, refOf, project).joinToString("") { "\n$it" } +
+                (if (window is IdeFrame) menu.summary(window)?.let { "\n$it" }.orEmpty() else "")
         }
         val others = windows.drop(shown.size)
         if (others.isEmpty()) text else text + "\n\nalso showing: " + others.joinToString("; ") { describeWindow(it) }
@@ -421,6 +423,7 @@ class UiSession(
             UiAction.PERF -> ideSteps.perf(step)
             UiAction.TOOLWINDOW -> ideSteps.toolWindow(step)
             UiAction.WINDOW -> windowStep(step)
+            UiAction.MENU -> menu.step(step.path, actionComponent(), step.timeoutMs)
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
             UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
         }

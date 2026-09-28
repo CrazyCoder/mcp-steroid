@@ -44,7 +44,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         edge of its panel or window, which no click reaches; [clipped] on one that is partly cut; [truncated]
         on a label whose text is cut to its width; a line above a tree's or list's rows when they are wider
         than its view. Each window ends with a "layout:" line per tool window or window that cuts controls,
-        or a tool window narrower than its header, with the step that makes room.
+        or a tool window narrower than its header, with the step that makes room, and the IDE window a "menu:"
+        line when menus are folded into the Main Menu button, under it, or outside the window.
 
         Pass window_id (from steroid_list_windows) to snapshot one window. To see the controls,
         steroid_take_screenshot with marks=true labels each one on the image with the ref used here, and
@@ -120,6 +121,12 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"toolwindow", "id":"Project", optional "tab":"...", "width" or "height", or "hide":true}:
           shows the tool window; "width" (a side one) or "height" (a bottom one) sizes it in logical pixels,
           or "fit": the size that shows its header and its content, within 40% of the IDE window
+        - {"action":"menu", optional "path":"View > Appearance > Status Bar"}: runs a main menu item through
+          the menu's action group, so it works whichever way the IDE shows the menu: merged into the main
+          toolbar with menus folded into the Main Menu button, under that button, a menu bar, or a menu
+          outside the window (the macOS screen menu bar, a Linux global menu) that no click reaches. Each
+          segment is an item's text, its start or part of it. Reports a checkable item's state before and
+          after. A path to a submenu, or no path, lists its items with action ids, shortcuts and states
         - {"action":"window", optional target or "title", "width", "height", or "maximize":true|false}: sizes
           the window that holds the target, the one whose title contains "title", or the topmost one, in
           logical pixels or "fit" (its preferred size); "maximize" true fills the screen and false restores.
