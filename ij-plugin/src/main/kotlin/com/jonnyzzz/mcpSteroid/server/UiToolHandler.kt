@@ -36,6 +36,7 @@ import kotlinx.serialization.json.jsonObject
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.util.Collections
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
@@ -99,9 +100,12 @@ class UiToolHandlerIJ : UiToolHandler {
         // A step a JetBrains Client sent here belongs to the Client's run, whose error and notification checks count
         // from the run's start. The age is relative, so the two machines' clocks need not agree.
         val runStartedMs = System.currentTimeMillis() - (params.runAgeMs ?: 0)
+        // The backend's notices in the answers to the steps sent there, which this call's result passes on.
+        val backendNotices = Collections.synchronizedList(mutableListOf<String>())
+        val forwarding = bridge?.let { Forwarding(it, project, params.taskId, params.sessionId, runStartedMs, backendNotices) }
         val session = UiSession(project, params.windowId, params.maxNodes, trace, params.taskId,
             artifacts = project.executionStorage.resolveExecutionDir(executionId),
-            forward = bridge?.let { b -> { step -> forwardStep(b, project, params.taskId, step, runStartedMs) } },
+            forward = forwarding?.let { f -> { step -> forwardStep(f, step) } },
             startedMs = runStartedMs)
         // A scenario notes a window that cuts controls, unless its setup asks for more; a call's snapshot shows it anyway.
         session.layoutMode = scenario?.let { it.layout ?: "note" }
@@ -140,8 +144,8 @@ class UiToolHandlerIJ : UiToolHandler {
             }
             // A step a JetBrains Client sent here, and a scenario run that stopped before its cleanup, say how to restore.
             val undoLine = result.undo.takeIf { it.isNotEmpty() && (params.runAgeMs != null || scenario != null && restoreSteps.isEmpty()) }?.let(UiRestore::line)
-            val editorNotice = bridge?.takeIf { steps.any { it.action in EDITOR_ACTIONS } }
-                ?.let { editorMismatchNotice(it, project, params.taskId, runStartedMs) }
+            val editorNotice = forwarding?.takeIf { steps.any { it.action in EDITOR_ACTIONS } }?.let { editorMismatchNotice(it) }
+            val notices = synchronized(backendNotices) { backendNotices.toList() } + listOfNotNull(editorNotice)
             val planned = allSteps.drop(from - 1)
             val judged = scenario != null || planned.any { it.bug != null }
             val setupFailed = setupResult?.failure != null
@@ -179,9 +183,9 @@ class UiToolHandlerIJ : UiToolHandler {
                 else -> false
             }
             if (params.jsonOutput) return ToolOutputContract.result(
-                ToolOutputContract.ui(executionId.executionId, !failed, verdict, text, listOfNotNull(editorNotice?.let(ToolOutputContract::noticeOf)))
+                ToolOutputContract.ui(executionId.executionId, !failed, verdict, text, notices.map(ToolOutputContract::noticeOf))
             )
-            editorNotice?.let { builder.addTextContent(it) }
+            if (notices.isNotEmpty()) builder.addTextContent(notices.joinToString(""))
             builder.addTextContent(text)
             if (failed) builder.markAsError()
             builder.build()
@@ -201,30 +205,45 @@ class UiToolHandlerIJ : UiToolHandler {
     }
 
     /**
+     * What a JetBrains Client needs to send a call's steps to the backend: the agent's [sessionId], whose backend session
+     * the steps run in, and [notices], where the backend's notices in their answers go.
+     */
+    private class Forwarding(
+        val bridge: SplitFrontendBridge,
+        val project: Project,
+        val taskId: String,
+        val sessionId: String,
+        val runStartedMs: Long,
+        val notices: MutableList<String>,
+    )
+
+    /**
      * Runs [step] on the Remote Development backend through the Split Mode bridge, as a steroid_ui call of one step,
      * and returns what the backend reported for it. The backend's own verdict and recording lines are left out: the
-     * scenario's verdict and recording are this call's.
+     * scenario's verdict and recording are this call's. The backend's notices, which it tells the agent's session once,
+     * go to [Forwarding.notices] for this call's result.
      */
-    private suspend fun forwardStep(bridge: SplitFrontendBridge, project: Project, taskId: String, step: UiStep, runStartedMs: Long): UiForwardedStep.Report {
-        val key = bridge.backendKeyFor(project) ?: throw UiStepFailure("the backend does not list this project, so the step cannot run there")
+    private suspend fun forwardStep(f: Forwarding, step: UiStep): UiForwardedStep.Report {
+        val key = f.bridge.backendKeyFor(f.project) ?: throw UiStepFailure("the backend does not list this project, so the step cannot run there")
         // Without its intent the backend's label is exactly this, and its report line is what follows it. Without bug
         // and soft the backend judges nothing: a failed bug check there must read as a failed step here, where the
         // verdict is made.
         val source = JsonObject((step.source ?: throw UiStepFailure("the step has no source to send")) - setOf("intent", "bug", "soft"))
         val args = buildJsonObject {
             put("project_name", key)
-            put("task_id", taskId)
+            put("task_id", f.taskId)
             put("reason", "a step the JetBrains Client sent to the backend" + (step.intent?.let { ": $it" } ?: ""))
             put("steps", JsonArray(listOf(source)).toString())
             put("snapshot", "none")
             put("side", "backend")
-            put("run_age_ms", (System.currentTimeMillis() - runStartedMs).coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
+            put("run_age_ms", (System.currentTimeMillis() - f.runStartedMs).coerceIn(0, Int.MAX_VALUE.toLong()).toInt())
         }
-        val result = bridge.forward(ToolCallParams(name = "steroid_ui", arguments = args), object : McpProgressReporter {
+        val result = f.bridge.forward(ToolCallParams(name = "steroid_ui", arguments = args), object : McpProgressReporter {
             override fun report(message: String) = Unit
-        })
-        val text = result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
-        return UiForwardedStep.parse(text, UiForwardedStep.label(step), result.isError)
+        }, f.sessionId)
+        val (notices, answer) = UiForwardedStep.notices(result.content.filterIsInstance<ContentItem.Text>().map { it.text })
+        f.notices += notices
+        return UiForwardedStep.parse(answer.joinToString("\n"), UiForwardedStep.label(step), result.isError)
     }
 
     /**
@@ -233,10 +252,11 @@ class UiToolHandlerIJ : UiToolHandler {
      * opens neither from the Project view nor from a navigation, and nothing else says why. A failure to read the
      * backend's record is no notice: the run's own report stands.
      */
-    private suspend fun editorMismatchNotice(bridge: SplitFrontendBridge, project: Project, taskId: String, runStartedMs: Long): String? {
+    private suspend fun editorMismatchNotice(f: Forwarding): String? {
+        val taskId = f.taskId
         val mismatches = try {
-            val local = UiEditors(project).local()
-            val backend = forwardStep(bridge, project, taskId, GET_EDITORS, runStartedMs).takeIf { it.passed } ?: return null
+            val local = UiEditors(f.project).local()
+            val backend = forwardStep(f, GET_EDITORS).takeIf { it.passed } ?: return null
             UiEditorState.mismatches(local, UiEditorState.parse(backend.text)).toSet()
         } catch (e: CancellationException) {
             throw e

@@ -39,10 +39,12 @@ class RoutedToolTest {
 
     private class FakeBridge(private val fail: Boolean = false, private val failRefresh: Boolean = false) : SplitFrontendBridge {
         val forwarded = mutableListOf<String>()
+        val sessions = mutableListOf<String>()
         var refreshes = 0
-        override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter): ToolCallResult {
+        override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter, sessionId: String): ToolCallResult {
             if (fail) throw IllegalStateException("connection lost")
             forwarded += params.name
+            sessions += sessionId
             progress.report("from backend")
             return ToolCallResult.successTextResult("remote")
         }
@@ -92,10 +94,12 @@ class RoutedToolTest {
         val bridge = FakeBridge()
         val seen = mutableListOf<String>()
         val reporter = object : McpProgressReporter { override fun report(message: String) { seen += message } }
-        val result = RoutedTool(local, { SplitRole.FRONTEND }, { bridge }).call(context("steroid_execute_code", reporter))
+        val context = context("steroid_execute_code", reporter)
+        val result = RoutedTool(local, { SplitRole.FRONTEND }, { bridge }).call(context)
         assertEquals("remote", text(result))
         assertEquals(0, local.calls)
         assertEquals(listOf("steroid_execute_code"), bridge.forwarded)
+        assertEquals("the agent's session goes with the call", listOf(context.session.id), bridge.sessions)
         assertEquals(listOf("from backend"), seen)
     }
 

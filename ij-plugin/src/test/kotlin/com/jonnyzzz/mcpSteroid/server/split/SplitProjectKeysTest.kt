@@ -15,7 +15,7 @@ import com.jonnyzzz.mcpSteroid.server.projectPathFor
 
 class SplitProjectKeysTest : BasePlatformTestCase() {
     private fun bridge(key: String?, path: String? = null) = object : SplitFrontendBridge {
-        override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter) = ToolCallResult.successTextResult("")
+        override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter, sessionId: String) = ToolCallResult.successTextResult("")
         override suspend fun refreshProjectKeys() = Unit
         override fun backendKeyFor(project: Project): String? = key
         override fun backendPathFor(project: Project): String? = path

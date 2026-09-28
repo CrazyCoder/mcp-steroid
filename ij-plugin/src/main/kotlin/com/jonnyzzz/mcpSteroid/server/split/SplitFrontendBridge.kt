@@ -13,7 +13,8 @@ import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
  * `mcp-steroid.frontend` module implements this over platform RPC and registers it as an extension.
  */
 interface SplitFrontendBridge {
-    suspend fun forward(params: ToolCallParams, progress: McpProgressReporter): ToolCallResult
+    /** Runs the call on the backend, in the backend's session for the agent session [sessionId] of this client. */
+    suspend fun forward(params: ToolCallParams, progress: McpProgressReporter, sessionId: String): ToolCallResult
 
     /** Fetches the backend's `project_name` keys and paths; [backendKeyFor] and [backendPathFor] read the result. */
     suspend fun refreshProjectKeys()

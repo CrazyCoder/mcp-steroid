@@ -183,6 +183,20 @@ class UiScenarioTest {
     }
 
     @Test
+    fun `the backend's notices in front of a forwarded step's answer are taken apart, one per notice`() {
+        val errors = "EDITOR ERRORS in the backend: 2 errors in 1 open file; ...:\n- src/a.ts: 2 errors, first at 1:7: TS2322\n"
+        val build = "BUILD FAILED in the backend: a build failed since your last call:\n- 10:00:00 mcp: 1 error\n  src/a.ts:1: X\n"
+        val answer = "execution_id: e1\nstep 1 get: ok"
+        val (notices, rest) = UiForwardedStep.notices(listOf(errors + build, answer))
+        assertEquals(listOf(errors, build), notices)
+        assertEquals(listOf(answer), rest)
+        // An answer alone, or a first text that is not a backend notice, is left whole.
+        assertEquals(emptyList<String>() to listOf(answer), UiForwardedStep.notices(listOf(answer)))
+        val client = "EDITOR STATE: the JetBrains Client and the backend disagree:\n- a\n"
+        assertEquals(emptyList<String>() to listOf(client, answer), UiForwardedStep.notices(listOf(client, answer)))
+    }
+
+    @Test
     fun `a run that stops before its bug check is incomplete`() {
         assertEquals(UiVerdict.Kind.INCOMPLETE, UiVerdict.of(listOf(click, bugCheck), listOf(ok(1, click))).kind)
     }

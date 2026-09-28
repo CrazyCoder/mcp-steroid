@@ -37,25 +37,38 @@ class BridgedToolExecutorTest {
             c.mcpProgressReporter.report("one")
             c.mcpProgressReporter.report("two")
             ToolCallResult.successTextResult("done")
-        }), ToolCallParams(name = "t")).toList()
+        }), ToolCallParams(name = "t"), "agent").toList()
         assertEquals(listOf("one", "two"), events.filterIsInstance<BridgedOutcome.Progress>().map { it.message })
         assertEquals("done", ((events.last() as BridgedOutcome.Result).result.content.single() as ContentItem.Text).text)
     }
 
     @Test
     fun `a handler exception comes back as an error result`() = runBlocking {
-        val last = executeBridgedTool(core(tool { error("boom") }), ToolCallParams(name = "t")).toList().last()
+        val last = executeBridgedTool(core(tool { error("boom") }), ToolCallParams(name = "t"), "agent").toList().last()
         val result = (last as BridgedOutcome.Result).result
         assertTrue(result.isError)
         assertTrue((result.content.first() as ContentItem.Text).text.contains("boom"))
     }
 
     @Test
-    fun `bridged calls share one session`() = runBlocking {
+    fun `each agent session of the client has one backend session of its own`() = runBlocking {
         val sessions = mutableListOf<Any>()
         val c = core(tool { sessions += it.session; ToolCallResult.successTextResult("x") })
-        repeat(3) { executeBridgedTool(c, ToolCallParams(name = "t")).toList() }
-        assertEquals(1, sessions.toSet().size)
-        assertEquals(1, c.sessionManager.getAllSessions().size)
+        repeat(3) { executeBridgedTool(c, ToolCallParams(name = "t"), "agent-a").toList() }
+        executeBridgedTool(c, ToolCallParams(name = "t"), "agent-b").toList()
+        assertEquals("agent-a's calls share a session", 1, sessions.take(3).toSet().size)
+        assertTrue("agent-b has another", sessions[3] !== sessions[0])
+        assertEquals(2, c.sessionManager.getAllSessions().size)
+    }
+
+    @Test
+    fun `past the limit the least recently used backend session is dropped from the session manager too`() = runBlocking {
+        val sessions = mutableListOf<Any>()
+        val c = core(tool { sessions += it.session; ToolCallResult.successTextResult("x") })
+        executeBridgedTool(c, ToolCallParams(name = "t"), "first").toList()
+        repeat(MAX_BRIDGE_SESSIONS) { executeBridgedTool(c, ToolCallParams(name = "t"), "agent-$it").toList() }
+        assertEquals(MAX_BRIDGE_SESSIONS, c.sessionManager.getAllSessions().size)
+        executeBridgedTool(c, ToolCallParams(name = "t"), "first").toList()
+        assertTrue("an evicted agent gets a new session", sessions.last() !== sessions.first())
     }
 }

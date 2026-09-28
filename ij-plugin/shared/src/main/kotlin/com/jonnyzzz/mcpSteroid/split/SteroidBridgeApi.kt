@@ -31,7 +31,13 @@ interface SteroidBridgeApi : RemoteApi<Unit> {
 
 /** One MCP tool call. Arguments travel as JSON text because `JsonObject` is not an RPC payload type. */
 @Serializable
-data class BridgeToolRequest(val name: String, val argumentsJson: String, val trustedArgumentsJson: String)
+data class BridgeToolRequest(
+    val name: String,
+    val argumentsJson: String,
+    val trustedArgumentsJson: String,
+    /** The id of the agent's MCP session on the JetBrains Client; the backend keeps a session of its own for each. */
+    val sessionId: String = "",
+)
 
 @Serializable
 sealed interface BridgeEvent {

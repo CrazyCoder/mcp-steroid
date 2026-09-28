@@ -38,13 +38,14 @@ internal class RpcSplitFrontendBridge : SplitFrontendBridge {
     private var keys: Map<ProjectId, ProjectKeyEntry> = emptyMap()
     private val reach = BackendReachPolicy(full = 15.seconds, short = 1.seconds, quietPeriod = 30.seconds)
 
-    override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter): ToolCallResult {
+    override suspend fun forward(params: ToolCallParams, progress: McpProgressReporter, sessionId: String): ToolCallResult {
         // Proves the backend is reachable before a call that cannot be retried, and refreshes the keys.
         refreshProjectKeys()
         val request = BridgeToolRequest(
             name = params.name,
             argumentsJson = McpJson.encodeToString(JsonObject.serializer(), params.arguments),
             trustedArgumentsJson = McpJson.encodeToString(JsonObject.serializer(), params.trustedArguments),
+            sessionId = sessionId,
         )
         var result: ToolCallResult? = null
         SteroidBridgeApi.getInstance().callTool(request).collect { event ->

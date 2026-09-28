@@ -244,6 +244,23 @@ object UiForwardedStep {
 
     fun label(step: UiStep): String = "step 1 ${step.action.wire}${step.target?.let { " $it" }.orEmpty()}"
 
+    /**
+     * The backend's notices in its answer to a forwarded step, one string per notice, and the rest of the answer.
+     * The backend puts its notices in the answer's first text, apart from the rest, each headed by its kind and
+     * `in the backend`, as [ToolOutputContract.noticeOf] reads it. A first text without such a head is the answer itself.
+     */
+    fun notices(texts: List<String>): Pair<List<String>, List<String>> {
+        fun heads(line: String) = ToolOutputContract.noticeOf(line).let { it.kind != "NOTICE" && it.side == "backend" }
+        val first = texts.firstOrNull()
+        if (texts.size < 2 || first == null || !heads(first)) return emptyList<String>() to texts
+        val notices = mutableListOf<StringBuilder>()
+        for (line in first.trimEnd('\n').lines()) {
+            if (heads(line)) notices += StringBuilder()
+            notices.last().append(line).append('\n')
+        }
+        return notices.map { it.toString() } to texts.drop(1)
+    }
+
     /** [text] is the backend's response, [isError] its error flag, used only when the step's line is missing. */
     fun parse(text: String, label: String, isError: Boolean): Report {
         val all = text.lines()

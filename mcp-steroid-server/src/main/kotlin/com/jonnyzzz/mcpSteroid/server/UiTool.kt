@@ -290,6 +290,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                 side = context[side],
                 jsonOutput = ToolOutputContract.wantsJson(context.params.arguments),
                 executionBackend = context.executionBackendProvenance(),
+                sessionId = context.session.id,
             ),
         )
 
@@ -316,6 +317,8 @@ data class UiParams(
     /** Whether the result is the [ToolOutputContract] envelope rather than text for a model. */
     val jsonOutput: Boolean = false,
     @Transient val executionBackend: ExecutionBackendProvenance? = null,
+    /** The agent's MCP session, whose backend session a step sent to the backend runs in. */
+    @Transient val sessionId: String = "",
 )
 
 interface UiToolHandler {

@@ -18,17 +18,39 @@ sealed interface BridgedOutcome {
     data class Result(val result: ToolCallResult) : BridgedOutcome
 }
 
-private val bridgeSessions = Collections.synchronizedMap(WeakHashMap<McpServerCore, McpSession>())
+/**
+ * The backend's session for each agent session of the JetBrains Client, by the client's session id, the most recently
+ * used [MAX_BRIDGE_SESSIONS] of them. The backend's session manager keeps a session until it is removed, so an evicted
+ * one is removed there too; its agent, should it come back, hears the recent notices again.
+ */
+internal class BridgeSessions(private val core: McpServerCore) {
+    private val sessions = object : LinkedHashMap<String, McpSession>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, McpSession>): Boolean {
+            if (size <= MAX_BRIDGE_SESSIONS) return false
+            core.sessionManager.removeSession(eldest.value.id)
+            return true
+        }
+    }
+
+    fun forClient(clientSessionId: String): McpSession = synchronized(sessions) {
+        sessions.getOrPut(clientSessionId) { core.sessionManager.createSession() }
+    }
+}
+
+internal const val MAX_BRIDGE_SESSIONS = 32
+
+private val bridgeSessions = Collections.synchronizedMap(WeakHashMap<McpServerCore, BridgeSessions>())
 
 /**
  * Runs one tool call for a Split Mode frontend: its progress lines, then its result.
  * The flow is buffered without limit so that a progress burst never drops a `trySend`.
  *
- * All bridged calls share one session, so what a tool tells a session once, such as a freeze that
- * ended or the errors the IDE logged since the last call, is not repeated on every forwarded call.
+ * Each agent session of the client, [clientSessionId], has a backend session of its own. What a tool tells a session
+ * once, such as a freeze that ended or the errors the IDE logged since the last call, is then told to every agent once,
+ * and not repeated on each of its forwarded calls.
  */
-fun executeBridgedTool(core: McpServerCore, params: ToolCallParams): Flow<BridgedOutcome> = channelFlow {
-    val session = synchronized(bridgeSessions) { bridgeSessions.getOrPut(core) { core.sessionManager.createSession() } }
+fun executeBridgedTool(core: McpServerCore, params: ToolCallParams, clientSessionId: String): Flow<BridgedOutcome> = channelFlow {
+    val session = bridgeSessions.getOrPut(core) { BridgeSessions(core) }.forClient(clientSessionId)
     val progress = object : McpProgressReporter {
         override fun report(message: String) {
             trySend(BridgedOutcome.Progress(message))

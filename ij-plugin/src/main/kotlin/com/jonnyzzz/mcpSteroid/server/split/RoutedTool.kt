@@ -64,7 +64,7 @@ class RoutedTool(
             "This JetBrains Client has no MCP Steroid frontend module loaded, so it cannot reach the backend."
         )
         return try {
-            bridge.forward(context.params, context.mcpProgressReporter)
+            bridge.forward(context.params, context.mcpProgressReporter, context.session.id)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

@@ -46,7 +46,7 @@ internal class SteroidBridgeApiImpl : SteroidBridgeApi {
             },
             trustedArguments = McpJson.decodeFromString(JsonObject.serializer(), request.trustedArgumentsJson),
         )
-        return executeBridgedTool(server.getServer(), params).map { outcome ->
+        return executeBridgedTool(server.getServer(), params, request.sessionId).map { outcome ->
             when (outcome) {
                 is BridgedOutcome.Progress -> BridgeEvent.Progress(outcome.message)
                 is BridgedOutcome.Result -> BridgeEvent.Result(McpJson.encodeToString(ToolCallResult.serializer(), outcome.result))

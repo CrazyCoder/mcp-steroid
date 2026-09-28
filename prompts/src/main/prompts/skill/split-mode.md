@@ -64,10 +64,11 @@ notice. The backend logs each open as `Opening remote editor for file=...`, and 
 `Removing editor`, which `{"action":"expect","log":"...","side":"backend"}` checks.
 
 The backend reads the errors in open editors, since the Client's copy of the highlighting has no descriptions.
-An `EDITOR ERRORS in the backend` notice therefore comes with a call that reaches the backend, such as
-`steroid_execute_code` or `steroid_refactor`, and `{"action":"get","problems":...}` runs there by itself. The
-Client shows the backend's notifications as well as its own, so `IDE NOTIFICATIONS in the JetBrains Client` names
-both, and the backend does not repeat them.
+An `EDITOR ERRORS in the backend` notice therefore comes with a call that reaches the backend:
+`steroid_execute_code`, `steroid_refactor`, or a `steroid_ui` call with a step that runs there, such as a `goto`
+or `{"action":"get","problems":...}`. The backend keeps a session for each agent session of the Client, so each
+agent hears the backend's notices once. The Client shows the backend's notifications as well as its own, so
+`IDE NOTIFICATIONS in the JetBrains Client` names both, and the backend does not repeat them.
 
 ## Memory on each side
 
