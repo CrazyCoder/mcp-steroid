@@ -29,12 +29,12 @@ object UiRestore {
 
     /**
      * The state [step] sets, such as one registry key, one tool window's size, or one file. `check` and `uncheck`
-     * set the same state.
+     * set the same state, and so do a write of a file's text and its delete: both set the one file.
      */
     fun key(step: JsonObject): String {
         val action = (step["action"] as? JsonPrimitive)?.content.let { if (it == "uncheck") "check" else it }
         val names = step.keys.filter { it != "action" && it !in VALUE_FIELDS }.sorted().joinToString(",") { "$it=${step[it]}" }
-        val values = step.keys.filter { it in VALUE_FIELDS }.sorted().joinToString(",")
+        val values = if (action == "write") "" else step.keys.filter { it in VALUE_FIELDS }.sorted().joinToString(",")
         return "$action|$names|$values"
     }
 

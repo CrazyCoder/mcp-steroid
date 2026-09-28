@@ -93,9 +93,12 @@ internal class UiCodeChanges(private val project: Project, parent: Disposable) {
         }
     }
 
-    /** A file the IDE creates, or the new place of one it moved or renamed, which did not exist before. */
+    /**
+     * A file the IDE creates, or the new place of one it moved or renamed, which did not exist before. A new empty file
+     * has no content to tell its type by, so it counts whatever type it shows.
+     */
     private fun recordAfter(e: VFileEvent) {
-        val created = { file: VirtualFile -> forEachFile(file) { f -> pathOf(f)?.let { p -> note(p) { null } } } }
+        val created = { file: VirtualFile -> forEachFile(file) { f -> pathOf(f, anyType = true)?.let { p -> note(p) { null } } } }
         when (e) {
             is VFileCreateEvent -> e.file?.let(created)
             is VFileMoveEvent -> created(e.file)
@@ -175,9 +178,9 @@ internal class UiCodeChanges(private val project: Project, parent: Disposable) {
         VfsUtilCore.iterateChildrenRecursively(file, null) { f -> if (!f.isDirectory) action(f); true }
     }
 
-    /** [file]'s path relative to the project, or null for a file this tracker leaves out. */
-    private fun pathOf(file: VirtualFile): String? {
-        if (!file.isInLocalFileSystem || file.isDirectory || file.fileType.isBinary) return null
+    /** [file]'s path relative to the project, or null for a file this tracker leaves out; a binary one unless [anyType]. */
+    private fun pathOf(file: VirtualFile, anyType: Boolean = false): String? {
+        if (!file.isInLocalFileSystem || file.isDirectory || (!anyType && file.fileType.isBinary)) return null
         val root = base ?: return null
         val path = runCatching { root.relativize(file.toNioPath()) }.getOrNull() ?: return null
         val relative = path.invariantSeparatorsPathString
@@ -224,8 +227,9 @@ internal class UiCodeChanges(private val project: Project, parent: Disposable) {
                 if (c in moved) continue
                 when (c.kind) {
                     "created" -> {
+                        if ('\u0000' in c.after!!) { append("created ${c.path} (binary)\n"); continue }
                         append("created ${c.path} (${lineCount(c.after)} lines)\n")
-                        for (line in c.after!!.lines().let { if (it.lastOrNull() == "") it.dropLast(1) else it }) {
+                        for (line in c.after.lines().let { if (it.lastOrNull() == "") it.dropLast(1) else it }) {
                             if (budget-- > 0) append("  +").append(line.trimEnd()).append('\n') else cut++
                         }
                     }

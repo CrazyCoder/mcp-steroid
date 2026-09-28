@@ -64,6 +64,11 @@ class UiRestoreTest {
             UiRestore.key(UiRestore.step("toolwindow", "id" to "Project", "width" to 250)),
             UiRestore.key(UiRestore.step("toolwindow", "id" to "Project", "hide" to true)),
         )
+        // A file's text and its delete set one file.
+        assertEquals(
+            UiRestore.key(UiRestore.step("write", "file" to "src/A.kt", "text" to "a")),
+            UiRestore.key(UiRestore.step("write", "file" to "src/A.kt", "delete" to true)),
+        )
     }
 
     @Test

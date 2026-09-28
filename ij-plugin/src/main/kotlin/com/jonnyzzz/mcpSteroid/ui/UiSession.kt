@@ -140,8 +140,8 @@ class UiSession(
     /** Set by a click on a button whose text ends with an ellipsis, which by convention opens a dialog. */
     private var clickOpensWindow = false
 
-    /** Set by a click on a dialog's default button, such as OK or Refactor, which closes the dialog once its work is done. */
-    private var clickClosesDialog = false
+    /** The dialog whose default button, such as OK or Refactor, a click pressed: it closes once its work is done. */
+    private var closingDialog: Window? = null
 
     /**
      * What a step does about a window it opened, or a tool window it showed, that cuts controls: one of
@@ -245,7 +245,8 @@ class UiSession(
                 // The files the step changed, which an expect only reads; a replay puts each back as the session found it.
                 val changed = if (step.action == UiAction.EXPECT || step.action == UiAction.GET) emptyList() else tracker?.stepChanges().orEmpty()
                 if (record && changed.isNotEmpty()) journal.add(tracker!!.restores(changed))
-                val changedNote = if (changed.isEmpty()) "" else "; ${UiCodeChanges.counts(changed)}"
+                // A write step reports the file it wrote itself.
+                val changedNote = if (changed.isEmpty() || step.action == UiAction.WRITE) "" else "; ${UiCodeChanges.counts(changed)}"
                 val line = meanwhile + outcome.fold({ it }, { it.message ?: it.javaClass.simpleName }) + changedNote
                 trace?.let { t ->
                     val pictureAfter = tracePicture(index, "after")
@@ -466,7 +467,9 @@ class UiSession(
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
                 val row = rowArea(node, tabOf(node, step))
                 clickOpensWindow = withContext(edtAny) { (node.component as? AbstractButton)?.text?.let(::opensWindow) == true }
-                clickClosesDialog = withContext(edtAny) { (node.component as? JButton)?.let { it.isDefaultButton && DialogWrapper.findInstance(it) != null } == true }
+                closingDialog = withContext(edtAny) {
+                    (node.component as? JButton)?.takeIf { it.isDefaultButton && DialogWrapper.findInstance(it) != null }?.let(SwingUtilities::getWindowAncestor)
+                }
                 val offset = if (step.offsetX != null || step.offsetY != null) {
                     Point(step.offsetX ?: (node.component.width / 2), step.offsetY ?: (node.component.height / 2))
                 } else null
@@ -962,7 +965,7 @@ class UiSession(
         val actions = Collections.synchronizedList(mutableListOf<String>())
         val actionOpensWindow = AtomicBoolean(false)
         clickOpensWindow = false
-        clickClosesDialog = false
+        closingDialog = null
         val connection = ApplicationManager.getApplication().messageBus.connect()
         connection.subscribe(AnActionListener.TOPIC, object : AnActionListener {
             override fun beforeActionPerformed(action: AnAction, event: AnActionEvent) {
@@ -983,9 +986,13 @@ class UiSession(
             if ((actionOpensWindow.get() || clickOpensWindow) && UiSettle.showingWindows() == windowsBefore) {
                 noWindow = !UiSettle.awaitWindowChange(windowsBefore, OPENER_WAIT_MS, stopWhen = ::inplaceActive)
             }
-            // A dialog's OK or Refactor first ends a table edit or checks its fields, then does its work and closes: a
-            // report made before that would show the dialog still open, and the next step would act on the IDE behind it.
-            if (clickClosesDialog && UiSettle.showingWindows() == windowsBefore) UiSettle.awaitWindowChange(windowsBefore, CLOSE_WAIT_MS)
+            // A dialog's OK or Refactor first ends a table edit or checks its fields, then does its work, which may show a
+            // progress window, and closes: a report made before that would show the dialog still open, and the next
+            // step would act on the IDE behind it.
+            closingDialog?.let { dialog ->
+                val started = TimeSource.Monotonic.markNow()
+                while (withContext(edtAny) { dialog.isShowing } && started.elapsedNow().inWholeMilliseconds < CLOSE_WAIT_MS) delay(POLL_MS)
+            }
             // An IDE action often opens its window a few hundred milliseconds later (Settings does), so wait longer
             // for the windows to settle after one ran.
             if (actions.isEmpty()) UiSettle.settle() else UiSettle.settle(quietMs = ACTION_QUIET_MS, maxMs = ACTION_SETTLE_MS)
