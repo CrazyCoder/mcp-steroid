@@ -173,7 +173,7 @@
         "diff": {"type": "string", "minLength": 1},
         "golden": {"type": "string", "minLength": 1},
         "save": {"type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$"},
-        "out": {"type": "string", "pattern": "\\.[pP][nN][gG]$", "description": "The picture's path; relative to the scenario file's folder."},
+        "out": {"type": "string", "pattern": "(^|[/\\\\])[^/\\\\.]+$|\\.([pP][nN][gG]|[jJ][pP][eE]?[gG])$", "description": "The picture's path, relative to the scenario file's folder: a .png, the default without an extension, or a .jpg."},
         "highlight": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/highlight"}},
         "crop": {"anyOf": [{"enum": ["page", "highlights"]}, {"$ref": "#/$defs/locator"}]},
         "margin": {"type": "integer", "minimum": 0, "maximum": 200},

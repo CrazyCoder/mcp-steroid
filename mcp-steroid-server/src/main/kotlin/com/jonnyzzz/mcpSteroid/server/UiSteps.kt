@@ -286,6 +286,13 @@ object UiSteps {
     val MARGINS = 0..200
     /** Where a scroll with align puts its target: at the top of its view, or in the middle. */
     val ALIGNS = setOf("top", "center")
+    /** The extensions a screenshot's out takes; a path without one is a PNG. */
+    val PICTURE_EXTENSIONS = setOf("png", "jpg", "jpeg")
+
+    /** The extension of the file [path] names, lower case, or null when its name has none. */
+    fun pictureExtension(path: String): String? =
+        path.substringAfterLast('/').substringAfterLast('\\').substringAfterLast('.', "").lowercase().takeIf { it.isNotEmpty() }
+
     /** The theme a set takes to follow the OS's light or dark mode again, which a restore uses. */
     const val THEME_SYNC = "sync"
     /** The levels a get of problems takes as its severity, from the most severe. */
@@ -509,7 +516,11 @@ object UiSteps {
         val action = step.action.wire
         val captureFields = listOfNotNull(step.out?.let { "out" }, step.highlight?.let { "highlight" }, step.crop?.let { "crop" }, step.margin?.let { "margin" })
         if (step.action != UiAction.SCREENSHOT) require(captureFields.isEmpty()) { "${captureFields.joinToString()} go(es) with screenshot, not $action" }
-        step.out?.let { require(it.isNotBlank() && it.endsWith(".png", ignoreCase = true)) { "out is the path of a .png file, was \"$it\"" } }
+        step.out?.let {
+            require(it.isNotBlank()) { "out is the picture's path, such as \"C:/docs/appearance.png\"" }
+            val ext = pictureExtension(it)
+            require(ext == null || ext in PICTURE_EXTENSIONS) { "out is a .png, the default when the path has no extension, or a .jpg; was \"$it\"" }
+        }
         step.margin?.let { require(it in MARGINS) { "margin is from ${MARGINS.first} to ${MARGINS.last} pixels, was $it" } }
         if (step.crop == UiCrop.Highlights) require(!step.highlight.isNullOrEmpty()) { "crop \"highlights\" needs highlight" }
         step.highlight?.forEach { require(it.row == null || it.index == null) { "a highlight takes row or index, not both" } }

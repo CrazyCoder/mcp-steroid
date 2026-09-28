@@ -29,6 +29,8 @@ import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
 import com.jonnyzzz.mcpSteroid.freeze.IdeNotifications
 import com.jonnyzzz.mcpSteroid.freeze.IdeRuns
 import com.jonnyzzz.mcpSteroid.server.UiAction
+import com.jonnyzzz.mcpSteroid.server.UiCrop
+import com.jonnyzzz.mcpSteroid.server.UiHighlight
 import com.jonnyzzz.mcpSteroid.server.UiEditorState
 import com.jonnyzzz.mcpSteroid.server.UiForwardedStep
 import com.jonnyzzz.mcpSteroid.server.UiRestore
@@ -52,6 +54,7 @@ import java.awt.KeyboardFocusManager
 import java.awt.Point
 import java.awt.Rectangle
 import java.awt.Window
+import java.awt.image.BufferedImage
 import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
 import java.nio.file.Path
@@ -120,6 +123,8 @@ class UiSession(
     private val forward: (suspend (UiStep) -> UiForwardedStep.Report)? = null,
     /** When the run started: an expect on errors or notifications counts the ones since then. */
     private val startedMs: Long = System.currentTimeMillis(),
+    /** The folder of the replayed scenario file, which a screenshot's relative `out` is relative to; null for steps. */
+    private val scenarioDir: Path? = null,
 ) {
     private val registry = service<UiRefs>().registry
     private val input = UiInput { UiLayout.unreachable(it, project) }
@@ -943,26 +948,119 @@ class UiSession(
     }
 
     /**
-     * Saves a picture of the window that holds the target, or of the topmost window, as `<save>.png` in the call's
-     * execution folder, for a visual review: the agent reads the file, or a person compares it with an earlier run.
-     * `<save>.json` beside it records what makes two pictures of the same state differ: the window's size, the
-     * scale, the theme, the editor font and the IDE build.
+     * Saves a picture of the window that holds the target, or of the topmost window, with the popups open above it:
+     * to `out`, or as `<save>.png` in the call's execution folder. The highlights are outlined and numbered, each
+     * scrolled into the middle of its view first when it is out of view, and the crop cuts the picture to the
+     * Settings page, the highlights or a control. `<name>.json` beside it records what makes two pictures of the same
+     * state differ: the window's size, the scale, the theme, the editor font, the IDE build and the crop. A picture
+     * that replaces a file says whether it changed.
      */
     private suspend fun screenshotStep(step: UiStep): String {
-        val dir = artifacts ?: throw UiStepFailure("screenshot has no folder to save to in this call")
+        val file = step.out?.let { UiCapturePaths.resolve(it, scenarioDir) }
+            ?: (artifacts ?: throw UiStepFailure("screenshot has no folder to save to in this call")).resolve("screenshots").resolve(step.save!! + ".png")
         val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
+        val window = withContext(edtAny) { node?.let { windowOf(it.component) } ?: scopeWindows().firstOrNull() }
+            ?: throw UiStepFailure("no window is showing")
+        val highlights = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
+        val cropControl = (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
+        withContext(edtAny) { highlights.forEach { it.bringIntoView() } }
         UiSettle.settle()
-        val (line, facts, file) = withContext(edtAny) {
-            val window = node?.let { it.component as? Window ?: SwingUtilities.getWindowAncestor(it.component) }
-                ?: scopeWindows().firstOrNull() ?: throw UiStepFailure("no window is showing")
-            val file = dir.resolve("screenshots").resolve(step.save!! + ".png")
-            UiTrace.paint(window, file)
+        val (canvas, facts, line) = withContext(edtAny) {
+            if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
+            val marks = highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label) }
+            val painted = UiCapture.paint(window).let { if (marks.isEmpty()) it else UiCapture.highlight(it, marks) }
+            val area = when (val crop = step.crop) {
+                null -> null
+                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCapture.withMarks(painted, it, marks) }
+                    ?: throw UiStepFailure("crop \"page\" needs a Settings page, and ${describeWindow(window)} shows none")
+                UiCrop.Highlights -> UiCapture.markArea(painted, marks)
+                is UiCrop.Control -> {
+                    val c = cropControl!!.component
+                    if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")
+                    // A tree or list in a scroll pane is as tall as all its rows: the part in view is what shows.
+                    val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)
+                    UiCapture.withMarks(painted, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks)
+                }
+            }
+            val canvas = area?.let { UiCapture.crop(painted, UiCapture.cropArea(it, step.margin ?: UiSteps.DEFAULT_MARGIN, painted.bounds)) } ?: painted
             val facts = UiPictureFacts.of(window)
-            Triple("saved ${window.width}x${window.height} picture of ${describeWindow(window)} to $file (${facts.describe()})", facts, file)
+            val what = listOfNotNull(
+                highlights.takeIf { it.isNotEmpty() }?.withIndex()?.joinToString(", ", prefix = "highlights: ") { (i, h) -> "${i + 1} ${h.what}" },
+                step.crop?.let { "crop ${if (it is UiCrop.Control) it.target.toString() else it.toString()}" },
+            )
+            Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
+                what.joinToString("") { "; $it" })
         }
-        withContext(Dispatchers.IO) { java.nio.file.Files.writeString(file.resolveSibling(step.save!! + ".json"), facts.json()) }
-        return line
+        val change = withContext(Dispatchers.IO) {
+            try {
+                java.nio.file.Files.createDirectories(file.parent)
+                val before = if (java.nio.file.Files.isRegularFile(file)) runCatching { javax.imageio.ImageIO.read(file.toFile()) }.getOrNull() else null
+                val existed = java.nio.file.Files.exists(file)
+                val format = UiCapturePaths.format(file)
+                // A JPEG has no alpha channel: ImageIO writes nothing for an ARGB picture.
+                val image = if (format == "png") canvas.image else BufferedImage(canvas.image.width, canvas.image.height, BufferedImage.TYPE_INT_RGB).also {
+                    it.createGraphics().apply { drawImage(canvas.image, 0, 0, java.awt.Color.WHITE, null); dispose() }
+                }
+                java.nio.file.Files.newOutputStream(file).use { if (!javax.imageio.ImageIO.write(image, format, it)) throw java.io.IOException("no $format writer") }
+                val json = file.resolveSibling(file.fileName.toString().substringBeforeLast('.') + ".json")
+                java.nio.file.Files.writeString(json, facts.json(crop = step.crop?.let { if (it is UiCrop.Control) "control" else it.toString() } ?: "window"))
+                when {
+                    !existed -> ""
+                    before == null -> "; replaced a file that was not a readable picture"
+                    // A JPEG never reads back as it was painted, so only a PNG is compared.
+                    format != "png" -> ""
+                    else -> when (val n = UiCapture.differingPixels(before, canvas.image)) {
+                        0 -> "; unchanged"
+                        Int.MAX_VALUE -> "; changed: the size was ${before.width}x${before.height}"
+                        else -> "; changed: $n pixels differ"
+                    }
+                }
+            } catch (e: java.io.IOException) {
+                // An AccessDeniedException's message is only the path: its class says what went wrong.
+                throw UiStepFailure("cannot write the picture to $file (${e.javaClass.simpleName}" + (e.message?.takeIf { it != file.toString() }?.let { ": $it" } ?: "") + ")")
+            }
+        }
+        return line + change
     }
+
+    /** A highlight found: its component, the area of it to outline in its coordinates, how to name it, and its label. */
+    private class Located(val component: Component, val area: Rectangle, val what: String, val label: String?) {
+        /** Scrolls the area to the middle of its view when part of it is out of view. EDT. */
+        fun bringIntoView() {
+            if (!UiScrollAlign.inView(component, area)) UiScrollAlign.scroll(component, area, "center")
+        }
+
+        /** EDT. */
+        fun screenBounds(): Rectangle = Rectangle(area).apply { translate(component.locationOnScreen.x, component.locationOnScreen.y) }
+    }
+
+    /**
+     * Finds [h] in [window] or a popup above it: the Settings breadcrumb, a row of a list, tree or table, or a control.
+     * A control in another window, or one that is not showing, fails the step: its outline would land elsewhere.
+     */
+    private suspend fun locateHighlight(h: UiHighlight, window: Window, timeoutMs: Long): Located {
+        if (h.breadcrumb) return withContext(edtAny) {
+            val bar = UiSettingsParts.breadcrumbs(window) ?: throw UiStepFailure("no Settings page is showing, so there is no breadcrumb to highlight")
+            val crumbs = UiSettingsParts.crumbsBounds(bar)
+            Located(bar, Rectangle(0, 0, crumbs.width, crumbs.height), "breadcrumb", h.label)
+        }
+        val node = resolve(h.target!!, timeoutMs, requireEnabled = false)
+        val pick = pickRow(node, UiStep(UiAction.SCREENSHOT, h.target, row = h.row, index = h.index, timeoutMs = timeoutMs))
+        return withContext(edtAny) {
+            val c = node.component
+            if (!c.isShowing) throw UiStepFailure("${describe(node)} is not showing; select its tab or page first")
+            val owner = windowOf(c)
+            if (owner !== window && owner !in UiCapture.popupsOf(window)) {
+                throw UiStepFailure("${describe(node)} is in ${owner?.let { describeWindow(it) } ?: "no window"}, not in the pictured ${describeWindow(window)}")
+            }
+            val area = pick?.let { UiRows.bounds(c, it.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup; open it first") }
+                ?: Rectangle(0, 0, c.width, c.height)
+            Located(c, area, pick?.let { "row #${it.index} \"${it.text.take(60)}\" of ${describe(node)}" } ?: describe(node), h.label)
+        }
+    }
+
+    /** The window that holds [c], or [c] itself when it is one. EDT. */
+    private fun windowOf(c: Component): Window? = c as? Window ?: SwingUtilities.getWindowAncestor(c)
 
     private suspend fun snapshotStep(step: UiStep): String {
         if (step.target == null) return "\n" + render(withBounds = false)

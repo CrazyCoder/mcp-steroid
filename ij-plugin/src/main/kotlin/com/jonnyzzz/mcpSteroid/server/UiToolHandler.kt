@@ -59,12 +59,15 @@ class UiToolHandlerIJ : UiToolHandler {
         val bridge = if (role == SplitRole.FRONTEND) SPLIT_FRONTEND_BRIDGE_EP.extensionList.firstOrNull() else null
         runCatching { bridge?.refreshProjectKeys() }
         val scenario: UiScenario?
+        val scenarioDir: Path?
         val allSteps: List<UiStep>
         try {
             require(params.scenario == null || params.steps.isNullOrBlank()) { "pass steps or scenario, not both" }
             // A JetBrains Client's own project folder is a synthetic one under its config: the backend's is the project's.
             val base = bridge?.backendPathFor(project) ?: project.basePath
-            scenario = params.scenario?.let { loadScenario(base, it) }
+            val file = params.scenario?.let { scenarioFile(base, it) }
+            scenarioDir = file?.toAbsolutePath()?.parent
+            scenario = file?.let { loadScenario(it) }
             allSteps = scenario?.steps ?: params.steps?.trim()?.takeIf { it.isNotEmpty() }?.let(UiSteps::parse).orEmpty()
             if (role == SplitRole.BACKEND) {
                 val clientSteps = allSteps.withIndex().filter { it.value.side == "frontend" }.map { it.index + 1 }
@@ -106,7 +109,8 @@ class UiToolHandlerIJ : UiToolHandler {
         val session = UiSession(project, params.windowId, params.maxNodes, trace, params.taskId,
             artifacts = project.executionStorage.resolveExecutionDir(executionId),
             forward = forwarding?.let { f -> { step -> forwardStep(f, step) } },
-            startedMs = runStartedMs)
+            startedMs = runStartedMs,
+            scenarioDir = scenarioDir)
         // A scenario notes a window that cuts controls, unless its setup asks for more; a call's snapshot shows it anyway.
         session.layoutMode = scenario?.let { it.layout ?: "note" }
         // A scenario's setup runs before any replay, one that starts at a later step too, so each one starts laid out.
@@ -303,8 +307,11 @@ class UiToolHandlerIJ : UiToolHandler {
         return builder.build()
     }
 
-    private suspend fun loadScenario(base: String?, path: String): UiScenario {
-        val file = Path.of(path).let { p -> if (p.isAbsolute) p else base?.let { Path.of(it).resolve(p) } ?: p }
+    /** The scenario file [path] names, absolute or relative to the project folder [base]. */
+    private fun scenarioFile(base: String?, path: String): Path =
+        Path.of(path).let { p -> if (p.isAbsolute) p else base?.let { Path.of(it).resolve(p) } ?: p }
+
+    private suspend fun loadScenario(file: Path): UiScenario {
         val text = withContext(Dispatchers.IO) {
             require(Files.isRegularFile(file)) { "no scenario file at $file" }
             Files.readString(file)

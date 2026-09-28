@@ -26,9 +26,11 @@ internal class UiPictureFacts(
 ) {
     fun describe(): String = "scale ${screenScale}x screen, ${ideScale}x IDE; theme ${theme ?: "unknown"}; editor font $editorFont"
 
-    fun json(): String = buildJsonObject {
+    /** [crop] is what part of the window the picture shows: window, page, highlights or control. */
+    fun json(crop: String = "window"): String = buildJsonObject {
         put("width", width)
         put("height", height)
+        put("crop", crop)
         put("screen_scale", screenScale)
         put("ide_scale", ideScale)
         theme?.let { put("theme", it) }

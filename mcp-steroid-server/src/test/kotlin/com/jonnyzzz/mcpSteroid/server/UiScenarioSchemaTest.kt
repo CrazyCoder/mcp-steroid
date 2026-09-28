@@ -74,6 +74,7 @@ class UiScenarioSchemaTest {
             """{"action":"screenshot","save":".hidden"}""" to "save",
             """{"action":"screenshot"}""" to "anyOf",
             """{"action":"screenshot","out":"a.gif"}""" to "out",
+            """{"action":"screenshot","out":"C:/p/v1.2/a.bmp"}""" to "out",
             """{"action":"screenshot","save":"a","highlight":[{"label":"x"}]}""" to "highlight",
             """{"action":"screenshot","save":"a","crop":"left"}""" to "crop",
             """{"action":"scroll","name":"a","align":"bottom"}""" to "align",

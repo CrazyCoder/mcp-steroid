@@ -80,6 +80,8 @@
     {"action": "screenshot", "save": "settings-page", "side": "frontend"},
     {"action": "screenshot", "out": "pictures/appearance.png", "highlight": ["breadcrumb", {"name": "Show line numbers", "label": "Turn this on"}, {"name": "Settings categories", "row": "Editor"}], "crop": "page", "margin": 8},
     {"action": "screenshot", "save": "tree", "crop": {"name": "Settings categories"}},
+    {"action": "screenshot", "out": "pictures/v1.2/tree"},
+    {"action": "screenshot", "out": "pictures/tree.JPG"},
     {"action": "screenshot", "save": "marked", "highlight": [{"text": "Apply", "index": 0}], "crop": "highlights"},
     {"action": "scroll", "name": "Show line numbers", "align": "top"},
     {"action": "menu", "path": "View > Appearance", "show": true},

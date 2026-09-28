@@ -54,13 +54,15 @@ class UiCaptureTest {
     }
 
     @Test
-    fun `highlighting outlines the mark where it is, at the scale, on a copy`() {
+    fun `highlighting outlines the mark just outside it, at the scale, on a copy`() {
         val plain = canvas(400, 300, scale = 2.0)
         val c = UiCapture.highlight(plain, listOf(UiCapture.Mark(1, Rectangle(200, 100, 100, 40), null)))
-        // The mark's left edge is 100 logical pixels right of the origin: 200 image pixels.
-        assertNotEquals(Color.WHITE.rgb, c.image.getRGB(200, 150))
+        // The mark's left edge is 100 logical pixels right of the origin, 200 image pixels; the outline runs 3 logical
+        // pixels outside it, so the control's own edge stays visible.
+        assertNotEquals(Color.WHITE.rgb, c.image.getRGB(194, 150))
+        assertEquals(Color.WHITE.rgb, c.image.getRGB(201, 150))
         assertEquals(Color.WHITE.rgb, c.image.getRGB(260, 150))
-        assertEquals(Color.WHITE.rgb, plain.image.getRGB(200, 150))
+        assertEquals(Color.WHITE.rgb, plain.image.getRGB(194, 150))
     }
 
     @Test
@@ -73,6 +75,19 @@ class UiCaptureTest {
         assertTrue(area.x < mark.x && area.y < mark.y)
         val bare = UiCapture.markArea(c, listOf(UiCapture.Mark(1, mark, null)))
         assertTrue(area.width > bare.width)
+    }
+
+    @Test
+    fun `a crop grows to hold the badges of the marks inside it, and ignores the marks outside it`() {
+        val c = canvas(800, 600)
+        val page = Rectangle(300, 100, 400, 400)
+        // A mark at the page's top left edge puts its badge outside the page.
+        val inside = UiCapture.Mark(1, Rectangle(302, 102, 100, 20), null)
+        val outside = UiCapture.Mark(2, Rectangle(120, 400, 50, 20), null)
+        val area = UiCapture.withMarks(c, page, listOf(inside, outside))
+        assertTrue(area.contains(page))
+        assertTrue(area.x < page.x && area.y < page.y)
+        assertTrue(area.x > 170)
     }
 
     @Test

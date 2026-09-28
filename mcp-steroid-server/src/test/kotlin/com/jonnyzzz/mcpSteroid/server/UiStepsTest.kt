@@ -23,6 +23,12 @@ class UiStepsTest {
     }
 
     @Test
+    fun `an out is a png by default, or a jpg`() {
+        assertEquals("C:/pics/a", UiSteps.parse("""[{"action":"screenshot","out":"C:/pics/a"}]""").single().out)
+        assertEquals("C:/pics/a.jpeg", UiSteps.parse("""[{"action":"screenshot","out":"C:/pics/a.jpeg"}]""").single().out)
+    }
+
+    @Test
     fun `a crop names a control by its locator, or the highlights`() {
         assertEquals(UiCrop.Control(UiTarget(name = "Settings categories")), UiSteps.parse("""[{"action":"screenshot","save":"a","crop":{"name":"Settings categories"}}]""").single().crop)
         assertEquals(UiCrop.Highlights, UiSteps.parse("""[{"action":"screenshot","save":"a","highlight":[{"text":"x","row":"Editor"}],"crop":"highlights"}]""").single().crop)
@@ -33,6 +39,7 @@ class UiStepsTest {
         assertMentions(fails("""[{"action":"screenshot"}]"""), "save or out")
         assertMentions(fails("""[{"action":"screenshot","save":"a","out":"C:/a.png"}]"""), "not both")
         assertMentions(fails("""[{"action":"screenshot","out":"a.gif"}]"""), ".png")
+        assertMentions(fails("""[{"action":"screenshot","out":" "}]"""), "path")
         assertMentions(fails("""[{"action":"screenshot","save":"a","crop":"highlights"}]"""), "highlight")
         assertMentions(fails("""[{"action":"screenshot","save":"a","crop":"left"}]"""), "page")
         assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[{"label":"x"}]}]"""), "locator")

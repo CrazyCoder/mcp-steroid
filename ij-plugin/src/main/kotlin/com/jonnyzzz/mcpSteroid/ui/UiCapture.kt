@@ -1,6 +1,7 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ui
 
+import com.jonnyzzz.mcpSteroid.server.UiSteps
 import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Dialog
@@ -13,9 +14,28 @@ import java.awt.Window
 import java.awt.geom.Ellipse2D
 import java.awt.geom.RoundRectangle2D
 import java.awt.image.BufferedImage
+import java.nio.file.Path
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
+
+/** Where a screenshot step with `out` writes its picture, and in which format. */
+object UiCapturePaths {
+    /**
+     * [out] as given when absolute; relative to [scenarioDir], the replayed scenario file's folder, otherwise. A path
+     * without an extension gets `.png`: pictures are PNG unless the path asks for a JPEG.
+     */
+    fun resolve(out: String, scenarioDir: Path?): Path {
+        val named = if (UiSteps.pictureExtension(out) == null) "$out.png" else out
+        val path = Path.of(named)
+        if (path.isAbsolute) return path.normalize()
+        val dir = scenarioDir ?: throw UiStepFailure("out \"$out\" is a relative path; in a call with steps, give an absolute path")
+        return dir.resolve(path).normalize()
+    }
+
+    /** The ImageIO format of the picture [file] names: `jpg` for a .jpg or .jpeg, `png` otherwise. */
+    fun format(file: Path): String = if (UiSteps.pictureExtension(file.fileName.toString()) in setOf("jpg", "jpeg")) "jpg" else "png"
+}
 
 /**
  * The pictures of a screenshot step: a window painted with the popups open above it, cropped to a part of it, with
@@ -123,7 +143,7 @@ object UiCapture {
             g.scale(canvas.scale, canvas.scale)
             g.translate(-canvas.origin.x, -canvas.origin.y)
             for ((mark, parts) in layout(canvas, marks, g)) {
-                val b = mark.bounds
+                val b = outlined(mark.bounds)
                 val outline = RoundRectangle2D.Float(b.x.toFloat(), b.y.toFloat(), b.width.toFloat(), b.height.toFloat(), ARC, ARC)
                 g.stroke = BasicStroke(OUTLINE_WIDTH + 2f)
                 g.color = EDGE
@@ -160,10 +180,16 @@ object UiCapture {
     fun markArea(canvas: Canvas, marks: List<Mark>): Rectangle {
         val g = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics()
         try {
-            return union(layout(canvas, marks, g).flatMap { (mark, parts) -> listOfNotNull(mark.bounds, parts.badge, parts.label) })
+            return union(layout(canvas, marks, g).flatMap { (mark, parts) -> listOfNotNull(outlined(mark.bounds), parts.badge, parts.label) })
         } finally {
             g.dispose()
         }
+    }
+
+    /** [area] grown to hold the outline, badge and label of each of [marks] that lies in it, so a crop cuts none of them. */
+    fun withMarks(canvas: Canvas, area: Rectangle, marks: List<Mark>): Rectangle {
+        val inside = marks.filter { area.intersects(it.bounds) }
+        return if (inside.isEmpty()) area else area.union(markArea(canvas, inside))
     }
 
     /** The number of pixels in which [a] and [b] differ, or [Int.MAX_VALUE] when their sizes differ. */
@@ -181,7 +207,7 @@ object UiCapture {
         val placed = mutableListOf<Rectangle>()
         val labelMetrics = g.getFontMetrics(LABEL_FONT)
         return marks.map { mark ->
-            val badge = badgeBounds(mark.bounds, BADGE, canvas.bounds, placed)
+            val badge = badgeBounds(outlined(mark.bounds), BADGE, canvas.bounds, placed)
             placed += badge
             val label = mark.label?.let {
                 val box = Rectangle(badge.x + badge.width + 3, badge.y, labelMetrics.stringWidth(it) + 2 * LABEL_PAD, badge.height)
@@ -192,8 +218,12 @@ object UiCapture {
         }
     }
 
+    /** The area an outline runs around: [b] grown by [PAD], so the control's own edge and text stay visible. */
+    private fun outlined(b: Rectangle) = Rectangle(b.x - PAD, b.y - PAD, b.width + 2 * PAD, b.height + 2 * PAD)
+
     @Suppress("UseJBColor")
     private val OUTLINE = Color(0xE5, 0x2B, 0x50)
+    private const val PAD = 3
 
     @Suppress("UseJBColor")
     private val EDGE = Color(255, 255, 255, 220)
