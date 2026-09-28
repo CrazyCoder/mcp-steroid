@@ -482,6 +482,7 @@ class UiSession(
             line + (runs.report()?.let { "; $it" } ?: "")
         }
         UiAction.GET -> when {
+            step.layout -> layoutReport()
             step.editors -> editorsReport(step)
             step.memory -> IdeMemory.getInstanceOrNull()?.report() ?: throw UiStepFailure("the IDE application is not available")
             step.builds -> IdeBuilds.getInstanceOrNull()?.recent(BUILDS_LISTED)?.let(IdeBuilds::renderRecent) ?: throw UiStepFailure("the IDE application is not available")
@@ -1133,6 +1134,7 @@ class UiSession(
             ?: throw UiStepFailure("no window is showing")
         val made = if (step.fit) fitForPicture(step, window) else emptyList()
         val highlights = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
+        val hostCuts = hostProblems(window)
         val cropOnBackend = (step.crop as? UiCrop.Control)?.let { backendBounds(it.target, null, null, window)?.first }
         val cropControl = if (cropOnBackend != null) null else (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
         withContext(edtAny) { highlights.forEach { it.bringIntoView() } }
@@ -1200,7 +1202,7 @@ class UiSession(
             // What the picture shows cut, each with the step that fixes it, so a bad picture is known without reading it.
             // What the crop names, before its margin and the badges it grew by: those show the edge of what lies around
             // it, whose cuts are not the picture's.
-            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window, marks.map { it.bounds }))
+            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window, marks.map { it.bounds }), hostCuts)
                 .map { "\ncut: " + it.line.removePrefix("layout: ") }
             Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
                 what.joinToString("") { "; $it" } + cut.joinToString(""))
@@ -1243,9 +1245,40 @@ class UiSession(
         return line + change
     }
 
-    /** The layout problems of [window] whose cut content lies in [area], a picture's screen area. EDT. */
-    private fun pictureProblems(window: Window, area: Rectangle): List<UiLayout.Problem> =
-        UiLayout.problems(window, UiModel.build(window).root, { registry.refFor(it.component) }, project).filter { it.area?.intersects(area) == true }
+    /**
+     * The layout problems of [window], and [host], the backend's of a host Settings page it shows, whose cut content
+     * lies in [area], a picture's screen area. EDT.
+     */
+    private fun pictureProblems(window: Window, area: Rectangle, host: List<UiLayout.Problem> = emptyList()): List<UiLayout.Problem> =
+        (UiLayout.problems(window, UiModel.build(window).root, { registry.refFor(it.component) }, project) + host).filter { it.area?.intersects(area) == true }
+
+    /** The layout problems of the showing windows, one line each, which a JetBrains Client reads for a host page. */
+    private suspend fun layoutReport(): String = withContext(edtAny) {
+        val lines = Window.getWindows().filter { it.isShowing }.flatMap { w ->
+            UiLayout.problems(w, UiModel.build(w).root, { registry.refFor(it.component) }, project).map { UiHostLayout.encode(it, w.size) }
+        }
+        if (lines.isEmpty()) "no layout problems" else lines.joinToString("\n")
+    }
+
+    /**
+     * In a JetBrains Client showing a host Settings page, the backend's layout problems of the page, with the fixes the
+     * Client runs; none elsewhere. A backend that does not answer leaves the picture without them rather than failing it.
+     */
+    private suspend fun hostProblems(window: Window): List<UiLayout.Problem> {
+        val forward = forward ?: return emptyList()
+        if (!withContext(edtAny) { UiSettingsParts.hostPage(window) }) return emptyList()
+        val step = UiSteps.parse(JsonArray(listOf(buildJsonObject {
+            put("action", "get")
+            put("layout", true)
+            put("side", "backend")
+        }))).single()
+        val report = forward.invoke(step).takeIf { it.passed } ?: return emptyList()
+        val client = withContext(edtAny) { window.size }
+        return UiHostLayout.decode(report.text).map { p ->
+            val fix = UiHostLayout.clientFix(p.fix, p.window, client)
+            UiLayout.Problem(if (p.fix != null && fix != null) p.line.replace(p.fix, fix) else p.line, fix, null, p.area)
+        }
+    }
 
     /**
      * For a screenshot with fit: runs the steps that make room for what the picture would show cut, the part the crop
@@ -1256,9 +1289,10 @@ class UiSession(
         val done = mutableListOf<String>()
         val tried = mutableSetOf<String>()
         repeat(FIT_ROUNDS) {
+            val host = hostProblems(window)
             val fixes = withContext(edtAny) {
                 val scope = pictureScope(step, window)
-                pictureProblems(window, scope).mapNotNull { it.fix }.filter { tried.add(it) }
+                pictureProblems(window, scope, host).mapNotNull { it.fix }.filter { tried.add(it) }
             }
             if (fixes.isEmpty()) return done
             fixes.forEach { done += applyFix(it) }
@@ -1658,10 +1692,17 @@ class UiSession(
         return problems.map { p -> p.fix?.let { "made room: " + applyFix(it) } ?: p.line }
     }
 
-    /** Runs [fix], the step a layout line names, and reports the size it gave; its restore goes with the step's. */
+    /**
+     * Runs [fix], the step a layout line names, and reports the size it gave; its restore goes with the step's. A fix
+     * for a host Settings page runs on the backend, which draws the page.
+     */
     private suspend fun applyFix(fix: String): String {
         val step = UiSteps.parse("[$fix]").single()
-        return if (step.action == UiAction.TOOLWINDOW) ideSteps.toolWindow(step, undo, sizeOnly = true) else actStep(step)
+        return when {
+            forward != null && runsOnBackend(step) -> onBackend(step)
+            step.action == UiAction.TOOLWINDOW -> ideSteps.toolWindow(step, undo, sizeOnly = true)
+            else -> actStep(step)
+        }
     }
 
     /**

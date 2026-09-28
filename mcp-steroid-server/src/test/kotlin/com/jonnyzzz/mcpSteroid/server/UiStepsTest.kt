@@ -91,6 +91,12 @@ class UiStepsTest {
     }
 
     @Test
+    fun `a get of the layout reports the layout problems, and layout goes with get and expect only`() {
+        assertTrue(UiSteps.parse("""[{"action":"get","layout":true}]""").single().layout)
+        assertMentions(fails("""[{"action":"click","name":"a","layout":true}]"""), "get and expect")
+    }
+
+    @Test
     fun `numbers are optional on a screenshot`() {
         assertEquals(false, UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"name":"a"}],"numbers":false}]""").single().numbers)
         assertNull(UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"name":"a"}]}]""").single().numbers)
@@ -228,7 +234,7 @@ class UiStepsTest {
         assertEquals(UiTarget(name = "Project Tool Window"), scoped.target)
         assertTrue(fails("""[{"action":"expect","layout":true,"title":"Settings"}]""").contains("not layout and title"))
         assertTrue(fails("""[{"action":"expect","layout":true,"name":"x","is":"visible"}]""").contains("layout takes a target as its scope"))
-        assertTrue(fails("""[{"action":"click","name":"OK","layout":true}]""").contains("layout goes with expect"))
+        assertTrue(fails("""[{"action":"click","name":"OK","layout":true}]""").contains("layout goes with get and expect"))
     }
 
     @Test

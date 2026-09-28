@@ -331,9 +331,10 @@ cut: XDebuggerTree [ref=e109] shows 3 of 8 rows; {"action":"splitter","ref":"e10
 cut: the header "Default parameter" of TableView [ref=e223] is cut; {"action":"window","width":612} makes room
 ```
 
-Run the step and take the picture again, or pass `"fit": true` to run them first. In Split Mode the lines
-cover what the JetBrains Client draws: the controls of a host Settings page live on the backend and give no
-`cut:` line, so read that part of the picture.
+Run the step and take the picture again, or pass `"fit": true` to run them first. In Split Mode the lines also
+cover a host Settings page, whose controls live on the backend: the JetBrains Client asks the backend for them
+with `{"action":"get","layout":true,"side":"backend"}`, runs a window step on its own window, and any other
+step, such as a splitter's, on the backend.
 
 ### Code, the click point, inspections and consoles
 

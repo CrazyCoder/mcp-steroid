@@ -144,7 +144,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"get"|"set", one of "registry":"key", "advanced":"id", "option":"name", "inspection":"ShortName",
           "component":"StateName" with "field", and "value" for set}: reads or changes a setting without a dialog.
           {"action":"set","theme":"Light"} switches to an installed theme and waits for the repaint ("sync" follows
-          the OS); {"action":"get","themes":true} lists the installed themes.
+          the OS); {"action":"get","themes":true} lists the installed themes. {"action":"get","layout":true} lists
+          the layout problems of the showing windows as JSON lines, which a JetBrains Client reads from the backend.
           "option" is an on/off option as Search Everywhere lists it (get with part of the name lists matches);
           "inspection" takes on, off or a severity; "component" is a persistent settings component by its state
           name, get alone shows its saved XML. "log":"#category" reads or sets a debug log level (trace, debug,

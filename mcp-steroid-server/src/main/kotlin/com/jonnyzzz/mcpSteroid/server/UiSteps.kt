@@ -706,7 +706,7 @@ object UiSteps {
             require(step.action == UiAction.WINDOW) { "maximize goes with window, not $action" }
             require(step.width == null && step.height == null) { "maximize fills the screen; drop width and height" }
         }
-        if (step.layout) require(step.action == UiAction.EXPECT) { "layout goes with expect, not $action" }
+        if (step.layout) require(step.action == UiAction.EXPECT || step.action == UiAction.GET) { "layout goes with get and expect, not $action" }
         if (step.path != null) require(step.action in PATH_ACTIONS) { "path goes with menu, check and uncheck, not $action" }
         step.mode?.let {
             require(step.action == UiAction.MENU) { "mode goes with menu, not $action" }
@@ -766,9 +766,10 @@ object UiSteps {
                     step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors }, "memory".takeIf { step.memory },
                     "builds".takeIf { step.builds }, "changes".takeIf { step.changes }, step.console,
                     "notifications".takeIf { step.notifications }, step.problems, step.theme, "themes".takeIf { step.themes },
+                    "layout".takeIf { step.layout },
                 )
                 require(kinds.size == 1) {
-                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors, memory, builds, changes, console, notifications, problems or themes"
+                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors, memory, builds, changes, console, notifications, problems, themes or layout"
                     else "set needs exactly one of registry, advanced, option, inspection, component, log or theme"
                 }
                 if (step.action == UiAction.SET) require(
