@@ -122,7 +122,7 @@ soft. Each expect has one subject:
 | `error` | An IDE error logged since the call started whose summary contains this; `""` or `true` matches any | `{"action":"expect","error":"","not":true}` |
 | `editor` | An editor of a project file, by path or name, that this side shows: `is` visible (default), focused, or hidden for none. It checks what the user sees, where `file` checks the text | `{"action":"expect","editor":"src/A.kt","is":"focused"}` |
 | `log` | A line of this side's `idea.log`, written since the run started, that contains this, not counting MCP Steroid's own lines. It checks the mechanism behind a symptom, such as an editor opening | `{"action":"expect","log":"Opening remote editor for file=A.kt","side":"backend"}` |
-| `memory` + `below` | A memory figure of this side under a limit: `heap_after_gc`, the heap in MB right after a full GC, which the check runs first; `heap`, the heap in use in MB; `threads`; or `gc_signals`, the overloaded-GC signals of the last 15 minutes. It checks a memory leak fix or a thread leak | `{"action":"expect","memory":"heap_after_gc","below":1500}` |
+| `memory` + `below` | A memory figure of this side under a limit: `heap_after_gc`, the heap in MB right after a full GC, which the check runs first unless the IDE disables explicit GC, as its report then says; `heap`, the heap in use in MB; `threads`; or `gc_signals`, the overloaded-GC signals of the last 15 minutes. It checks a memory leak fix or a thread leak | `{"action":"expect","memory":"heap_after_gc","below":1500}` |
 
 A check that fails says what it wanted and what it found, and for a target that matched nothing, the
 nearest controls. `{"action":"expect","error":"","not":true}` after the steps is the check for a report of

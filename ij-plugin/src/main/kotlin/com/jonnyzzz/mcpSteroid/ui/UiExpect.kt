@@ -89,7 +89,8 @@ internal class UiExpect(
     private suspend fun memory(metric: String, below: Long): Check {
         val heapMb = { ManagementFactory.getMemoryMXBean().heapMemoryUsage.used / (1024 * 1024) }
         val (label, value, unit) = when (metric) {
-            "heap_after_gc" -> {
+            // With explicit GC disabled, System.gc() does nothing, and the figure is the heap in use as it is.
+            "heap_after_gc" -> if (explicitGcDisabled) Triple("the heap in use (the IDE runs with -XX:+DisableExplicitGC, so no full GC ran)", heapMb(), " MB") else {
                 val now = System.currentTimeMillis()
                 if (now - lastGcMs >= GC_EVERY_MS) {
                     @Suppress("ExplicitGarbageCollectionCall") // The check measures the live heap, which only a full GC shows.
@@ -320,6 +321,8 @@ internal class UiExpect(
         /** When a heap_after_gc check last ran a full GC, in this process. */
         @Volatile
         var lastGcMs = 0L
+
+        val explicitGcDisabled: Boolean by lazy { "-XX:+DisableExplicitGC" in ManagementFactory.getRuntimeMXBean().inputArguments }
     }
 }
 
