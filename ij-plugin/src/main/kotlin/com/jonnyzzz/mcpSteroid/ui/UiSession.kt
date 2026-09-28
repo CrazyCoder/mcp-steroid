@@ -824,6 +824,39 @@ class UiSession(
         } else {
             withContext(edtAny) { scopeWindows().firstOrNull { it !== projectFrame() } }
         } ?: throw UiStepFailure("there is no dialog, popup or separate window to close")
+        return closeWindow(window)
+    }
+
+    /**
+     * Closes the windows and menus that opened since [before], the newest first, as a close step does each, for a call
+     * with restore. A window that does not close is reported, not failed: the restores after it still run.
+     */
+    suspend fun closeOpenedSince(before: Set<Window>): List<String> {
+        val lines = mutableListOf<String>()
+        withContext(edtAny) {
+            val menus = MenuSelectionManager.defaultManager()
+            if (menus.selectedPath.isNotEmpty()) {
+                menus.clearSelectedPath()
+                lines += "closed the open menu"
+            }
+        }
+        UiSettle.barrier()
+        // The showing windows leave tooltips out; the IDE lists windows in the order they were made.
+        val new = UiSettle.showingWindows() - before
+        val opened = withContext(edtAny) { Window.getWindows().filter { it in new }.reversed() }
+        for (window in opened) {
+            if (!withContext(edtAny) { window.isShowing }) continue
+            val name = withContext(edtAny) { describeWindow(window) }
+            lines += try {
+                "$name: ${closeWindow(window)}"
+            } catch (e: UiStepFailure) {
+                "$name: not closed: ${e.message}"
+            }
+        }
+        return lines
+    }
+
+    private suspend fun closeWindow(window: Window): String {
         val windowsBefore = UiSettle.showingWindows()
         val (way, closed) = withContext(edtAny) {
             val root = (window as? RootPaneContainer)?.rootPane

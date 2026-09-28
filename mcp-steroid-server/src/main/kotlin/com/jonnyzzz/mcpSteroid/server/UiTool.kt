@@ -259,6 +259,17 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         .withDefaultValue(false)
         .registerToSchema()
 
+    val restore = InputSchemaElement.param("restore")
+        .description(
+            "With steps: afterwards close the windows and menus the call opened and put back what its steps changed " +
+                "(settings, theme, sizes, menu items, files), as a scenario replay does, so the IDE is left as the call " +
+                "found it. Runs whether the steps passed or failed. A scenario replay restores by itself."
+        )
+        .cliSynopsis("put the IDE back after the steps")
+        .boolean()
+        .withDefaultValue(false)
+        .registerToSchema()
+
     val side = InputSchemaElement.param("side")
         .description(
             "Split Mode only: where to read and act. 'frontend' (default) is the JetBrains Client, which shows " +
@@ -287,6 +298,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                 snapshot = context[snapshot],
                 maxNodes = context[maxNodes],
                 trace = context[trace],
+                restore = context[restore],
                 side = context[side],
                 jsonOutput = ToolOutputContract.wantsJson(context.params.arguments),
                 executionBackend = context.executionBackendProvenance(),
@@ -313,6 +325,8 @@ data class UiParams(
     val snapshot: UiSnapshotMode? = null,
     val maxNodes: Int = UiToolSpec.DEFAULT_MAX_NODES,
     val trace: Boolean = false,
+    /** With steps: close what the call opened and apply its restores afterwards. */
+    val restore: Boolean = false,
     val side: String? = null,
     /** Whether the result is the [ToolOutputContract] envelope rather than text for a model. */
     val jsonOutput: Boolean = false,

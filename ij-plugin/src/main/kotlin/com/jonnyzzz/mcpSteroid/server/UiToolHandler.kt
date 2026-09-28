@@ -22,6 +22,7 @@ import kotlinx.serialization.json.put
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.ui.UiSession
 import com.jonnyzzz.mcpSteroid.ui.UiSessionResult
+import com.jonnyzzz.mcpSteroid.ui.UiSettle
 import com.jonnyzzz.mcpSteroid.ui.UiTrace
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -63,6 +64,7 @@ class UiToolHandlerIJ : UiToolHandler {
         val allSteps: List<UiStep>
         try {
             require(params.scenario == null || params.steps.isNullOrBlank()) { "pass steps or scenario, not both" }
+            require(!params.restore || params.scenario == null) { "a scenario replay restores by itself; drop restore" }
             // A JetBrains Client's own project folder is a synthetic one under its config: the backend's is the project's.
             val base = bridge?.backendPathFor(project) ?: project.basePath
             val file = params.scenario?.let { scenarioFile(base, it) }
@@ -117,10 +119,13 @@ class UiToolHandlerIJ : UiToolHandler {
         val setupSteps = scenario?.setup.orEmpty()
         // The steps' own waits bound the call, plus an allowance for delivery and settling per step.
         val budgetMs = (setupSteps + steps + cleanup).sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
+        // What a call with restore closes afterwards: the windows that were not showing before its steps.
+        val windowsBefore = if (params.restore) UiSettle.showingWindows() else emptySet()
         return try {
             val started = TimeSource.Monotonic.markNow()
             var setupResult: UiSessionResult? = null
             var room: String? = null
+            var closed: List<String> = emptyList()
             val (result, cleanupResult) = withTimeout(budgetMs.milliseconds) {
                 val setup = if (setupSteps.isEmpty()) null else session.run(setupSteps, UiSnapshotMode.NONE, labelPrefix = "setup step")
                 setupResult = setup
@@ -139,10 +144,13 @@ class UiToolHandlerIJ : UiToolHandler {
                 // Every cleanup step runs: one that finds nothing to undo, such as a close with no dialog open, stops none.
                 val after = if (cleanup.isEmpty()) null
                 else session.run(cleanup.map { it.copy(soft = true) }, UiSnapshotMode.NONE, labelPrefix = "cleanup step", record = false)
+                // A call with restore closes what its steps opened, as a scenario's cleanup would.
+                if (params.restore) closed = session.closeOpenedSince(windowsBefore)
                 main to after
             }
-            // Then a whole scenario puts back what its steps changed, last change first, as its cleanup's last part.
-            val restoreSteps = if (scenario != null && to == allSteps.size) UiSteps.parse(JsonArray(result.undo)).map { it.copy(soft = true) } else emptyList()
+            // Then a whole scenario, or a call with restore, puts back what its steps changed, last change first.
+            val restoring = scenario != null && to == allSteps.size || params.restore
+            val restoreSteps = if (restoring) UiSteps.parse(JsonArray(result.undo)).map { it.copy(soft = true) } else emptyList()
             val restoreResult = if (restoreSteps.isEmpty()) null else withTimeout((restoreSteps.sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS).milliseconds) {
                 session.run(restoreSteps, UiSnapshotMode.NONE, labelPrefix = "restore step", record = false)
             }
@@ -170,6 +178,7 @@ class UiToolHandlerIJ : UiToolHandler {
                 result.codeChanges?.let { append("\ncode changes:\n").append(it) }
                 // Cleanup steps run soft, so a failed one is among the reports and never stops the others.
                 cleanupResult?.reports?.forEach { append('\n').append(it.line) }
+                closed.forEach { append("\nrestore: ").append(it) }
                 restoreResult?.reports?.forEach { append('\n').append(it.line) }
                 undoLine?.let { append('\n').append(it) }
                 verdict?.let { append('\n').append(it.line) }
