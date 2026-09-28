@@ -323,6 +323,8 @@ object UiSteps {
     private val HIGHLIGHT_FIELDS = TARGET_FIELDS + setOf("row", "index", "label", "lines", "symbol", "file", "click", "inspection", "console", "contains")
     /** The share of its first pane a splitter step sets: a pane never shrinks to nothing. */
     val PROPORTIONS = 0.05..0.95
+    /** The sizes a splitter step gives a pane; 0 puts back a pane a person collapsed. */
+    val SPLIT_SIZES = 0..20_000
     private val LINES = Regex("""(\d+)(?:-(\d+))?""")
 
     /** The lines `"a-b"` or `"a"` name, 1-based, with a <= b. */
@@ -631,9 +633,13 @@ object UiSteps {
         if (step.action == UiAction.SPLITTER) {
             require(step.proportion != null || step.size != null) { "splitter needs a proportion or size: the first pane's share, or the pane's size in pixels or \"fit\"" }
             require(step.proportion == null || step.size == null) { "splitter takes a proportion or a size, not both" }
-            step.proportion?.let { require(it in PROPORTIONS) { "proportion is from ${PROPORTIONS.start} to ${PROPORTIONS.endInclusive}, the first pane's share; was $it" } }
+            // A restore by key puts back whatever the IDE saved, which a person's drag may have left near an edge.
+            val shares = if (step.key != null) 0.0..1.0 else PROPORTIONS
+            step.proportion?.let { require(it in shares) { "proportion is from ${shares.start} to ${shares.endInclusive}, the first pane's share; was $it" } }
             step.size?.let {
-                require(it == FIT || it.toIntOrNull()?.let { n -> n in SIZES } == true) { "size is \"fit\" or a size in logical pixels from ${SIZES.first} to ${SIZES.last}, was $it" }
+                require(it == FIT || it.toIntOrNull()?.let { n -> n in SPLIT_SIZES } == true) {
+                    "size is \"fit\" or a pane's size in logical pixels from ${SPLIT_SIZES.first} to ${SPLIT_SIZES.last}, was $it"
+                }
             }
             if (step.key != null) require(step.proportion != null) { "a splitter restore by key takes a proportion" }
             else require(step.target != null) { "splitter needs a target: the splitter, or a control in the pane to size" }

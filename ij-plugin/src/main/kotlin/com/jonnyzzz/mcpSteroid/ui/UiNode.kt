@@ -26,9 +26,11 @@ data class UiNode(
     val clip: UiClip? = null,
     /** For a list, tree or table wider than its scroll pane shows: how much, as its rows are cut at the right. */
     val rowsCut: String? = null,
+    /** For a splitter: which way it splits and how, such as `horizontal 0.25`, which a splitter step changes. */
+    val split: String? = null,
 ) {
     /** Listed in a snapshot: it shows something, or an agent can act on it. */
-    val listed: Boolean get() = interactive || !name.isNullOrBlank() || text.isNotEmpty() || !tooltip.isNullOrBlank()
+    val listed: Boolean get() = interactive || !name.isNullOrBlank() || text.isNotEmpty() || !tooltip.isNullOrBlank() || split != null
 
     fun walk(): Sequence<UiNode> = sequence {
         yield(this@UiNode)

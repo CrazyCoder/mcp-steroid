@@ -38,6 +38,7 @@ class FallbackUiWalker(
             offscreen = UiComponentFacts.offscreen(c),
             clip = UiLayout.clip(c),
             rowsCut = UiLayout.rowsCut(c),
+            split = UiSplitters.describe(c),
             children = kids,
         )
     }

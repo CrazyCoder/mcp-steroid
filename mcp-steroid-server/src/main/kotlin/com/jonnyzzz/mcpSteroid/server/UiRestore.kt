@@ -25,7 +25,7 @@ object UiRestore {
     const val LINE = "undo: "
 
     /** The fields that hold the value a restore sets; the others name the state it sets. */
-    private val VALUE_FIELDS = setOf("value", "width", "height", "maximize", "hide", "text", "delete", "tab", "mode")
+    private val VALUE_FIELDS = setOf("value", "width", "height", "maximize", "hide", "text", "delete", "tab", "mode", "size", "proportion", "timeout_ms")
 
     /**
      * The state [step] sets, such as one registry key, one tool window's size, or one file. `check` and `uncheck`
@@ -65,12 +65,12 @@ object UiRestore {
         fun steps(): List<JsonObject> = groups.asReversed().flatten()
     }
 
-    /** A step of [action] with [fields], each a string, a whole number or true or false. */
+    /** A step of [action] with [fields], each a string, a number or true or false. */
     fun step(action: String, vararg fields: Pair<String, Any>): JsonObject = JsonObject(
         mapOf("action" to JsonPrimitive(action)) + fields.associate { (k, v) ->
             k to when (v) {
                 is Boolean -> JsonPrimitive(v)
-                is Int -> JsonPrimitive(v)
+                is Number -> JsonPrimitive(v)
                 else -> JsonPrimitive(v.toString())
             }
         }

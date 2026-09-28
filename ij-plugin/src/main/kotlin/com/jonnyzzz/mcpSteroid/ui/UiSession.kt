@@ -580,7 +580,8 @@ class UiSession(
                 else -> menu.step(step.path, actionComponent(), step.timeoutMs, undo = undo)
             }
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
-            UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT, UiAction.SPLITTER -> error("not an input step")
+            UiAction.SPLITTER -> splitterStep(step)
+            UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
         }
     }
 
@@ -969,6 +970,58 @@ class UiSession(
             }
         }
         return UiResize.window(window, step.width, step.height, step.maximize)
+    }
+
+    /**
+     * Moves a splitter's divider: the splitter the target is, or the nearest one above the control, whose pane holding
+     * it gets the size, or for "fit", the one along which its content is cut. With a key and no target, puts back the
+     * proportion a `JBSplitter` saves, on the one showing or in the saved settings.
+     */
+    private suspend fun splitterStep(step: UiStep): String {
+        step.key?.let { key -> return withContext(edtAny) { restoreSplitterKey(key, step.proportion!!) } }
+        val node = try {
+            resolve(step.target!!, step.timeoutMs, requireEnabled = false)
+        } catch (e: UiStepFailure) {
+            // A restore names the pane by ref with no wait: a pane whose window closed has nothing left to put back.
+            if (step.timeoutMs == 0L && step.target?.ref != null) return "the splitter pane ${step.target!!.ref} is gone; nothing to put back"
+            throw e
+        }
+        val line = withContext(edtAny) {
+            val c = node.component
+            val pane = (if (step.size == UiSteps.FIT) UiSplitters.cutAxes(c).firstNotNullOfOrNull { UiSplitters.paneOf(c, it) } else null)
+                ?: UiSplitters.paneOf(c)
+                ?: throw UiStepFailure("${describe(node)} is in no splitter; a window or tool window step sizes what holds it")
+            val s = pane.splitter
+            val restores = mutableListOf(UiRestore.step("splitter", "ref" to registry.refFor(pane.child), "size" to UiSplitters.size(pane), "timeout_ms" to 0))
+            UiSplitters.savedKey(s)?.let { key -> restores += UiRestore.step("splitter", "key" to key, "proportion" to UiSplitters.proportion(s)) }
+            undo(restores)
+            val r = when {
+                step.proportion != null -> UiSplitters.setProportion(s, step.proportion!!)
+                step.size == UiSteps.FIT -> UiSplitters.setSize(pane, UiSplitters.fitSize(pane))
+                else -> UiSplitters.setSize(pane, step.size!!.toInt())
+            }
+            val axis = if (pane.axis == UiSplitters.Axis.HEIGHT) "high" else "wide"
+            val paneNode = FallbackUiWalker().leaf(pane.child)
+            "moved the divider of ${UiComponentFacts.simpleClassName(s)} [ref=${registry.refFor(s)}]: the pane with ${describe(paneNode)} is ${r.after} px $axis, " +
+                "was ${r.before} px (proportion ${UiSplitters.format(r.proportionAfter)}, was ${UiSplitters.format(r.proportionBefore)})" +
+                (r.heldBack?.let { "; held back: $it" } ?: "")
+        }
+        UiSettle.barrier()
+        return line
+    }
+
+    /** Puts back proportion [share] under [key]: on the `JBSplitter` showing with that key, else in the saved settings. EDT. */
+    private fun restoreSplitterKey(key: String, share: Double): String {
+        val showing = Window.getWindows().asSequence().filter { it.isShowing }
+            .flatMap { UIUtil.uiTraverser(it).asSequence() }
+            .firstOrNull { it is com.intellij.ui.JBSplitter && it.isShowing && UiSplitters.savedKey(it) == key } as? com.intellij.ui.JBSplitter
+        if (showing != null) {
+            showing.proportion = share.toFloat()
+            return "the splitter saved as $key is back to ${UiSplitters.format(share)}"
+        }
+        // As JBSplitter stores it, a float in text form, which it reads with getFloat.
+        com.intellij.ide.util.PropertiesComponent.getInstance().setValue(key, share.toFloat().toString())
+        return "the saved proportion of $key is back to ${UiSplitters.format(share)}"
     }
 
     /** The step that gives the IDE window [frame] its size now: maximized, or its width and height. EDT. */

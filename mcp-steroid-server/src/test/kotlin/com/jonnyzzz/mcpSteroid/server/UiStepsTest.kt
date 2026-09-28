@@ -38,9 +38,26 @@ class UiStepsTest {
     }
 
     @Test
-    fun `a splitter restore by key needs no target`() {
+    fun `a splitter restore by key needs no target and takes any saved proportion`() {
         assertEquals("x.split", UiSteps.parse("""[{"action":"splitter","key":"x.split","proportion":0.4}]""").single().key)
+        assertEquals(0.02, UiSteps.parse("""[{"action":"splitter","key":"x.split","proportion":0.02}]""").single().proportion)
         assertMentions(fails("""[{"action":"splitter","key":"x.split","size":"200"}]"""), "key")
+        assertMentions(fails("""[{"action":"splitter","key":"x.split","proportion":1.5}]"""), "proportion")
+    }
+
+    @Test
+    fun `a splitter pane can be put back to nothing`() {
+        assertEquals("0", UiSteps.parse("""[{"action":"splitter","ref":"e4","size":0}]""").single().size)
+    }
+
+    @Test
+    fun `restores of one splitter pane keep the first`() {
+        val a = UiRestore.step("splitter", "ref" to "e4", "size" to 100)
+        val b = UiRestore.step("splitter", "ref" to "e4", "size" to 300)
+        assertEquals(UiRestore.key(a), UiRestore.key(b))
+        // A restore of a saved proportion parses back as a step.
+        val byKey = UiRestore.step("splitter", "key" to "x.split", "proportion" to 0.42)
+        assertEquals(0.42, UiSteps.parse(kotlinx.serialization.json.JsonArray(listOf(byKey))).single().proportion)
     }
 
     @Test

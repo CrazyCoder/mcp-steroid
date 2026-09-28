@@ -110,6 +110,7 @@ object RemoteDriverModel {
             offscreen = UiComponentFacts.offscreen(component),
             clip = UiLayout.clip(component),
             rowsCut = UiLayout.rowsCut(component),
+            split = UiSplitters.describe(component),
             // The model's hierarchy lists a window's owned windows as its children. A snapshot lists each window on
             // its own, so an owned dialog or popup inside its owner's tree would appear twice.
             children = e.childElements()
