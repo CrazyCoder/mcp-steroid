@@ -145,8 +145,8 @@ data class UiStep(
     /** On a get step: the diff of the project files the run changed so far. */
     val changes: Boolean = false,
     /**
-     * On a get or expect step: a Run or Debug console by its tab's name, such as "App", or "" for the one the Run tool
-     * window selects. A get reads its last [lines] lines; an expect checks its text with contains or matches.
+     * On a get or expect step: the output of the latest run by its name, as its Run or Debug tab shows it, such as
+     * "App", or "" for the latest run. A get reads its last [lines] lines; an expect checks it with contains or matches.
      */
     val console: String? = null,
     /** On a get of a console: how many of its last lines to read. */
@@ -546,7 +546,10 @@ object UiSteps {
     private fun validateExpect(step: UiStep) {
         require(!step.memory) { "expect takes a memory figure: one of ${MEMORY_METRICS.joinToString()}" }
         // A layout check takes a target as its scope, not as a second subject.
-        step.golden?.let { require(step.file != null && it.isNotBlank()) { "golden goes with a file: the path of a file holding its whole expected text" } }
+        step.golden?.let {
+            require(step.file != null && it.isNotBlank()) { "golden goes with a file: the path of a file holding its whole expected text" }
+            require(step.line == null && step.caret == null) { "golden checks the whole file, not a line or the caret" }
+        }
         // A diff with a file checks that file's diff; alone, the whole run's.
         val subjects = listOfNotNull(
             step.target?.takeIf { !step.layout }?.let { "a target" }, "layout".takeIf { step.layout }, step.title?.let { "title" }, step.file?.let { "file" },
@@ -599,7 +602,7 @@ object UiSteps {
                 require(!textCheck && step.caret == null && step.line == null) { "a window takes is=visible or is=hidden only" }
             }
             step.console != null -> require(step.state == null && step.value == null && step.caret == null && step.line == null && (step.contains != null || step.matches != null)) {
-                "expect on a console needs contains or matches, which its text since the run started is checked with"
+                "expect on a console needs contains or matches, which the output of its latest run is checked with"
             }
             step.changed != null -> require(step.state == null && !textCheck && step.caret == null && step.line == null) { "changed takes the list of files alone" }
             step.diff != null && step.file == null -> require(step.state == null && step.caret == null && step.line == null) { "diff takes its lines, and a file to narrow it" }

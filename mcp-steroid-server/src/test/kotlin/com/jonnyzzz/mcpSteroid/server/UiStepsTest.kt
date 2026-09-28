@@ -295,6 +295,7 @@ class UiStepsTest {
         assertTrue(fails("""[{"action":"expect","changed":"src/A.java"}]""").contains("JSON array"))
         assertTrue(fails("""[{"action":"expect","diff":"int b;"}]""").contains("starts with + (added)"))
         assertTrue(fails("""[{"action":"expect","golden":"x"}]""").contains("golden goes with a file"))
+        assertTrue(fails("""[{"action":"expect","file":"a","golden":"x","line":3}]""").contains("golden checks the whole file"))
         assertTrue(fails("""[{"action":"expect","file":"a","golden":"x","contains":"y"}]""").contains("pass one of"))
         assertTrue(fails("""[{"action":"expect","changed":[],"diff":"+a"}]""").contains("one subject"))
         assertTrue(fails("""[{"action":"click","name":"OK","diff":"+a"}]""").contains("go(es) with expect"))

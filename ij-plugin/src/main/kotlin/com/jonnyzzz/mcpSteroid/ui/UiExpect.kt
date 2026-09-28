@@ -14,11 +14,11 @@ import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
+import com.intellij.openapi.vfs.VfsUtilCore
 import com.jonnyzzz.mcpSteroid.freeze.IdeBanners
 import com.jonnyzzz.mcpSteroid.freeze.IdeErrors
 import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
 import com.jonnyzzz.mcpSteroid.freeze.IdeRuns
-import com.intellij.openapi.vfs.VfsUtilCore
 import com.jonnyzzz.mcpSteroid.server.UiExpectState
 import com.jonnyzzz.mcpSteroid.server.UiStep
 import com.jonnyzzz.mcpSteroid.server.UiTarget

@@ -141,7 +141,10 @@ class IdeBuilds {
             if (builds.isEmpty()) return "no build or sync finished since the IDE started"
             return builds.sortedByDescending { it.seq }.joinToString("\n") { b ->
                 buildString {
-                    append("${TIME.format(Instant.ofEpochMilli(b.atMs))} ${b.title} in ${b.project}: ")
+                    // The IDE's own build is titled with the project's name.
+                    append("${TIME.format(Instant.ofEpochMilli(b.atMs))} ${b.title}")
+                    if (b.title != b.project) append(" in ${b.project}")
+                    append(": ")
                     append(if (!b.failed) "passed" else when (b.errorCount) { 0 -> "failed"; 1 -> "failed with 1 error"; else -> "failed with ${b.errorCount} errors" })
                     for (e in b.errors) append("\n  ").append(e)
                     if (b.errorCount > b.errors.size) append("\n  and ${b.errorCount - b.errors.size} more")
