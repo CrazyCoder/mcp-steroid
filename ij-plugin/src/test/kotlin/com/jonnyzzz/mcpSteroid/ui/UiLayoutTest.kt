@@ -111,6 +111,9 @@ class UiLayoutTest {
         val root = FallbackUiWalker(onlyShowing = false).build(scroll)
         val cuts = UiLayout.cuts(root, refs(root)) { true }
         assertTrue(cuts.toString(), cuts.any { it.what.contains("Default parameter value") && it.fix == null })
+        // What the header lacks, which a wider dialog gives it.
+        assertTrue(cuts.toString(), cuts.first { it.what.contains("Default parameter value") }.need > 20)
+        assertEquals("""{"action":"window","width":730}""", UiLayout.sizedWindowFix(700, 1400, cuts.filter { it.what.contains("Default") }.map { it.copy(need = 22) }))
         // In the IDE window a header squeezed by its tool window is not reported.
         assertTrue(UiLayout.cuts(root, refs(root)) { false }.none { it.what.contains("Default parameter value") })
     }

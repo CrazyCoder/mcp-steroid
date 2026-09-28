@@ -154,8 +154,24 @@ object UiLayout {
      */
     class Problem(val line: String, val fix: String?, val toolWindow: String?, val area: Rectangle? = null)
 
-    /** Content a pane, field or header cuts: what is cut, and the splitter step that makes room, or null when none does. */
-    data class Cut(val node: UiNode, val what: String, val fix: String?)
+    /**
+     * Content a pane, field or header cuts: what is cut, the splitter step that makes room, or null when none does, and
+     * [need], the pixels it lacks along [axis].
+     */
+    data class Cut(val node: UiNode, val what: String, val fix: String?, val need: Int = 0, val axis: UiSplitters.Axis = UiSplitters.Axis.WIDTH)
+
+    /** Pixels a window step adds beyond what the cut content lacks, for the borders and rounding of its layout. */
+    private const val WINDOW_ROOM = 8
+
+    /**
+     * The window step that gives a dialog [width] px wide, on a screen [screenWidth] px wide, the width its [cuts]
+     * lack: the most any of them lacks, as a wider dialog widens each of its fields and tables; null when none lacks
+     * width. A fit to the dialog's preferred size does not do: a dialog that cuts its fields often prefers the size it has.
+     */
+    fun sizedWindowFix(width: Int, screenWidth: Int, cuts: List<Cut>): String? {
+        val need = cuts.filter { it.axis == UiSplitters.Axis.WIDTH }.maxOfOrNull { it.need }?.takeIf { it > 0 } ?: return null
+        return """{"action":"window","width":${minOf(width + need + WINDOW_ROOM, screenWidth)}}"""
+    }
 
     /**
      * Fewer rows than this showing, of a list that has more, count as cut: a pane squeezed to a few rows, as the
@@ -186,12 +202,12 @@ object UiLayout {
     private fun cutsOf(node: UiNode, refOf: (UiNode) -> String, inDialog: (Component) -> Boolean): List<Cut> {
         val c = node.component
         val out = mutableListOf<Cut>()
-        fun add(what: String, axis: UiSplitters.Axis) {
+        fun add(what: String, axis: UiSplitters.Axis, need: Int) {
             val pane = paneFor(c, axis)
             // A splitter whose other panes keep their minimum sizes has no room to give: the window's step does then.
             val fix = pane?.takeIf { UiSplitters.fitSize(it, c) > UiSplitters.size(it) + SLACK }
                 ?.let { """{"action":"splitter","ref":"${refOf(node)}","size":"fit"}""" }
-            if (pane != null || inDialog(c)) out += Cut(node, what, fix)
+            if (pane != null || inDialog(c)) out += Cut(node, what, fix, need, axis)
         }
         val name = describe(node, refOf)
         val total = when (c) {
@@ -203,31 +219,31 @@ object UiLayout {
         if (total in 1..MAX_ROWS_TO_FIT && c.parent is JViewport) {
             val view = (c as JComponent).visibleRect
             val shown = (0 until total).count { i -> UiRows.bounds(c, i)?.let { view.contains(it) } == true }
-            if (shown < minOf(total, MIN_ROWS_SHOWN) && UiSplitters.shortfall(c, UiSplitters.Axis.HEIGHT) > SLACK) {
-                add("$name shows $shown of $total rows", UiSplitters.Axis.HEIGHT)
-            }
+            val high = UiSplitters.shortfall(c, UiSplitters.Axis.HEIGHT)
+            if (shown < minOf(total, MIN_ROWS_SHOWN) && high > SLACK) add("$name shows $shown of $total rows", UiSplitters.Axis.HEIGHT, high)
         }
         val wide = UiSplitters.shortfall(c, UiSplitters.Axis.WIDTH)
         if ((c is JTree || c is TreeTable || rowsCut(c) != null) && wide > SLACK && (c is TreeTable || c.parent is JViewport)) {
-            add("the rows of $name are cut at the right: they need $wide px more", UiSplitters.Axis.WIDTH)
+            add("the rows of $name are cut at the right: they need $wide px more", UiSplitters.Axis.WIDTH, wide)
         }
         if (c is JTable) {
             c.tableHeader?.let { header ->
-                val cut = (0 until c.columnModel.columnCount).map { c.columnModel.getColumn(it) }.filter { column ->
-                    val shown = header.defaultRenderer.getTableCellRendererComponent(c, column.headerValue, false, false, -1, column.modelIndex)
-                    shown.preferredSize.width > column.width + SLACK
-                }
-                if (cut.isNotEmpty()) add("the header ${cut.joinToString { "\"${it.headerValue}\"" }} of $name is cut", UiSplitters.Axis.WIDTH)
+                val lacks = (0 until c.columnModel.columnCount).map { c.columnModel.getColumn(it) }.associateWith { column ->
+                    header.defaultRenderer.getTableCellRendererComponent(c, column.headerValue, false, false, -1, column.modelIndex).preferredSize.width - column.width
+                }.filterValues { it > SLACK }
+                // A wider table shares its width out over its columns: each cut column needs its share of the whole.
+                if (lacks.isNotEmpty()) add("the header ${lacks.keys.joinToString { "\"${it.headerValue}\"" }} of $name is cut", UiSplitters.Axis.WIDTH,
+                    lacks.values.max() * c.columnModel.columnCount)
             }
         }
-        val fieldCut = when (c) {
-            is EditorComponentImpl -> c.editor.contentComponent.preferredSize.width > c.editor.scrollingModel.visibleArea.width + SLACK
-            is JComboBox<*> -> c.preferredSize.width > c.width + SLACK
-            else -> false
+        val fieldNeed = when (c) {
+            is EditorComponentImpl -> c.editor.contentComponent.preferredSize.width - c.editor.scrollingModel.visibleArea.width
+            is JComboBox<*> -> c.preferredSize.width - c.width
+            else -> 0
         }
         // An editor in the IDE window scrolls its code sideways by design; only a field in a dialog counts.
-        if (fieldCut && (c !is EditorComponentImpl || inDialog(c))) add("the text of $name is cut", UiSplitters.Axis.WIDTH)
-        if (node.clip == UiClip.TRUNCATED) add("$name is truncated", UiSplitters.Axis.WIDTH)
+        if (fieldNeed > SLACK && (c !is EditorComponentImpl || inDialog(c))) add("the text of $name is cut", UiSplitters.Axis.WIDTH, fieldNeed)
+        if (node.clip == UiClip.TRUNCATED) add("$name is truncated", UiSplitters.Axis.WIDTH, c.preferredSize.width - c.width)
         return out
     }
 
@@ -274,15 +290,20 @@ object UiLayout {
             problems += Problem("layout: ${controls(rest, refOf)} in this window; ${windowStep(window)}", windowFix(window), null, screenArea(rest.map { it.component }))
         }
         // One line per step: several cuts one splitter or one window step fixes read together.
-        val cuts = cuts(root, refOf).map { cut ->
+        val all = cuts(root, refOf)
+        // The cuts no splitter or tool window fixes widen the window by what the widest of them lacks.
+        val loose = all.filter { cut -> cut.fix == null && toolWindows.none { it.holds(cut.node.component) } }
+        val screen = ScreenUtil.getScreenRectangle(window)
+        val windowWide = if (window is IdeFrame) null else sizedWindowFix(window.width, screen.width, loose)
+        val cuts = all.map { cut ->
             val tw = toolWindows.firstOrNull { it.holds(cut.node.component) }
-            Triple(cut, cut.fix ?: tw?.step ?: windowFix(window), tw)
+            Triple(cut, cut.fix ?: tw?.step ?: windowWide ?: windowFix(window), tw)
         }
         for ((fix, group) in cuts.groupBy { it.second }) {
             val tw = group.first().third
             val how = when {
                 fix == null -> windowStep(window)
-                group.first().first.fix == null && tw == null -> windowStep(window)
+                fix == windowFix(window) && tw == null -> windowStep(window)
                 else -> "$fix makes room"
             }
             problems += Problem("layout: ${group.joinToString("; ") { it.first.what }}; $how", fix, tw?.id, screenArea(group.map { it.first.node.component }))
