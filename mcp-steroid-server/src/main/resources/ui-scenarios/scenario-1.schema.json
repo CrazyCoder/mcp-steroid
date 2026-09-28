@@ -94,9 +94,19 @@
           "properties": {
             "ref": {"type": "string"}, "name": {"type": "string"}, "text": {"type": "string"}, "class": {"type": "string"},
             "xpath": {"type": "string"}, "nth": {"type": "integer", "minimum": 0},
-            "row": {"type": "string"}, "index": {"type": "integer", "minimum": 0}, "label": {"type": "string"}
+            "row": {"type": "string"}, "index": {"type": "integer", "minimum": 0}, "label": {"type": "string"},
+            "lines": {"type": "string", "pattern": "^[0-9]+(-[0-9]+)?$", "description": "Lines of code, 1-based, in the editor of file or the selected one."},
+            "symbol": {"type": "string", "description": "A name in the editor of file or the selected one, as goto finds it."},
+            "file": {"type": "string"},
+            "click": {"const": true, "description": "The point of the call's last click, drawn as a mouse pointer."},
+            "inspection": {"type": "string", "description": "An inspection's row on the Inspections page, by its short name."},
+            "console": {"type": "string", "description": "The console of a run by its name; contains names the lines to outline."},
+            "contains": {"type": "string"}
           },
-          "anyOf": [{"required": ["ref"]}, {"required": ["name"]}, {"required": ["text"]}, {"required": ["class"]}, {"required": ["xpath"]}]
+          "anyOf": [
+            {"required": ["ref"]}, {"required": ["name"]}, {"required": ["text"]}, {"required": ["class"]}, {"required": ["xpath"]},
+            {"required": ["lines"]}, {"required": ["symbol"]}, {"required": ["click"]}, {"required": ["inspection"]}, {"required": ["console", "contains"]}
+          ]
         }
       ]
     },
@@ -105,7 +115,7 @@
       "required": ["action"],
       "additionalProperties": false,
       "properties": {
-        "action": {"enum": ["click", "hover", "type", "fill", "press", "check", "uncheck", "select", "close", "wait", "snapshot", "goto", "run", "inspect", "scroll", "expect", "settings", "get", "set", "toolwindow", "window", "menu", "write", "perf", "code", "screenshot"]},
+        "action": {"enum": ["click", "hover", "type", "fill", "press", "check", "uncheck", "select", "close", "wait", "snapshot", "goto", "run", "inspect", "scroll", "expect", "settings", "get", "set", "toolwindow", "window", "menu", "write", "perf", "code", "screenshot", "splitter"]},
         "ref": {"type": "string"},
         "name": {"type": "string"},
         "text": {"type": "string"},
@@ -175,7 +185,14 @@
         "save": {"type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$"},
         "out": {"type": "string", "pattern": "(^|[/\\\\])[^/\\\\.]+$|\\.([pP][nN][gG]|[jJ][pP][eE]?[gG])$", "description": "The picture's path, relative to the scenario file's folder: a .png, the default without an extension, or a .jpg."},
         "highlight": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/highlight"}},
-        "crop": {"anyOf": [{"enum": ["page", "highlights", "popups"]}, {"$ref": "#/$defs/locator"}]},
+        "crop": {"anyOf": [
+          {"enum": ["page", "highlights", "popups"]}, {"$ref": "#/$defs/locator"},
+          {"type": "object", "additionalProperties": false, "required": ["toolwindow"], "properties": {"toolwindow": {"type": "string", "minLength": 1}}}
+        ]},
+        "fit": {"type": "boolean", "description": "On a screenshot: make room for content the picture would show cut, and put the sizes back afterwards."},
+        "proportion": {"type": "number", "minimum": 0.05, "maximum": 0.95, "description": "On a splitter: the first pane's share."},
+        "size": {"$ref": "#/$defs/size"},
+        "key": {"type": "string", "minLength": 1, "description": "On a splitter restore: the key a JBSplitter saves its proportion under."},
         "margin": {"type": "integer", "minimum": 0, "maximum": 200},
         "align": {"enum": ["top", "center"]},
         "show": {"type": "boolean"},
@@ -202,7 +219,8 @@
         {"if": {"properties": {"action": {"const": "write"}}}, "then": {"required": ["file"], "anyOf": [{"required": ["text"]}, {"required": ["delete"]}]}},
         {"if": {"properties": {"action": {"const": "perf"}}}, "then": {"required": ["command"]}},
         {"if": {"properties": {"action": {"const": "code"}}}, "then": {"required": ["code"]}},
-        {"if": {"properties": {"action": {"const": "screenshot"}}}, "then": {"anyOf": [{"required": ["save"]}, {"required": ["out"]}]}}
+        {"if": {"properties": {"action": {"const": "screenshot"}}}, "then": {"anyOf": [{"required": ["save"]}, {"required": ["out"]}]}},
+        {"if": {"properties": {"action": {"const": "splitter"}}}, "then": {"anyOf": [{"required": ["proportion"]}, {"required": ["size"]}]}}
       ]
     }
   }

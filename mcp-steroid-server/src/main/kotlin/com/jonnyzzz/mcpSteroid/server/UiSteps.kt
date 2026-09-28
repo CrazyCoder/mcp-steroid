@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.longOrNull
 
@@ -38,6 +39,7 @@ enum class UiAction(val wire: String) {
     PERF("perf"),
     CODE("code"),
     SCREENSHOT("screenshot"),
+    SPLITTER("splitter"),
 }
 
 enum class UiWaitCondition(val wire: String) {
@@ -82,7 +84,10 @@ data class UiTarget(
     ).joinToString(" ")
 }
 
-/** One highlight of a screenshot: a control by its locator, one of its rows, or the Settings page's breadcrumb. */
+/**
+ * One highlight of a screenshot: a control by its locator, one of its rows, the Settings page's breadcrumb, lines or a
+ * symbol of code, the point of the call's last click, an inspection's row, or the console lines of a run.
+ */
 data class UiHighlight(
     val target: UiTarget?,
     val breadcrumb: Boolean = false,
@@ -90,6 +95,20 @@ data class UiHighlight(
     val index: Int? = null,
     /** Text drawn beside the highlight's number. */
     val label: String? = null,
+    /** Lines of code, `"20-27"` or `"20"`, 1-based, in the editor of [file] or the selected one. */
+    val lines: String? = null,
+    /** A name in the editor of [file] or the selected one, as goto finds it; [nth] picks another occurrence. */
+    val symbol: String? = null,
+    val file: String? = null,
+    /** Which occurrence of [symbol], or of [contains] in a console counted from the last, from 0. */
+    val nth: Int? = null,
+    /** The point of the call's last click, drawn as a mouse pointer. */
+    val click: Boolean = false,
+    /** An inspection's row on the Inspections page, by its short name. */
+    val inspection: String? = null,
+    /** The console of a run by its name, whose lines holding [contains] are outlined. */
+    val console: String? = null,
+    val contains: String? = null,
 )
 
 /** What a screenshot shows of its window: the Settings page, the area of its highlights, the open popups, or one control. */
@@ -105,6 +124,10 @@ sealed interface UiCrop {
         override fun toString() = "popups"
     }
     data class Control(val target: UiTarget) : UiCrop
+    /** A tool window by its id, whatever its selected tab names it. */
+    data class ToolWindow(val id: String) : UiCrop {
+        override fun toString() = "toolwindow $id"
+    }
 }
 
 data class UiStep(
@@ -247,6 +270,14 @@ data class UiStep(
     val themes: Boolean = false,
     /** On a window step: the key the IDE saves the window's size under, which the step writes too; a restore uses it. */
     val dimension: String? = null,
+    /** On a splitter step: the first pane's share, one of [UiSteps.PROPORTIONS]. */
+    val proportion: Double? = null,
+    /** On a splitter step: the pane's size along the splitter's axis in logical pixels, or "fit". */
+    val size: String? = null,
+    /** On a splitter step: the key a `JBSplitter` saves its proportion under, which a restore writes. */
+    val key: String? = null,
+    /** On a screenshot step: make room for content the picture would show cut, and put the sizes back afterwards. */
+    val fit: Boolean = false,
     /**
      * Split Mode: `backend` runs the step on the Remote Development backend, where the project, its files and the
      * windows the backend draws are; the call's own side otherwise. Ignored in a regular IDE.
@@ -287,8 +318,21 @@ object UiSteps {
         "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
         "builds", "changes", "console", "lines", "changed", "diff", "golden", "notifications", "problems", "severity",
         "out", "highlight", "crop", "margin", "align", "show", "theme", "themes", "dimension",
+        "proportion", "size", "key", "fit",
     )
-    private val HIGHLIGHT_FIELDS = TARGET_FIELDS + setOf("row", "index", "label")
+    private val HIGHLIGHT_FIELDS = TARGET_FIELDS + setOf("row", "index", "label", "lines", "symbol", "file", "click", "inspection", "console", "contains")
+    /** The share of its first pane a splitter step sets: a pane never shrinks to nothing. */
+    val PROPORTIONS = 0.05..0.95
+    private val LINES = Regex("""(\d+)(?:-(\d+))?""")
+
+    /** The lines `"a-b"` or `"a"` name, 1-based, with a <= b. */
+    fun parseLines(spec: String): IntRange {
+        val m = LINES.matchEntire(spec.trim()) ?: throw IllegalArgumentException("lines is \"20-27\" or \"20\", 1-based; was \"$spec\"")
+        val first = m.groupValues[1].toIntOrNull() ?: throw IllegalArgumentException("lines \"$spec\" is too large")
+        val last = m.groupValues[2].takeIf { it.isNotEmpty() }?.let { it.toIntOrNull() ?: throw IllegalArgumentException("lines \"$spec\" is too large") } ?: first
+        require(first >= 1 && last >= first) { "lines runs from a first line to a last one, 1-based, such as \"20-27\"; was \"$spec\"" }
+        return first..last
+    }
     /** The highlight of the Settings page's breadcrumb. */
     const val BREADCRUMB = "breadcrumb"
     /** The padding around a crop without a margin, and the margins a step takes, in pixels. */
@@ -488,6 +532,12 @@ object UiSteps {
             theme = obj.string("theme"),
             themes = obj.boolean("themes") ?: false,
             dimension = obj.string("dimension"),
+            proportion = obj.primitive("proportion")?.let {
+                it.doubleOrNull?.takeIf { _ -> !it.isString } ?: throw IllegalArgumentException("proportion must be a number, such as 0.3; was ${it.content}")
+            },
+            size = obj.string("size"),
+            key = obj.string("key"),
+            fit = obj.boolean("fit") ?: false,
             side = obj.string("side"),
             command = obj.string("command"),
             code = obj.string("code"),
@@ -509,22 +559,48 @@ object UiSteps {
         e is JsonObject -> {
             val unknown = e.keys - HIGHLIGHT_FIELDS
             require(unknown.isEmpty()) { "a highlight has unknown field(s) ${unknown.joinToString()}; it takes ${HIGHLIGHT_FIELDS.sorted().joinToString()}" }
-            val target = locator(e) ?: throw IllegalArgumentException("a highlight needs a locator: ref, name, text, class or xpath, or is \"$BREADCRUMB\"")
-            UiHighlight(target, row = e.string("row"), index = e.int("index"), label = e.string("label"))
+            val lines = e.string("lines")?.also { parseLines(it) }
+            val symbol = e.string("symbol")
+            val click = e.boolean("click") ?: false
+            val inspection = e.string("inspection")
+            val console = e.string("console")
+            // A symbol's nth counts its occurrences; a locator's picks one of several matches.
+            val code = lines != null || symbol != null || console != null
+            val target = locator(e)
+            val kinds = listOfNotNull(target?.let { "a locator" }, lines?.let { "lines" }, symbol?.let { "symbol" }, "click".takeIf { click },
+                inspection?.let { "inspection" }, console?.let { "console" })
+            require(kinds.size == 1) {
+                if (kinds.isEmpty()) "a highlight needs a locator (ref, name, text, class or xpath), lines, symbol, click, inspection or console, or is \"$BREADCRUMB\""
+                else "a highlight takes one of a locator, lines, symbol, click, inspection or console, not ${kinds.joinToString(" and ")}"
+            }
+            val file = e.string("file")
+            require(file == null || lines != null || symbol != null) { "file goes with a highlight of lines or a symbol" }
+            val contains = e.string("contains")
+            require((console != null) == (contains != null)) { "a console highlight needs contains, the text of the lines to outline, and contains goes with console" }
+            require(e.string("row") == null && e.int("index") == null || target != null) { "row and index go with a highlight of a control" }
+            UiHighlight(
+                target, row = e.string("row"), index = e.int("index"), label = e.string("label"),
+                lines = lines, symbol = symbol, file = file, nth = if (code) e.int("nth") else null,
+                click = click, inspection = inspection, console = console, contains = contains,
+            )
         }
-        else -> throw IllegalArgumentException("a highlight is \"$BREADCRUMB\" or an object with a locator")
+        else -> throw IllegalArgumentException("a highlight is \"$BREADCRUMB\" or an object")
     }
 
     private fun parseCrop(e: JsonElement): UiCrop = when {
         e is JsonPrimitive && e.isString && e.content == "page" -> UiCrop.Page
         e is JsonPrimitive && e.isString && e.content == "highlights" -> UiCrop.Highlights
         e is JsonPrimitive && e.isString && e.content == "popups" -> UiCrop.Popups
+        e is JsonObject && "toolwindow" in e -> {
+            require(e.keys == setOf("toolwindow")) { "a crop to a tool window takes toolwindow alone, its id such as \"Run\"" }
+            UiCrop.ToolWindow(e.string("toolwindow")?.takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("toolwindow is a tool window's id, such as \"Run\""))
+        }
         e is JsonObject -> {
             val unknown = e.keys - TARGET_FIELDS
-            require(unknown.isEmpty()) { "crop takes a locator: ${TARGET_FIELDS.sorted().joinToString()}" }
+            require(unknown.isEmpty()) { "crop takes a locator (${TARGET_FIELDS.sorted().joinToString()}) or toolwindow" }
             UiCrop.Control(locator(e) ?: throw IllegalArgumentException("crop needs a locator: ref, name, text, class or xpath"))
         }
-        else -> throw IllegalArgumentException("crop is \"page\", \"highlights\", \"popups\" or a locator object")
+        else -> throw IllegalArgumentException("crop is \"page\", \"highlights\", \"popups\", {\"toolwindow\":\"<id>\"} or a locator object")
     }
 
     private fun validate(step: UiStep) {
@@ -548,6 +624,21 @@ object UiSteps {
             require(step.action == UiAction.MENU) { "show goes with menu, not $action" }
             require(!step.path.isNullOrBlank()) { "menu with show needs a path, such as \"View > Appearance\"" }
         }
+        if (step.proportion != null || step.size != null || step.key != null) {
+            require(step.action == UiAction.SPLITTER) { "proportion, size and key go with splitter, not $action" }
+        }
+        if (step.fit) require(step.action == UiAction.SCREENSHOT) { "fit goes with screenshot, not $action" }
+        if (step.action == UiAction.SPLITTER) {
+            require(step.proportion != null || step.size != null) { "splitter needs a proportion or size: the first pane's share, or the pane's size in pixels or \"fit\"" }
+            require(step.proportion == null || step.size == null) { "splitter takes a proportion or a size, not both" }
+            step.proportion?.let { require(it in PROPORTIONS) { "proportion is from ${PROPORTIONS.start} to ${PROPORTIONS.endInclusive}, the first pane's share; was $it" } }
+            step.size?.let {
+                require(it == FIT || it.toIntOrNull()?.let { n -> n in SIZES } == true) { "size is \"fit\" or a size in logical pixels from ${SIZES.first} to ${SIZES.last}, was $it" }
+            }
+            if (step.key != null) require(step.proportion != null) { "a splitter restore by key takes a proportion" }
+            else require(step.target != null) { "splitter needs a target: the splitter, or a control in the pane to size" }
+        }
+        if (step.action == UiAction.CLICK) require(step.line == null || step.symbol == null) { "a click in an editor takes a line or a symbol, not both" }
         if (step.theme != null) require(step.action == UiAction.SET) { "theme goes with set, not $action" }
         if (step.themes) require(step.action == UiAction.GET) { "themes goes with get, not $action" }
         step.dimension?.let {

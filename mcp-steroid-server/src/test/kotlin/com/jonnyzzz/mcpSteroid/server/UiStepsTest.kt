@@ -23,6 +23,66 @@ class UiStepsTest {
     }
 
     @Test
+    fun `splitter takes a proportion or a size`() {
+        val s = UiSteps.parse("""[{"action":"splitter","ref":"e4","proportion":0.3}]""").single()
+        assertEquals(UiAction.SPLITTER, s.action)
+        assertEquals(0.3, s.proportion)
+        assertEquals("fit", UiSteps.parse("""[{"action":"splitter","name":"Variables","size":"fit"}]""").single().size)
+        assertEquals("240", UiSteps.parse("""[{"action":"splitter","name":"Variables","size":240}]""").single().size)
+        assertMentions(fails("""[{"action":"splitter","ref":"e4"}]"""), "proportion or size")
+        assertMentions(fails("""[{"action":"splitter","ref":"e4","proportion":0.3,"size":"200"}]"""), "not both")
+        assertMentions(fails("""[{"action":"splitter","ref":"e4","proportion":0.99}]"""), "0.05")
+        assertMentions(fails("""[{"action":"splitter","ref":"e4","size":"wide"}]"""), "fit")
+        assertMentions(fails("""[{"action":"splitter","proportion":0.3}]"""), "target")
+        assertMentions(fails("""[{"action":"click","ref":"e4","proportion":0.3}]"""), "splitter")
+    }
+
+    @Test
+    fun `a splitter restore by key needs no target`() {
+        assertEquals("x.split", UiSteps.parse("""[{"action":"splitter","key":"x.split","proportion":0.4}]""").single().key)
+        assertMentions(fails("""[{"action":"splitter","key":"x.split","size":"200"}]"""), "key")
+    }
+
+    @Test
+    fun `highlights take code, a click point, an inspection or a console line`() {
+        val h = UiSteps.parse(
+            """[{"action":"screenshot","out":"C:/a.png","highlight":[{"lines":"20-27","file":"a.ts"},{"symbol":"parse","nth":1},{"click":true,"label":"right-click"},{"inspection":"NullableProblems"},{"console":"App","contains":"tick 2"}]}]""",
+        ).single().highlight!!
+        assertEquals("20-27", h[0].lines)
+        assertEquals("a.ts", h[0].file)
+        assertEquals("parse", h[1].symbol)
+        assertEquals(1, h[1].nth)
+        assertTrue(h[2].click)
+        assertEquals("right-click", h[2].label)
+        assertEquals("NullableProblems", h[3].inspection)
+        assertEquals("App", h[4].console)
+        assertEquals("tick 2", h[4].contains)
+        assertEquals(20..27, UiSteps.parseLines("20-27"))
+        assertEquals(5..5, UiSteps.parseLines("5"))
+        assertMentions(fails("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"lines":"27-20"}]}]"""), "lines")
+        assertMentions(fails("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"lines":"0"}]}]"""), "lines")
+        assertMentions(fails("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"lines":"2","symbol":"x"}]}]"""), "one of")
+        assertMentions(fails("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"console":"App"}]}]"""), "contains")
+        assertMentions(fails("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"name":"a","file":"a.ts"}]}]"""), "file")
+    }
+
+    @Test
+    fun `a screenshot crops to a tool window and fits`() {
+        val s = UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","crop":{"toolwindow":"Run"},"fit":true}]""").single()
+        assertEquals(UiCrop.ToolWindow("Run"), s.crop)
+        assertTrue(s.fit)
+        assertMentions(fails("""[{"action":"screenshot","out":"C:/a.png","crop":{"toolwindow":"Run","name":"x"}}]"""), "toolwindow")
+        assertMentions(fails("""[{"action":"click","ref":"e1","fit":true}]"""), "screenshot")
+    }
+
+    @Test
+    fun `a click in an editor takes a line and column or a symbol`() {
+        assertEquals("parse", UiSteps.parse("""[{"action":"click","class":"EditorComponentImpl","button":"right","symbol":"parse"}]""").single().symbol)
+        assertEquals(3, UiSteps.parse("""[{"action":"click","class":"EditorComponentImpl","line":3,"column":5}]""").single().line)
+        assertMentions(fails("""[{"action":"click","class":"EditorComponentImpl","line":3,"symbol":"x"}]"""), "a line or a symbol")
+    }
+
+    @Test
     fun `an out is a png by default, or a jpg`() {
         assertEquals("C:/pics/a", UiSteps.parse("""[{"action":"screenshot","out":"C:/pics/a"}]""").single().out)
         assertEquals("C:/pics/a.jpeg", UiSteps.parse("""[{"action":"screenshot","out":"C:/pics/a.jpeg"}]""").single().out)

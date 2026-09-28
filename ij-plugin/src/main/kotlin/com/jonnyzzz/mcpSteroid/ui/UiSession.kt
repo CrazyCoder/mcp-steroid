@@ -571,7 +571,7 @@ class UiSession(
                 else -> menu.step(step.path, actionComponent(), step.timeoutMs, undo = undo)
             }
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
-            UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
+            UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT, UiAction.SPLITTER -> error("not an input step")
         }
     }
 
@@ -1040,6 +1040,14 @@ class UiSession(
                 UiCrop.Highlights -> UiCapture.markArea(painted, marks)
                 UiCrop.Popups -> UiCapture.popupArea(window)?.let { UiCapture.withMarks(painted, it, marks) }
                     ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
+                is UiCrop.ToolWindow -> {
+                    val views = UiLayout.toolWindows(project)
+                    val view = views.firstOrNull { it.id.equals(crop.id, ignoreCase = true) }
+                        ?: throw UiStepFailure("no tool window ${crop.id} is showing; showing: ${views.joinToString { it.id }}")
+                    val decorator = view.window.decorator
+                    if (windowOf(decorator) !== window) throw UiStepFailure("the ${view.id} tool window is in another window than the picture")
+                    UiCapture.withMarks(painted, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks)
+                }
                 is UiCrop.Control -> if (cropOnBackend != null) UiCapture.withMarks(painted, cropOnBackend, marks) else {
                     val c = cropControl!!.component
                     if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")
@@ -1069,7 +1077,13 @@ class UiSession(
                 }
                 java.nio.file.Files.newOutputStream(file).use { if (!javax.imageio.ImageIO.write(image, format, it)) throw java.io.IOException("no $format writer") }
                 val json = file.resolveSibling(file.fileName.toString().substringBeforeLast('.') + ".json")
-                java.nio.file.Files.writeString(json, facts.json(crop = step.crop?.let { if (it is UiCrop.Control) "control" else it.toString() } ?: "window"))
+                java.nio.file.Files.writeString(json, facts.json(crop = step.crop?.let {
+                    when (it) {
+                        is UiCrop.Control -> "control"
+                        is UiCrop.ToolWindow -> "toolwindow"
+                        else -> it.toString()
+                    }
+                } ?: "window"))
                 when {
                     !existed -> ""
                     before == null -> "; replaced a file that was not a readable picture"

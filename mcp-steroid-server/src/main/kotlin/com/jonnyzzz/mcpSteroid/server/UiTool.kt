@@ -68,8 +68,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
 
         - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}:
           with "row", "index" or a row ref, presses that row or tab, such as a double click to open a row; a
-          tabbed pane matched by name or text presses the tab of that title. A partly cut control is pressed
-          where it shows; one past an edge fails with the step that makes room for it
+          tabbed pane matched by name or text presses the tab of that title. An editor is pressed at its caret,
+          or at "line" and "column" or a "symbol", so a right click opens the context menu there. A partly cut
+          control is pressed where it shows; one past an edge fails with the step that makes room for it
         - {"action":"hover", target, optional "row" or "index"}
         - {"action":"type", "text":"...", optional target}: types into the target, or the control that has
           the focus in the topmost window
@@ -159,12 +160,18 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           with "delete":true deletes it
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
         - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does
+        - {"action":"splitter", target, "proportion":0.3 or "size":240|"fit"}: moves a splitter's divider: the
+          target is the splitter, or a control in the pane to size ("fit" gives it room for its content). A
+          snapshot lists each splitter with its ref and state, such as "horizontal 0.25"
         - {"action":"screenshot", optional target, "save":"name" or "out":"C:/pics/a.png", optional "highlight",
-          "crop", "margin"}: saves a picture of the target's window, or of the topmost one, with the menus and
-          popups open above it. "highlight":["breadcrumb",{"name":"Show line numbers","label":"..."}] outlines
-          and numbers controls (rows with "row"); "crop" is "page" (the Settings page), "highlights", "popups" or
-          a locator. With the call's "restore": true, one call opens a setting, captures it and puts the IDE
-          back: a picture to show a user where an option is
+          "crop", "margin", "fit"}: saves a picture of the target's window, or of the topmost one, with the menus
+          and popups open above it. "highlight":["breadcrumb",{"name":"Show line numbers","label":"..."}] outlines
+          and numbers controls (rows with "row"), and takes {"lines":"20-27"} or {"symbol":"name"} of code,
+          {"click":true} (the point of the last click, as a pointer), {"inspection":"ShortName"} and
+          {"console":"App","contains":"text"}; "crop" is "page" (the Settings page), "highlights", "popups",
+          {"toolwindow":"Run"} or a locator. The report ends with a "cut:" line per content the picture shows cut,
+          with the step that fixes it; "fit":true runs those steps first. With the call's "restore": true, one
+          call opens a setting, captures it and puts the IDE back: a picture to show a user where an option is
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In
         Split Mode any step takes "side":"backend" to run on the Remote Development backend from a JetBrains
         Client call; write, code, goto, file, banner and console expects, inspection settings, and gets of
