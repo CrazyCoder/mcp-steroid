@@ -168,7 +168,9 @@ class UiSession(
     /** The restores of the changes recorded runs made, and those of the step that runs. */
     private val journal = UiRestore.Journal()
     private val stepUndo = mutableListOf<JsonObject>()
-    private val undo: (List<JsonObject>) -> Unit = { stepUndo += it }
+    private val undo: (List<JsonObject>) -> Unit = { more ->
+        UiRestore.merge(stepUndo.toList(), more).let { merged -> stepUndo.clear(); stepUndo += merged }
+    }
 
     /**
      * The project files the session's runs change, from its first run until [close]. A JetBrains Client holds no project
@@ -482,7 +484,7 @@ class UiSession(
             line + (runs.report()?.let { "; $it" } ?: "")
         }
         UiAction.GET -> when {
-            step.layout -> layoutReport()
+            step.layout -> layoutReport(step)
             step.editors -> editorsReport(step)
             step.memory -> IdeMemory.getInstanceOrNull()?.report() ?: throw UiStepFailure("the IDE application is not available")
             step.builds -> IdeBuilds.getInstanceOrNull()?.recent(BUILDS_LISTED)?.let(IdeBuilds::renderRecent) ?: throw UiStepFailure("the IDE application is not available")
@@ -1132,9 +1134,13 @@ class UiSession(
         val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
         val window = withContext(edtAny) { (node?.let { windowOf(it.component) } ?: scopeWindows().firstOrNull())?.let(UiCapture::pictured) }
             ?: throw UiStepFailure("no window is showing")
-        val made = if (step.fit) fitForPicture(step, window) else emptyList()
-        val highlights = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
-        val hostCuts = hostProblems(window)
+        // The highlights are what the picture is about: fit makes room for them, and lets other long lines stay cut. A
+        // row's area is taken where it is found, so after a fit that resized something they are found again.
+        val found = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
+        val made = if (step.fit) fitForPicture(step, window) { found.map { it.screenBounds() } } else emptyList()
+        val highlights = if (made.isEmpty()) found else step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
+        val essential = { highlights.map { it.screenBounds() } }
+        val hostCuts = hostProblems(window, withContext(edtAny) { essential() })
         val cropOnBackend = (step.crop as? UiCrop.Control)?.let { backendBounds(it.target, null, null, window)?.first }
         val cropControl = if (cropOnBackend != null) null else (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
         withContext(edtAny) { highlights.forEach { it.bringIntoView() } }
@@ -1202,7 +1208,7 @@ class UiSession(
             // What the picture shows cut, each with the step that fixes it, so a bad picture is known without reading it.
             // What the crop names, before its margin and the badges it grew by: those show the edge of what lies around
             // it, whose cuts are not the picture's.
-            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window, marks.map { it.bounds }), hostCuts)
+            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window, marks.map { it.bounds }), hostCuts, essential())
                 .map { "\ncut: " + it.line.removePrefix("layout: ") }
             Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
                 what.joinToString("") { "; $it" } + cut.joinToString(""))
@@ -1247,29 +1253,39 @@ class UiSession(
 
     /**
      * The layout problems of [window], and [host], the backend's of a host Settings page it shows, whose cut content
-     * lies in [area], a picture's screen area. EDT.
+     * lies in [area], a picture's screen area. With [essential] areas, the highlights, content cut outside them does
+     * not count. EDT.
      */
-    private fun pictureProblems(window: Window, area: Rectangle, host: List<UiLayout.Problem> = emptyList()): List<UiLayout.Problem> =
-        (UiLayout.problems(window, UiModel.build(window).root, { registry.refFor(it.component) }, project) + host).filter { it.area?.intersects(area) == true }
+    private fun pictureProblems(
+        window: Window, area: Rectangle, host: List<UiLayout.Problem> = emptyList(), essential: List<Rectangle> = emptyList(),
+    ): List<UiLayout.Problem> =
+        (UiLayout.problems(window, UiModel.build(window).root, { registry.refFor(it.component) }, project, essential) + host)
+            .filter { it.area?.intersects(area) == true }
 
-    /** The layout problems of the showing windows, one line each, which a JetBrains Client reads for a host page. */
-    private suspend fun layoutReport(): String = withContext(edtAny) {
+    /**
+     * The layout problems of the showing windows, one line each, which a JetBrains Client reads for a host page; with
+     * the step's `within` areas, only content cut in them counts.
+     */
+    private suspend fun layoutReport(step: UiStep): String = withContext(edtAny) {
+        val essential = step.within?.let(UiSteps::parseAreas).orEmpty()
         val lines = Window.getWindows().filter { it.isShowing }.flatMap { w ->
-            UiLayout.problems(w, UiModel.build(w).root, { registry.refFor(it.component) }, project).map { UiHostLayout.encode(it, w.size) }
+            UiLayout.problems(w, UiModel.build(w).root, { registry.refFor(it.component) }, project, essential).map { UiHostLayout.encode(it, w.size) }
         }
         if (lines.isEmpty()) "no layout problems" else lines.joinToString("\n")
     }
 
     /**
      * In a JetBrains Client showing a host Settings page, the backend's layout problems of the page, with the fixes the
-     * Client runs; none elsewhere. A backend that does not answer leaves the picture without them rather than failing it.
+     * Client runs; none elsewhere. With [essential] areas, the highlights, only content cut in them counts. A backend
+     * that does not answer leaves the picture without them rather than failing it.
      */
-    private suspend fun hostProblems(window: Window): List<UiLayout.Problem> {
+    private suspend fun hostProblems(window: Window, essential: List<Rectangle>): List<UiLayout.Problem> {
         val forward = forward ?: return emptyList()
         if (!withContext(edtAny) { UiSettingsParts.hostPage(window) }) return emptyList()
         val step = UiSteps.parse(JsonArray(listOf(buildJsonObject {
             put("action", "get")
             put("layout", true)
+            if (essential.isNotEmpty()) put("within", essential.joinToString(";") { "${it.x},${it.y},${it.width},${it.height}" })
             put("side", "backend")
         }))).single()
         val report = forward.invoke(step).takeIf { it.passed } ?: return emptyList()
@@ -1282,17 +1298,21 @@ class UiSession(
 
     /**
      * For a screenshot with fit: runs the steps that make room for what the picture would show cut, the part the crop
-     * names or the whole window, and looks again once, as the room one step makes can show another cut. The restores
-     * go with the step's. Returns what each step did.
+     * names or the whole window, and looks again once, as the room one step makes can show another cut. With
+     * highlights, [essential] gives their screen areas, and only content cut in them counts. The restores go with the
+     * step's. Returns what each step did.
      */
-    private suspend fun fitForPicture(step: UiStep, window: Window): List<String> {
+    private suspend fun fitForPicture(step: UiStep, window: Window, essential: () -> List<Rectangle>): List<String> {
         val done = mutableListOf<String>()
         val tried = mutableSetOf<String>()
+        val before = withContext(edtAny) { window.width }
         repeat(FIT_ROUNDS) {
-            val host = hostProblems(window)
+            val areas = withContext(edtAny) { essential() }
+            val host = hostProblems(window, areas)
             val fixes = withContext(edtAny) {
                 val scope = pictureScope(step, window)
-                pictureProblems(window, scope, host).mapNotNull { it.fix }.filter { tried.add(it) }
+                pictureProblems(window, scope, host, areas).mapNotNull { it.fix }
+                    .mapNotNull { UiLayout.capWindowFix(it, before, window.width) }.filter { tried.add(it) }
             }
             if (fixes.isEmpty()) return done
             fixes.forEach { done += applyFix(it) }

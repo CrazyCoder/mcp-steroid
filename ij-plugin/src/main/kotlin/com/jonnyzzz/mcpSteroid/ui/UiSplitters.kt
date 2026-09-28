@@ -85,18 +85,23 @@ object UiSplitters {
     /**
      * How many pixels [c]'s content needs beyond what it shows along [axis]: a list, tree or table in a scroll pane
      * against the pane's view, a tree table's tree against its tree column, any other control against its own size.
+     * [rows], of a list, tree or table, measures those rows' width alone, such as the rows a picture outlines.
      */
-    fun shortfall(c: Component, axis: Axis): Int {
+    fun shortfall(c: Component, axis: Axis, rows: Collection<Int>? = null): Int {
         if (c is TreeTable && axis == Axis.WIDTH && c.columnCount > 0) {
             // The rows in view, as they paint: the Inspections tree reports a preferred width narrower than its rows.
             val tree = c.tree
             val view = c.visibleRect.takeUnless { it.isEmpty } ?: Rectangle(0, 0, c.width, c.height)
-            val rows = if (tree.rowCount == 0) IntRange.EMPTY
+            val measured = rows ?: if (tree.rowCount == 0) IntRange.EMPTY
             else tree.getClosestRowForLocation(0, view.y)..tree.getClosestRowForLocation(0, view.y + view.height - 1)
-            val right = rows.maxOfOrNull { row -> tree.getRowBounds(row)?.let { it.x + it.width } ?: 0 } ?: tree.preferredSize.width
+            val right = measured.maxOfOrNull { row -> tree.getRowBounds(row)?.let { it.x + it.width } ?: 0 } ?: tree.preferredSize.width
             return right - c.columnModel.getColumn(0).width
         }
         val port = (c as? JScrollPane)?.viewport ?: c.parent as? JViewport
+        if (rows != null && axis == Axis.WIDTH && port != null) {
+            val right = rows.maxOfOrNull { row -> UiRows.bounds(c, row)?.let { it.x + it.width } ?: 0 } ?: return 0
+            return right - port.viewRect.let { it.x + it.width }
+        }
         val need = along(axis, (port?.view ?: c).preferredSize)
         val shown = along(axis, port?.extentSize ?: c.size)
         return need - shown

@@ -65,6 +65,16 @@ object UiRestore {
         fun steps(): List<JsonObject> = groups.asReversed().flatten()
     }
 
+    /**
+     * [pending], the restores one step has recorded so far, with [more], those of a later change the same step made,
+     * such as the second round of a screenshot's fit. A state [pending] already restores keeps that restore: it holds
+     * the state before the step, and [more] holds one the step made itself.
+     */
+    fun merge(pending: List<JsonObject>, more: List<JsonObject>): List<JsonObject> {
+        val known = pending.map(::key).toSet()
+        return pending + more.filter { key(it) !in known }
+    }
+
     /** A step of [action] with [fields], each a string, a number or true or false. */
     fun step(action: String, vararg fields: Pair<String, Any>): JsonObject = JsonObject(
         mapOf("action" to JsonPrimitive(action)) + fields.associate { (k, v) ->

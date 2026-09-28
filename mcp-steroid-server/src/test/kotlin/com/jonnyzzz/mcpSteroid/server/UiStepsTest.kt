@@ -61,6 +61,18 @@ class UiStepsTest {
     }
 
     @Test
+    fun `within one step, a later restore of a state already restored is left out`() {
+        val first = UiRestore.step("window", "dimension" to "SettingsEditor", "width" to 914, "height" to 707)
+        val second = UiRestore.step("window", "dimension" to "SettingsEditor", "width" to 1371, "height" to 707)
+        // Two rounds of a fit resize one window: the size before the first is the one to put back.
+        assertEquals(listOf(first), UiRestore.merge(listOf(first), listOf(second)))
+        // One change's restores that set one state together, as an inspection's severity and state, stay together.
+        val severity = UiRestore.step("set", "inspection" to "X", "value" to "WARNING")
+        val off = UiRestore.step("set", "inspection" to "X", "value" to "false")
+        assertEquals(listOf(severity, off), UiRestore.merge(emptyList(), listOf(severity, off)))
+    }
+
+    @Test
     fun `highlights take code, a click point, an inspection or a console line`() {
         val h = UiSteps.parse(
             """[{"action":"screenshot","out":"C:/a.png","highlight":[{"lines":"20-27","file":"a.ts"},{"symbol":"parse","nth":1},{"click":true,"label":"right-click"},{"inspection":"NullableProblems"},{"console":"App","contains":"tick 2"}]}]""",
@@ -94,6 +106,11 @@ class UiStepsTest {
     fun `a get of the layout reports the layout problems, and layout goes with get and expect only`() {
         assertTrue(UiSteps.parse("""[{"action":"get","layout":true}]""").single().layout)
         assertMentions(fails("""[{"action":"click","name":"a","layout":true}]"""), "get and expect")
+        val within = UiSteps.parse("""[{"action":"get","layout":true,"within":"10,20,30,40;1,2,3,4"}]""").single()
+        assertEquals("10,20,30,40;1,2,3,4", within.within)
+        assertEquals(listOf(java.awt.Rectangle(10, 20, 30, 40), java.awt.Rectangle(1, 2, 3, 4)), UiSteps.parseAreas(within.within!!))
+        assertMentions(fails("""[{"action":"get","layout":true,"within":"10,20"}]"""), "x,y,width,height")
+        assertMentions(fails("""[{"action":"get","themes":true,"within":"1,2,3,4"}]"""), "within goes with a get of the layout")
     }
 
     @Test

@@ -172,8 +172,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           or false chooses), and takes {"lines":"20-27"} or {"symbol":"name"} of code, {"click":true} (the
           point of the last click, as a pointer, part of the step whose outline it touches),
           {"inspection":"ShortName"} and {"console":"App","contains":"text"}; "crop" is "page" (the Settings
-          page), "highlights", "popups" (the open menus and every highlight), {"toolwindow":"Run"} or a locator. The report ends with a "cut:" line per content the picture shows cut,
-          with the step that fixes it; "fit":true runs those steps first. With the call's "restore": true, one
+          page), "highlights", "popups" (the open menus and every highlight), {"toolwindow":"Run"} or a locator.
+          The report ends with a "cut:" line per content the picture shows cut, with the step that fixes it, and
+          with highlights only for what they outline; "fit":true runs those steps first, growing a window by half
+          its size at most. With the call's "restore": true, one
           call opens a setting, captures it and puts the IDE back: a picture to show a user where an option is
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In
         Split Mode any step takes "side":"backend" to run on the Remote Development backend from a JetBrains

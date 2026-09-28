@@ -311,7 +311,7 @@ window's size, the screen's scale and the IDE's zoom, the theme, the editor font
 | `highlight` | `["breadcrumb", {"name":"Show line numbers","label":"Turn this on"}]` | Outlines each control, numbered 1, 2, 3 in this order when there are several (see `numbers`). An item takes any locator, plus `row` or `index` for a row of a list, tree, table or tab row, and `label`, text drawn beside it. `"breadcrumb"` is the path above the Settings page. The kinds for code, clicks, inspections and consoles are below |
 | `crop` | `"page"`, `"highlights"`, `"popups"`, `{"toolwindow":"Run"}`, `{"name":"Settings categories"}` | Cuts the picture to the Settings page with its breadcrumb, to the highlights, to the open menus, to a tool window by its id, or to a control's visible part. The whole window without it |
 | `margin` | `8` | The padding around a crop, 16 px without it |
-| `fit` | `true` | Runs the steps the `cut:` lines name before the picture, and puts the sizes back with the restore |
+| `fit` | `true` | Runs the steps the `cut:` lines name before the picture, and puts the sizes back with the restore. With highlights, only what they outline must show whole, and other long lines may stay cut; a window grows by half its size at most |
 | `numbers` | `false` | Numbers the highlights 1, 2, 3 as steps to follow, or with `false` outlines them only, for areas with no order. Without it, several highlights are numbered and a single one is only outlined |
 
 A highlight out of view is scrolled to the middle of its view first; a control larger than its view, such as a
@@ -324,7 +324,9 @@ the picture and saves the file on its machine; a highlight on a host Settings pa
 on the backend, is found there.
 
 The report ends with a `cut:` line for each content the picture shows cut, with the step that makes room, so a
-bad picture is known without looking at it:
+bad picture is known without looking at it. With highlights, only what they outline counts: a row, field or
+header they are on. Other long lines may stay cut, since the picture needs to show where to look, not every
+word:
 
 ```
 cut: XDebuggerTree [ref=e109] shows 3 of 8 rows; {"action":"splitter","ref":"e109","size":"fit"} makes room

@@ -11,6 +11,7 @@ import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.JScrollPane
 import javax.swing.JTree
+import javax.swing.SwingUtilities
 
 class UiLayoutTest {
     /** A header 85 px wide holding a toolbar 183 px wide, right-aligned so that it starts 98 px left of the header. */
@@ -108,6 +109,37 @@ class UiLayoutTest {
         val short = UiSplitters.shortfall(tree, UiSplitters.Axis.WIDTH)
         val share = UiSplitters.size(UiSplitters.paneOf(tree, UiSplitters.Axis.WIDTH)!!).toDouble() / (1000 - s.dividerWidth)
         assertEquals(kotlin.math.ceil(short / share).toInt().toDouble(), cut.need.toDouble(), 1.0)
+    }
+
+    @Test
+    fun `with essential areas, only the rows they touch count as cut`() = onEdt {
+        val root = javax.swing.tree.DefaultMutableTreeNode("root").apply {
+            add(javax.swing.tree.DefaultMutableTreeNode("short"))
+            add(javax.swing.tree.DefaultMutableTreeNode("a row with a name far too long for the narrow pane that holds the tree"))
+        }
+        val tree = JTree(root).apply { isRootVisible = false }
+        val scroll = JScrollPane(tree)
+        val s = com.intellij.openapi.ui.Splitter(false, 0.15f).apply { firstComponent = scroll; secondComponent = JPanel(); setSize(1000, 300); doLayout() }
+        scroll.doLayout()
+        val model = FallbackUiWalker(onlyShowing = false).build(s)
+        fun rowArea(row: Int) = tree.getRowBounds(row).also { r -> val p = r.location; SwingUtilities.convertPointToScreen(p, tree); r.location = p }
+        fun widthCuts(essential: List<java.awt.Rectangle>) = UiLayout.cuts(model, refs(model), essential) { true }.filter { it.what.contains("cut at the right") }
+        assertEquals("every row counts without essential areas", 1, widthCuts(emptyList()).size)
+        assertEquals("the short row shows whole: nothing essential is cut", 0, widthCuts(listOf(rowArea(0))).size)
+        assertEquals(1, widthCuts(listOf(rowArea(1))).size)
+    }
+
+    @Test
+    fun `a window step grows a dialog by half its width at most`() {
+        val cut = UiLayout.Cut(FallbackUiWalker(onlyShowing = false).build(JPanel()), "x", null, need = 2000)
+        assertEquals("""{"action":"window","width":1050}""", UiLayout.sizedWindowFix(700, 2500, listOf(cut)))
+    }
+
+    @Test
+    fun `fit grows a window by half its size before the fit at most, over all rounds`() {
+        assertEquals("""{"action":"window","width":1371}""", UiLayout.capWindowFix("""{"action":"window","width":1817}""", before = 914, now = 1371 - 400))
+        assertNull("no room left under the cap", UiLayout.capWindowFix("""{"action":"window","width":1817}""", before = 914, now = 1371))
+        assertEquals("""{"action":"splitter","ref":"e2","size":"fit"}""", UiLayout.capWindowFix("""{"action":"splitter","ref":"e2","size":"fit"}""", 914, 1371))
     }
 
     @Test

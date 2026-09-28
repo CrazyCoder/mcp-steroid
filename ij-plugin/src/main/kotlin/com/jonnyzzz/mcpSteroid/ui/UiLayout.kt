@@ -10,6 +10,9 @@ import com.intellij.ui.ScreenUtil
 import com.intellij.openapi.editor.impl.EditorComponentImpl
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.treeStructure.treetable.TreeTable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import java.awt.Component
 import javax.swing.JComboBox
 import javax.swing.JComponent
@@ -165,13 +168,33 @@ object UiLayout {
     private const val WINDOW_ROOM = 8
 
     /**
+     * The most a window step grows a dialog, in percent of its width: a picture needs what it points at to show, not
+     * every long line, and a much larger window reads worse than a line cut short.
+     */
+    private const val MAX_GROWTH_PERCENT = 150
+
+    /**
      * The window step that gives a dialog [width] px wide, on a screen [screenWidth] px wide, the width its [cuts]
      * lack: the most any of them lacks, as a wider dialog widens each of its fields and tables; null when none lacks
      * width. A fit to the dialog's preferred size does not do: a dialog that cuts its fields often prefers the size it has.
      */
     fun sizedWindowFix(width: Int, screenWidth: Int, cuts: List<Cut>): String? {
         val need = cuts.filter { it.axis == UiSplitters.Axis.WIDTH }.maxOfOrNull { it.need }?.takeIf { it > 0 } ?: return null
-        return """{"action":"window","width":${minOf(width + need + WINDOW_ROOM, screenWidth)}}"""
+        return """{"action":"window","width":${minOf(width + need + WINDOW_ROOM, screenWidth, width * MAX_GROWTH_PERCENT / 100)}}"""
+    }
+
+    /**
+     * [fix] as a screenshot's fit runs it on a window [before] px wide when the fit started and [now] px wide: a window
+     * step grows it to half as wide again at most over all of the fit's rounds, and none is left when it is that wide.
+     * Any other step is left as it is.
+     */
+    fun capWindowFix(fix: String, before: Int, now: Int): String? {
+        val step = Json.parseToJsonElement(fix) as? JsonObject ?: return fix
+        val width = (step["width"] as? JsonPrimitive)?.content?.toIntOrNull()
+        if ((step["action"] as? JsonPrimitive)?.content != "window" || width == null) return fix
+        val capped = minOf(width, before * MAX_GROWTH_PERCENT / 100)
+        if (capped <= now) return null
+        return JsonObject(step + ("width" to JsonPrimitive(capped))).toString()
     }
 
     /**
@@ -195,14 +218,34 @@ object UiLayout {
      * Content cut inside panes, fields and headers under [root], which a component tree hides and a picture shows: rows
      * a splitter pane squeezes, a tree or tree table cut at the right, the text of an editor field, a combo box or a
      * table header cut to its width, a truncated label. A splitter pane's cut names the splitter step that makes room;
-     * the others count in a dialog only, per [inDialog], where the window step does. EDT.
+     * the others count in a dialog only, per [inDialog], where the window step does. With [essential] screen areas, such
+     * as a picture's highlights, only the rows they touch, and the fields, headers and labels they are on, count. EDT.
      */
-    fun cuts(root: UiNode, refOf: (UiNode) -> String, inDialog: (Component) -> Boolean = ::defaultInDialog): List<Cut> =
-        root.walk().flatMap { node -> cutsOf(node, refOf, inDialog) }.toList()
+    fun cuts(
+        root: UiNode, refOf: (UiNode) -> String, essential: List<Rectangle> = emptyList(), inDialog: (Component) -> Boolean = ::defaultInDialog,
+    ): List<Cut> = root.walk().flatMap { node -> cutsOf(node, refOf, inDialog, essential) }.toList()
 
-    private fun cutsOf(node: UiNode, refOf: (UiNode) -> String, inDialog: (Component) -> Boolean): List<Cut> {
+    /** [r], in [c]'s coordinates, on screen, or in its topmost parent's for a component in no window. */
+    private fun screenOf(c: Component, r: Rectangle): Rectangle = Rectangle(r).apply {
+        val p = location
+        SwingUtilities.convertPointToScreen(p, c)
+        location = p
+    }
+
+    private fun cutsOf(node: UiNode, refOf: (UiNode) -> String, inDialog: (Component) -> Boolean, essential: List<Rectangle>): List<Cut> {
         val c = node.component
         val out = mutableListOf<Cut>()
+        // With essential areas, such as a picture's highlights, only what they touch must show whole: the rows they
+        // outline, the field or header they are on. The rest may stay clipped.
+        fun touches(r: Rectangle) = essential.isEmpty() || screenOf(c, r).let { s -> essential.any { it.intersects(s) } }
+        val total = when (c) {
+            is JTree -> c.rowCount
+            is JList<*> -> c.model.size
+            is JTable -> c.rowCount
+            else -> -1
+        }
+        // A tree table's rows are its tree's, row for row. With essential areas that touch none of them, none count.
+        val essentialRows = if (essential.isEmpty()) null else (0 until total).filter { i -> UiRows.bounds(c, i)?.let(::touches) == true }
         fun add(what: String, axis: UiSplitters.Axis, need: Int) {
             val pane = paneFor(c, axis)
             // A splitter whose other panes keep their minimum sizes has no room to give: the window's step does then.
@@ -213,23 +256,19 @@ object UiLayout {
             if (pane != null || inDialog(c)) out += Cut(node, what, fix, windowNeed, axis)
         }
         val name = describe(node, refOf)
-        val total = when (c) {
-            is JTree -> c.rowCount
-            is JList<*> -> c.model.size
-            is JTable -> c.rowCount
-            else -> -1
-        }
         if (total in 1..MAX_ROWS_TO_FIT && c.parent is JViewport) {
             val view = (c as JComponent).visibleRect
             val shown = (0 until total).count { i -> UiRows.bounds(c, i)?.let { view.contains(it) } == true }
             val high = UiSplitters.shortfall(c, UiSplitters.Axis.HEIGHT)
-            if (shown < minOf(total, MIN_ROWS_SHOWN) && high > SLACK) add("$name shows $shown of $total rows", UiSplitters.Axis.HEIGHT, high)
+            // A squeezed pane that shows every essential row whole shows what the picture is about.
+            val essentialShown = essentialRows?.all { i -> UiRows.bounds(c, i)?.let { view.contains(it) } == true } == true
+            if (shown < minOf(total, MIN_ROWS_SHOWN) && high > SLACK && !essentialShown) add("$name shows $shown of $total rows", UiSplitters.Axis.HEIGHT, high)
         }
-        val wide = UiSplitters.shortfall(c, UiSplitters.Axis.WIDTH)
+        val wide = if (essentialRows?.isEmpty() == true) 0 else UiSplitters.shortfall(c, UiSplitters.Axis.WIDTH, essentialRows)
         if ((c is JTree || c is TreeTable || rowsCut(c) != null) && wide > SLACK && (c is TreeTable || c.parent is JViewport)) {
             add("the rows of $name are cut at the right: they need $wide px more", UiSplitters.Axis.WIDTH, wide)
         }
-        if (c is JTable) {
+        if (c is JTable && touches(Rectangle(0, 0, c.width, c.height))) {
             c.tableHeader?.let { header ->
                 val lacks = (0 until c.columnModel.columnCount).map { c.columnModel.getColumn(it) }.associateWith { column ->
                     header.defaultRenderer.getTableCellRendererComponent(c, column.headerValue, false, false, -1, column.modelIndex).preferredSize.width - column.width
@@ -244,9 +283,10 @@ object UiLayout {
             is JComboBox<*> -> c.preferredSize.width - c.width
             else -> 0
         }
+        val own = touches(Rectangle(0, 0, c.width, c.height))
         // An editor in the IDE window scrolls its code sideways by design; only a field in a dialog counts.
-        if (fieldNeed > SLACK && (c !is EditorComponentImpl || inDialog(c))) add("the text of $name is cut", UiSplitters.Axis.WIDTH, fieldNeed)
-        if (node.clip == UiClip.TRUNCATED) add("$name is truncated", UiSplitters.Axis.WIDTH, c.preferredSize.width - c.width)
+        if (own && fieldNeed > SLACK && (c !is EditorComponentImpl || inDialog(c))) add("the text of $name is cut", UiSplitters.Axis.WIDTH, fieldNeed)
+        if (own && node.clip == UiClip.TRUNCATED) add("$name is truncated", UiSplitters.Axis.WIDTH, c.preferredSize.width - c.width)
         return out
     }
 
@@ -271,9 +311,10 @@ object UiLayout {
     /**
      * Each tool window of [window] narrower than its header, the controls that lie past an edge, grouped by the tool
      * window or the window that holds them, and the content cut inside panes, fields and headers, each with the step
-     * that makes room: a splitter step for a splitter pane, the tool window's step, or the window's.
+     * that makes room: a splitter step for a splitter pane, the tool window's step, or the window's. With [essential]
+     * screen areas, content cut outside them does not count, as [cuts] says.
      */
-    fun problems(window: Window, root: UiNode, refOf: (UiNode) -> String, project: Project): List<Problem> {
+    fun problems(window: Window, root: UiNode, refOf: (UiNode) -> String, project: Project, essential: List<Rectangle> = emptyList()): List<Problem> {
         val toolWindows = toolWindows(project).filter { SwingUtilities.isDescendingFrom(it.window.decorator, window) }
         val hidden = root.walk().filter { it.listed && (it.clip == UiClip.OUTSIDE || it.clip == UiClip.CLIPPED) }.toList()
         val byToolWindow = hidden.groupBy { node -> toolWindows.firstOrNull { it.holds(node.component) } }
@@ -293,7 +334,7 @@ object UiLayout {
             problems += Problem("layout: ${controls(rest, refOf)} in this window; ${windowStep(window)}", windowFix(window), null, screenArea(rest.map { it.component }))
         }
         // One line per step: several cuts one splitter or one window step fixes read together.
-        val all = cuts(root, refOf)
+        val all = cuts(root, refOf, essential)
         // The cuts no splitter or tool window fixes widen the window by what the widest of them lacks.
         val loose = all.filter { cut -> cut.fix == null && toolWindows.none { it.holds(cut.node.component) } }
         val screen = ScreenUtil.getScreenRectangle(window)

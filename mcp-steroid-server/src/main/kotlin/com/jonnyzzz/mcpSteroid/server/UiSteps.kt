@@ -236,8 +236,16 @@ data class UiStep(
     val height: String? = null,
     /** On a window step: true fills the screen, false gives the window back its size before. */
     val maximize: Boolean? = null,
-    /** On an expect step: no control in the window, or under the target, lies past an edge. */
+    /**
+     * On an expect step: no control in the window, or under the target, lies past an edge. On a get step: the layout
+     * problems of the showing windows, one JSON line each.
+     */
     val layout: Boolean = false,
+    /**
+     * On a get of the layout: the screen areas, `x,y,width,height;...`, that must show whole, such as a picture's
+     * highlights; content cut outside them does not count.
+     */
+    val within: String? = null,
     /**
      * On a menu step: the item or submenu, as `View > Appearance > Compact Mode`. On a check or uncheck step: a
      * checkable main menu item, which the step runs only when its state differs.
@@ -323,7 +331,7 @@ object UiSteps {
         "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
         "builds", "changes", "console", "lines", "changed", "diff", "golden", "notifications", "problems", "severity",
         "out", "highlight", "crop", "margin", "align", "show", "theme", "themes", "dimension",
-        "proportion", "size", "key", "fit", "numbers",
+        "proportion", "size", "key", "fit", "numbers", "within",
     )
     private val HIGHLIGHT_FIELDS = TARGET_FIELDS + setOf("row", "index", "label", "lines", "symbol", "file", "click", "inspection", "console", "contains")
     /** The share of its first pane a splitter step sets: a pane never shrinks to nothing. */
@@ -331,6 +339,13 @@ object UiSteps {
     /** The sizes a splitter step gives a pane; 0 puts back a pane a person collapsed. */
     val SPLIT_SIZES = 0..20_000
     private val LINES = Regex("""(\d+)(?:-(\d+))?""")
+
+    /** The screen areas `"x,y,width,height;..."` names, as a get of the layout takes them. */
+    fun parseAreas(spec: String): List<java.awt.Rectangle> = spec.split(';').filter { it.isNotBlank() }.map { area ->
+        val n = area.split(',').map { it.trim().toIntOrNull() }
+        require(n.size == 4 && n.all { it != null }) { "within is x,y,width,height areas separated by ';', such as \"10,20,300,24\"; was \"$spec\"" }
+        java.awt.Rectangle(n[0]!!, n[1]!!, n[2]!!, n[3]!!)
+    }
 
     /** The lines `"a-b"` or `"a"` name, 1-based, with a <= b. */
     fun parseLines(spec: String): IntRange {
@@ -522,6 +537,7 @@ object UiSteps {
             height = obj.string("height"),
             maximize = obj.boolean("maximize"),
             layout = obj.boolean("layout") ?: false,
+            within = obj.string("within"),
             path = obj.string("path"),
             mode = obj.string("mode"),
             delete = obj.boolean("delete") ?: false,
@@ -707,6 +723,10 @@ object UiSteps {
             require(step.width == null && step.height == null) { "maximize fills the screen; drop width and height" }
         }
         if (step.layout) require(step.action == UiAction.EXPECT || step.action == UiAction.GET) { "layout goes with get and expect, not $action" }
+        step.within?.let {
+            require(step.action == UiAction.GET && step.layout) { "within goes with a get of the layout" }
+            parseAreas(it)
+        }
         if (step.path != null) require(step.action in PATH_ACTIONS) { "path goes with menu, check and uncheck, not $action" }
         step.mode?.let {
             require(step.action == UiAction.MENU) { "mode goes with menu, not $action" }

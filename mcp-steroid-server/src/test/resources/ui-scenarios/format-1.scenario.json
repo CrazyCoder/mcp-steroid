@@ -88,6 +88,7 @@
     {"action": "screenshot", "out": "pictures/view-menu.png", "crop": "popups"},
     {"action": "set", "theme": "Light"},
     {"action": "get", "themes": true},
+    {"action": "get", "layout": true, "within": "100,200,300,24"},
     {"action": "window", "dimension": "SettingsEditor", "width": 1400, "height": 900},
     {"action": "splitter", "class": "XDebuggerTree", "size": "fit"},
     {"action": "splitter", "class": "OnePixelSplitter", "proportion": 0.3},
