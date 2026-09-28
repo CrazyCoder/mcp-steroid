@@ -144,29 +144,55 @@ object UiLayout {
     }
 
     /**
-     * The layout lines of [window]'s snapshot: each tool window narrower than its header, and the controls that lie
-     * past an edge, grouped by the tool window or the window that holds them, each with the step that makes room.
+     * One layout line of a snapshot: a tool window, named by [toolWindow], or a window, that cuts controls, and [fix],
+     * the step that makes room, or null when there is none to take.
      */
-    fun summary(window: Window, root: UiNode, refOf: (UiNode) -> String, project: Project): List<String> {
+    class Problem(val line: String, val fix: String?, val toolWindow: String?)
+
+    /** The layout lines of [window]'s snapshot, as [problems] finds them. */
+    fun summary(window: Window, root: UiNode, refOf: (UiNode) -> String, project: Project): List<String> =
+        problems(window, root, refOf, project).map { it.line }
+
+    /**
+     * Each tool window of [window] narrower than its header, and the controls that lie past an edge, grouped by the
+     * tool window or the window that holds them, each with the step that makes room.
+     */
+    fun problems(window: Window, root: UiNode, refOf: (UiNode) -> String, project: Project): List<Problem> {
         val toolWindows = toolWindows(project).filter { SwingUtilities.isDescendingFrom(it.window.decorator, window) }
         val hidden = root.walk().filter { it.listed && (it.clip == UiClip.OUTSIDE || it.clip == UiClip.CLIPPED) }.toList()
         val byToolWindow = hidden.groupBy { node -> toolWindows.firstOrNull { it.holds(node.component) } }
-        val lines = mutableListOf<String>()
+        val problems = mutableListOf<Problem>()
         for (tw in toolWindows) {
             val inside = byToolWindow[tw].orEmpty()
             if (!tw.tooSmall && inside.isEmpty()) continue
-            lines += buildString {
+            val line = buildString {
                 append("layout: ")
                 append(if (tw.tooSmall) tw.describe() else "the ${tw.id} tool window cuts controls")
                 if (inside.isNotEmpty()) append(": ").append(controls(inside, refOf))
                 append("; ").append(tw.step).append(" makes room")
             }
+            problems += Problem(line, tw.step, tw.id)
         }
         byToolWindow[null]?.let { rest ->
-            lines += "layout: ${controls(rest, refOf)} in this window; ${windowStep(window)}"
+            problems += Problem("layout: ${controls(rest, refOf)} in this window; ${windowStep(window)}", windowFix(window), null)
         }
-        return lines
+        return problems
     }
+
+    /**
+     * The step that gives [window] room, which runs as it is: the IDE window, by its class, fills the screen unless it
+     * does already; any other window, the topmost one, grows to its content.
+     */
+    private fun windowFix(window: Window): String? = when {
+        window is IdeFrame && window is Frame ->
+            if (window.extendedState and Frame.MAXIMIZED_BOTH == Frame.MAXIMIZED_BOTH) null
+            else """{"action":"window","class":"${window.javaClass.simpleName}","maximize":true}"""
+        else -> """{"action":"window"}"""
+    }
+
+    /** The step that makes room for [c], a control past the edge of a panel or of its window, or null when none does. */
+    fun fixFor(c: Component, project: Project): String? =
+        toolWindows(project).firstOrNull { it.holds(c) }?.step ?: SwingUtilities.getWindowAncestor(c)?.let(::windowFix)
 
     private fun controls(nodes: List<UiNode>, refOf: (UiNode) -> String): String {
         val outside = nodes.count { it.clip == UiClip.OUTSIDE }

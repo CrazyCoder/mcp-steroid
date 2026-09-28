@@ -45,12 +45,27 @@ class UiStepsTest {
     }
 
     @Test
-    fun `a menu step takes an optional path, which no other step takes`() {
+    fun `a menu step takes an optional path or a mode, and check and uncheck take a path`() {
         val step = UiSteps.parse("""[{"action":"menu","path":"View > Appearance > Status Bar"}]""").single()
         assertEquals(UiAction.MENU, step.action)
         assertEquals("View > Appearance > Status Bar", step.path)
         assertNull(UiSteps.parse("""[{"action":"menu"}]""").single().path)
-        assertTrue(fails("""[{"action":"run","id":"About","path":"Help"}]""").contains("path goes with menu"))
+        assertTrue(fails("""[{"action":"run","id":"About","path":"Help"}]""").contains("path goes with menu, check and uncheck"))
+        assertEquals("merged", UiSteps.parse("""[{"action":"menu","mode":"merged"}]""").single().mode)
+        assertTrue(fails("""[{"action":"menu","mode":"sideways"}]""").contains("unknown menu mode"))
+        assertTrue(fails("""[{"action":"menu","mode":"merged","path":"View"}]""").contains("not both"))
+        assertTrue(fails("""[{"action":"run","id":"About","mode":"merged"}]""").contains("mode goes with menu"))
+        assertEquals("View > Status Bar", UiSteps.parse("""[{"action":"uncheck","path":"View > Status Bar"}]""").single().path)
+        assertTrue(fails("""[{"action":"check"}]""").contains("needs a target"))
+        assertTrue(fails("""[{"action":"check","name":"A","path":"View > Status Bar"}]""").contains("and not both"))
+    }
+
+    @Test
+    fun `a write step deletes its file with delete, which takes no text`() {
+        assertTrue(UiSteps.parse("""[{"action":"write","file":"a.txt","delete":true}]""").single().delete)
+        assertTrue(fails("""[{"action":"write","file":"a.txt","delete":true,"text":"x"}]""").contains("takes no text"))
+        assertTrue(fails("""[{"action":"write","file":"a.txt"}]""").contains("or \"delete\":true"))
+        assertTrue(fails("""[{"action":"close","delete":true}]""").contains("delete goes with write"))
     }
 
     @Test

@@ -77,7 +77,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           value cell, such as a Code Style option's value, and reads it back
           (in type and fill, "text" is the text to enter, so target the field by ref, name or class)
         - {"action":"press", "keys":"ENTER" or "ctrl+shift+A", optional target}: keymap shortcuts run
-        - {"action":"check"|"uncheck", target}: clicks a checkbox only when its state differs
+        - {"action":"check"|"uncheck", target}: clicks a checkbox only when its state differs; with "path" in
+          place of a target, runs a checkable main menu item only when its state differs
         - {"action":"select", target, "row":"text" or "index":N, or a row ref}: selects a list, tree or table
           row, a tab, or a combo item, without clicking it, so a list that acts on a click does not act. "row"
           is the row's text, else part of it, and "A > B > C" is a tree path, whose collapsed parents it
@@ -126,7 +127,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           toolbar with menus folded into the Main Menu button, under that button, a menu bar, or a menu
           outside the window (the macOS screen menu bar, a Linux global menu) that no click reaches. Each
           segment is an item's text, its start or part of it. Reports a checkable item's state before and
-          after. A path to a submenu, or no path, lists its items with action ids, shortcuts and states
+          after. A path to a submenu, or no path, lists its items with action ids, shortcuts and states.
+          {"action":"menu","mode":"merged|hamburger|toolbar"} sets how the menu shows (new UI, Windows and Linux)
         - {"action":"window", optional target or "title", "width", "height", or "maximize":true|false}: sizes
           the window that holds the target, the one whose title contains "title", or the topmost one, in
           logical pixels or "fit" (its preferred size); "maximize" true fills the screen and false restores.
@@ -141,7 +143,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           editors of each side, and in Split Mode where they disagree), "file":"path" (its type, language,
           editor providers and open editors) and "memory":true (heap, heap after the last GC, direct buffers,
           threads, OS memory and the GC's load, as the memory indicator shows them)
-        - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project
+        - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project, or
+          with "delete":true deletes it
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
         - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does
         - {"action":"screenshot", optional target, "save":"name"}: saves a picture of the target's window, or of
@@ -161,8 +164,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         replaced by names so that they replay in another session. A scenario file of such steps is any
         repeatable IDE procedure: a bug reproduction, a feature check, a visual review, a setup. `scenario`
         replays it and ends with a verdict: PASSED, FAILED (a check did not hold), BROKEN (a step could not
-        be done), or REPRODUCED and NOT REPRODUCED for a bug check. Read mcp-steroid://ide/ui-scenarios before
-        recording or replaying one.
+        be done), REPRODUCED and NOT REPRODUCED for a bug check, or SKIPPED on an IDE its "requires" rules
+        out. Its "setup" lays the IDE out first, and the replay puts back the settings, sizes, menu items and
+        files the steps changed. Read mcp-steroid://ide/ui-scenarios before recording or replaying one.
 
         A click that opens a modal dialog returns while the dialog is up, and the report names it. A step
         that runs an action or presses a button named with an ellipsis ("Settings…") waits up to 10 s for

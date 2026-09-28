@@ -59,7 +59,7 @@ class UiInput(
         val reach = area?.let { shown.intersection(it) } ?: shown
         val what = UiComponentFacts.simpleClassName(target) + (UiComponentFacts.name(target)?.let { " \"${it.take(60)}\"" } ?: "")
         return when {
-            reach.isEmpty -> throw UiStepFailure("no pointer reaches $what: ${unreachable(target)}")
+            reach.isEmpty -> throw UiUnreachable("no pointer reaches $what: ${unreachable(target)}", target)
             reach.contains(local) -> local
             exact -> throw UiStepFailure("the offset ${local.x},${local.y} is outside the part of $what that shows, " +
                 "${reach.x},${reach.y} ${reach.width}x${reach.height}; ${unreachable(target)}")

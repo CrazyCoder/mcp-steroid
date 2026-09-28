@@ -1,7 +1,9 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.server
 
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationInfo
+import com.intellij.openapi.util.SystemInfo
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
@@ -71,6 +73,13 @@ class UiToolHandlerIJ : UiToolHandler {
         } catch (e: IllegalArgumentException) {
             return builder.addTextContent("ERROR: ${e.message}").markAsError().build()
         }
+        scenario?.requires?.unmet(here(role))?.takeIf { it.isNotEmpty() }?.let { unmet ->
+            val verdict = UiVerdict.skipped(unmet)
+            val text = "execution_id: ${executionId.executionId}\n${header(scenario)}\n${verdict.line}"
+            project.executionStorage.writeCodeExecutionData(executionId, "ui.txt", text)
+            if (params.jsonOutput) return ToolOutputContract.result(ToolOutputContract.ui(executionId.executionId, true, verdict, text))
+            return builder.addTextContent(text).build()
+        }
         val from = params.fromStep ?: 1
         val to = params.toStep ?: allSteps.size
         if (allSteps.isNotEmpty() && (from < 1 || to > allSteps.size || from > to)) {
@@ -93,32 +102,63 @@ class UiToolHandlerIJ : UiToolHandler {
             artifacts = project.executionStorage.resolveExecutionDir(executionId),
             forward = bridge?.let { b -> { step -> forwardStep(b, project, params.taskId, step, runStartedMs) } },
             startedMs = runStartedMs)
+        // A scenario notes a window that cuts controls, unless its setup asks for more; a call's snapshot shows it anyway.
+        session.layoutMode = scenario?.let { it.layout ?: "note" }
+        // A scenario's setup runs before any replay, one that starts at a later step too, so each one starts laid out.
+        val setupSteps = scenario?.setup.orEmpty()
         // The steps' own waits bound the call, plus an allowance for delivery and settling per step.
-        val budgetMs = (steps + cleanup).sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
+        val budgetMs = (setupSteps + steps + cleanup).sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS
         return try {
             val started = TimeSource.Monotonic.markNow()
+            var setupResult: UiSessionResult? = null
+            var room: String? = null
             val (result, cleanupResult) = withTimeout(budgetMs.milliseconds) {
-                val main = session.run(steps, mode, firstIndex = from)
+                val setup = if (setupSteps.isEmpty()) null else session.run(setupSteps, UiSnapshotMode.NONE, labelPrefix = "setup step")
+                setupResult = setup
+                // A setup that failed leaves the IDE unlike the one the steps expect, so they do not run.
+                val main = if (setup?.failure != null) setup else {
+                    room = session.makeRoom()
+                    session.run(steps, mode, firstIndex = from)
+                }
+                // Cleanup and restore put the IDE back as it was, cramped or not.
+                session.layoutMode = null
                 // Cleanup puts the IDE back whether the steps passed or failed; a partial run leaves its state for the next.
                 // Every cleanup step runs: one that finds nothing to undo, such as a close with no dialog open, stops none.
                 val after = if (cleanup.isEmpty()) null
-                else session.run(cleanup.map { it.copy(soft = true) }, UiSnapshotMode.NONE, labelPrefix = "cleanup step")
+                else session.run(cleanup.map { it.copy(soft = true) }, UiSnapshotMode.NONE, labelPrefix = "cleanup step", record = false)
                 main to after
             }
+            // Then a whole scenario puts back what its steps changed, last change first, as its cleanup's last part.
+            val restoreSteps = if (scenario != null && to == allSteps.size) UiSteps.parse(JsonArray(result.undo)).map { it.copy(soft = true) } else emptyList()
+            val restoreResult = if (restoreSteps.isEmpty()) null else withTimeout((restoreSteps.sumOf { it.timeoutMs + STEP_ALLOWANCE_MS } + BASE_ALLOWANCE_MS).milliseconds) {
+                session.run(restoreSteps, UiSnapshotMode.NONE, labelPrefix = "restore step", record = false)
+            }
+            // A step a JetBrains Client sent here, and a scenario run that stopped before its cleanup, say how to restore.
+            val undoLine = result.undo.takeIf { it.isNotEmpty() && (params.runAgeMs != null || scenario != null && restoreSteps.isEmpty()) }?.let(UiRestore::line)
             val editorNotice = bridge?.takeIf { steps.any { it.action in EDITOR_ACTIONS } }
                 ?.let { editorMismatchNotice(it, project, params.taskId, runStartedMs) }
             val planned = allSteps.drop(from - 1)
             val judged = scenario != null || planned.any { it.bug != null }
-            val verdict = if (judged) UiVerdict.of(planned, result.outcomes) else null
+            val setupFailed = setupResult?.failure != null
+            val verdict = when {
+                setupFailed -> UiVerdict.Verdict(UiVerdict.Kind.BROKEN,
+                    "BROKEN at setup step ${result.outcomes.last().index}: the scenario's setup could not be done, so no step ran. Repair the setup")
+                judged -> UiVerdict.of(planned, result.outcomes)
+                else -> null
+            }
             val recording = if (scenario == null) record(project, executionId, params.taskId, result) else null
             val text = buildString {
                 append("execution_id: ").append(executionId.executionId)
                 append(" (").append(started.elapsedNow().inWholeMilliseconds).append(" ms)")
                 scenario?.let { append('\n').append(header(it)) }
+                if (!setupFailed) setupResult?.reports?.forEach { append('\n').append(it.line) }
+                room?.let { append('\n').append("setup layout: ").append(it) }
                 result.reports.forEach { append('\n').append(it.line) }
                 result.failure?.let { append('\n').append("FAILED ").append(it) }
                 // Cleanup steps run soft, so a failed one is among the reports and never stops the others.
                 cleanupResult?.reports?.forEach { append('\n').append(it.line) }
+                restoreResult?.reports?.forEach { append('\n').append(it.line) }
+                undoLine?.let { append('\n').append(it) }
                 verdict?.let { append('\n').append(it.line) }
                 recording?.let { append('\n').append(it) }
                 trace?.let { append('\n').append("trace: ").append(it.folder.resolve("trace.md")) }
@@ -158,7 +198,7 @@ class UiToolHandlerIJ : UiToolHandler {
      * and returns what the backend reported for it. The backend's own verdict and recording lines are left out: the
      * scenario's verdict and recording are this call's.
      */
-    private suspend fun forwardStep(bridge: SplitFrontendBridge, project: Project, taskId: String, step: UiStep, runStartedMs: Long): String {
+    private suspend fun forwardStep(bridge: SplitFrontendBridge, project: Project, taskId: String, step: UiStep, runStartedMs: Long): UiForwardedStep.Report {
         val key = bridge.backendKeyFor(project) ?: throw UiStepFailure("the backend does not list this project, so the step cannot run there")
         // Without its intent the backend's label is exactly this, and its report line is what follows it. Without bug
         // and soft the backend judges nothing: a failed bug check there must read as a failed step here, where the
@@ -177,9 +217,7 @@ class UiToolHandlerIJ : UiToolHandler {
             override fun report(message: String) = Unit
         })
         val text = result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
-        val report = UiForwardedStep.parse(text, UiForwardedStep.label(step), result.isError)
-        if (!report.passed) throw UiStepFailure("on the backend: ${report.text}")
-        return "on the backend: ${report.text}"
+        return UiForwardedStep.parse(text, UiForwardedStep.label(step), result.isError)
     }
 
     /**
@@ -191,8 +229,8 @@ class UiToolHandlerIJ : UiToolHandler {
     private suspend fun editorMismatchNotice(bridge: SplitFrontendBridge, project: Project, taskId: String, runStartedMs: Long): String? {
         val mismatches = try {
             val local = UiEditors(project).local()
-            val backend = forwardStep(bridge, project, taskId, GET_EDITORS, runStartedMs).removePrefix("on the backend: ")
-            UiEditorState.mismatches(local, UiEditorState.parse(backend)).toSet()
+            val backend = forwardStep(bridge, project, taskId, GET_EDITORS, runStartedMs).takeIf { it.passed } ?: return null
+            UiEditorState.mismatches(local, UiEditorState.parse(backend.text)).toSet()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -249,6 +287,22 @@ class UiToolHandlerIJ : UiToolHandler {
         } catch (e: IllegalArgumentException) {
             throw IllegalArgumentException("scenario $file: ${e.message}", e)
         }
+    }
+
+    /** The IDE that replays, as a scenario's `requires` checks it: this side's build, product, enabled plugins and OS. */
+    private fun here(role: SplitRole): UiScenarioRequires.Here {
+        val build = ApplicationInfo.getInstance().build
+        return UiScenarioRequires.Here(
+            build = build.withoutProductCode().asString(),
+            product = build.productCode,
+            plugins = PluginManagerCore.plugins.filter { PluginManagerCore.isLoaded(it.pluginId) }.map { it.pluginId.idString }.toSet(),
+            os = when {
+                SystemInfo.isWindows -> "windows"
+                SystemInfo.isMac -> "macos"
+                else -> "linux"
+            },
+            mode = if (role == SplitRole.MONOLITH) "monolith" else UiScenarioRequires.SPLIT,
+        )
     }
 
     /** Names the scenario and warns when it was recorded on another IDE build, where steps may need repair. */

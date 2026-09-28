@@ -134,6 +134,10 @@ A `menu` step reaches an item in all of them, because every one is built from th
 - `{"action":"menu","path":"View > Appearance"}` lists a submenu's items with their action ids, shortcuts,
   and `[disabled]`, `[checked]` or `[unchecked]`; `{"action":"menu"}` lists the menus, marking the ones folded
   into the Main Menu button.
+- `{"action":"check","path":"View > Appearance > Status Bar"}`, or `uncheck`, runs a checkable item only when
+  its state differs, so the item ends checked, or unchecked, however it started.
+- `{"action":"menu","mode":"merged"}` sets the menu mode: `merged`, `hamburger`, or `toolbar` for a menu bar of
+  its own. Only the new UI on Windows and Linux has the setting.
 
 An item that opens a dialog returns once the dialog shows, as a click does. The report says how a person opens
 the menu when it is not in view, such as `a person opens it from the Main Menu button, where Help is folded`.

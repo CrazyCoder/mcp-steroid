@@ -26,7 +26,8 @@ This recipe adds what a scenario needs on top: checks, setup without dialogs, pi
 ## The workflow
 
 1. **Set up** the state the procedure depends on with `set`, `write` and `settings` steps, not by clicking
-   through dialogs: a setting set directly is the same on every replay.
+   through dialogs: a setting set directly is the same on every replay. The window size, the tool windows,
+   the menu mode and the settings go in the scenario's `setup` block.
 2. **Do it** with `steroid_ui` steps, one call at a time, reading each response. Give every step an `intent`,
    in plain words: "open the Rename dialog", "type the new name".
 3. **Check** the outcome with `expect` steps that state the *correct* behavior, and save the states worth
@@ -35,8 +36,9 @@ This recipe adds what a scenario needs on top: checks, setup without dialogs, pi
 4. **Save** the scenario. Every `steroid_ui` call with steps appends them to the task's recording file, named
    in the response (`recorded: ... to <file>`), with refs already replaced by names, captions or classes, row
    indexes by row text, Settings pages by their id and option names by their full name. The lines of that
-   file, minus exploration that led nowhere, are the scenario's `steps`. Add the header fields below and a
-   `cleanup` that puts the IDE back.
+   file, minus exploration that led nowhere, are the scenario's `steps`. Add the header fields below. The
+   replay puts back the settings, sizes, menu items and files the steps change; a `cleanup` closes what they
+   opened.
 5. **Replay** it with `steroid_ui` and `scenario` set to the file's path. Replay it once right away: a scenario
    that does not replay in a fresh call is not done.
 6. **Replay it again** whenever it matters: after a fix (`NOT REPRODUCED` confirms it), on a new IDE build, or
@@ -47,12 +49,15 @@ This recipe adds what a scenario needs on top: checks, setup without dialogs, pi
 
 ```
 {
+  "$schema": "mcp-steroid://ide/ui-scenario-schema",
   "scenario": 1,
   "title": "Line numbers turned off from Search Everywhere show as off in Settings",
   "issue": "IDEA-123456",
   "ide": "IU-262.10968.63",
   "project": "Any project with a text file open",
   "description": "Turning off 'Show line numbers' through Search Everywhere should uncheck it in Settings.",
+  "requires": {"since": "262.10000"},
+  "setup": {"window": {"width": 1600, "height": 1000}, "layout": "auto"},
   "steps": [
     {"action": "set", "option": "Appearance: Show line numbers:", "value": false,
      "intent": "turn line numbers off the way Search Everywhere does"},
@@ -62,11 +67,12 @@ This recipe adds what a scenario needs on top: checks, setup without dialogs, pi
     {"action": "close", "intent": "close Settings"}
   ],
   "cleanup": [
-    {"action": "close"},
-    {"action": "set", "option": "Appearance: Show line numbers:", "value": true}
+    {"action": "close"}
   ]
 }
 ```
+
+The replay turns line numbers back on and gives the IDE window its size back by itself, after the cleanup.
 
 | Field | Required | Meaning |
 |---|---|---|
@@ -76,11 +82,79 @@ This recipe adds what a scenario needs on top: checks, setup without dialogs, pi
 | `ide` | no | The IDE build it was recorded or last repaired on, as `IU-262.10968.63`. A replay on another build says so, as a hint that a failing step may need repair rather than that the bug is back |
 | `project` | no | What must be open: a project, a file layout, a plugin. The steps do not open projects |
 | `description` | no | What the scenario is about in a few sentences, such as the report it reproduces, for the next agent |
+| `requires` | no | The IDE the scenario means anything on, described below. Another IDE gives `SKIPPED` |
+| `setup` | no | How to lay the IDE out before the steps, described below |
 | `steps` | yes | The steps, in order |
 | `cleanup` | no | Steps that run after the others whether they passed or failed. Each cleanup step runs even when the one before it failed, so a `close` with nothing open stops nothing |
+| `$schema` | no | `mcp-steroid://ide/ui-scenario-schema`, the JSON schema of the format, which the replay ignores |
 
 Unknown fields fail, in the header and in every step, so a typo never passes as a no-op. Keep the file next
 to the other evidence of the issue; its path is absolute or relative to the project.
+
+`steroid_fetch_resource` with `mcp-steroid://ide/ui-scenario-schema` returns the JSON schema of the file. It
+names every field and value and the fields each step needs; the replay also checks the rules that span
+fields, such as a `check` that needs a target or a path.
+
+## setup: lay the IDE out the same way on every replay
+
+The `setup` block runs before the steps, on every replay, one that starts at a later step with `from_step`
+too, so each one starts from the same layout. Its parts run in this order:
+
+| Part | Example | Does |
+|---|---|---|
+| `settings` | `[{"registry":"ide.balloon.shadow.size","value":"0"},{"option":"Show line numbers","value":true}]` | A `set` step per entry |
+| `menu` | `"merged"` | How the main menu shows: `merged` into the main toolbar, `hamburger` under the Main Menu button, or `toolbar`, a menu bar of its own. Only the new UI on Windows and Linux has the setting |
+| `window` | `{"width":1600,"height":1000}` or `{"maximize":true}` | Sizes the IDE window, whatever dialog shows. It stays on its screen, and a screen smaller than asked holds it at the screen's size, as the report says |
+| `toolwindows` | `{"Project":{"width":"fit"},"Problems View":{"height":250},"Terminal":{"hide":true}}` | A `toolwindow` step per tool window ID, with `width`, `height`, `tab` or `hide` |
+| `steps` | `[{"action":"goto","file":"src/A.kt","line":1}]` | Any steps, after the parts above |
+| `layout` | `"auto"` | What the steps do about a window that cuts controls, below |
+
+A setup step that fails stops the replay before the steps with `BROKEN at setup step N`, since the steps
+would meet an IDE unlike the one they expect.
+
+`layout` decides what happens when a step opens a window, or shows a tool window, that cuts controls, the
+condition a snapshot's `layout:` line reports:
+
+| `layout` | Does |
+|---|---|
+| `note` (default) | The step's report gets the `layout:` line |
+| `check` | The same, and it counts as a failed soft check, which the verdict lists |
+| `auto` | Makes room with the step the line names, and reports `made room:`. It also makes room in the IDE window before the first step, and before a click on a control past an edge, which it then retries once |
+
+`auto` suits a scenario that must run on any screen; `check` suits one that checks a layout bug, where a cut
+control is the finding.
+
+## requires: the IDE a scenario is for
+
+A scenario that means nothing on some IDEs says so in `requires`, and a replay there gives `SKIPPED` with
+what the IDE lacks, instead of a `BROKEN` that sends the next agent repairing steps that are fine:
+
+| Field | Example | Holds when |
+|---|---|---|
+| `since`, `until` | `"262.10000"`, `"262.*"` | The build is in the range, compared number by number, as a plugin's `since-build` and `until-build` are; a `*` matches any number from there on |
+| `products` | `["IU","IC"]` | The product code is one of these. In Split Mode the JetBrains Client checks its own |
+| `plugins` | `["org.jetbrains.kotlin"]` | Every plugin is enabled on the side that replays |
+| `os` | `["windows","linux"]` | The OS is one of `windows`, `macos`, `linux` |
+| `mode` | `"split"` | Split Mode, or `monolith` for a regular IDE |
+
+## The replay puts the IDE back
+
+A replay of a whole scenario records what each step changes, and after the cleanup puts it back, the last
+change first, as `restore step` lines:
+
+| Step | What is put back |
+|---|---|
+| `set` | The value before, for every kind; an inspection gets its severity and then its on or off state |
+| `check`, `uncheck` or `menu` of a checkable main menu item | Its state before; for one of a group, such as the main menu modes, the item that was checked |
+| `menu` with `mode` | The menu mode before |
+| `toolwindow` | The tab, the size and whether it showed |
+| `window` on the IDE window | Its size, or maximized; a dialog closes, so its size is not restored |
+| `write` | The text before, or no file when the step created it |
+
+Only the first change of each state counts, since its restore brings back what the IDE had before the run.
+`setup` steps are put back the same way. A `code`, `perf` or `run` step, and a click in a dialog, change what
+no restore knows; the cleanup handles those. A run that stops before the last step, with `to_step`, restores
+nothing and ends with an `undo:` line that lists the restore steps.
 
 ## Replay and verdicts
 
@@ -99,6 +173,7 @@ intent and ends with one verdict:
 | `REPRODUCED at step N: <bug>` | A bug check failed: the bug is present |
 | `NOT REPRODUCED` | Every bug check passed: the bug is fixed, or the scenario no longer reaches it |
 | `INCOMPLETE` | `to_step` stopped the run before a bug check |
+| `SKIPPED` | The IDE does not meet the scenario's `requires`, which the line names; no step ran |
 
 `FAILED` and `BROKEN` mark the call as an error; `REPRODUCED` does not, because showing the bug is what a
 reproduction is for. A `bug` check also works in a plain `steps` call, which is how a reproduction is checked
@@ -135,7 +210,7 @@ an exception or a red error balloon; it waits a second for late errors first.
 ## Set the IDE up without dialogs
 
 `get` and `set` read and change configuration through the platform's own models, in milliseconds, with no
-window opened. A set reports the value before and after, which is what a cleanup step restores.
+window opened. A set reports the value before and after, and a scenario's replay puts the value before back.
 
 | Kind | Step | What it reaches |
 |---|---|---|
@@ -144,7 +219,7 @@ window opened. A set reports the value before and after, which is what a cleanup
 | `advanced` | `{"action":"set","advanced":"editor.tab.painting","value":"ARROW"}` | An advanced setting by id; an enum takes its constant's name, and a wrong one lists the constants |
 | `inspection` | `{"action":"set","inspection":"UnusedDeclaration","value":"off"}` | An inspection of the project's current profile by short name: `on`, `off`, or a severity such as `ERROR`, `WARNING`, `WEAK WARNING`, `INFORMATION`. Highlighting restarts |
 | `component` + `field` | `{"action":"set","component":"EditorSettings","field":"IS_WHITESPACES_SHOWN","value":"true"}` | A field of a persistent settings component, by the state name it is saved under. `get` with `component` alone shows its saved XML, which lists the fields that differ from their defaults. Only components already loaded are found, and a field that holds structured XML needs a `code` step |
-| `log` | `{"action":"set","log":"#com.jetbrains.rdserver.fileEditors","value":"debug"}` | A debug log category, as Help \| Diagnostic Tools \| Debug Log Settings sets it: `trace`, `debug`, `all`, or `default` to remove the level set for it. It lasts across restarts, so a cleanup step sets `default`. Set it before the steps whose log lines an `expect` on `log` checks |
+| `log` | `{"action":"set","log":"#com.jetbrains.rdserver.fileEditors","value":"debug"}` | A debug log category, as Help \| Diagnostic Tools \| Debug Log Settings sets it: `trace`, `debug`, `all`, or `default` to remove the level set for it. It lasts across restarts until the replay puts the level before back. Set it before the steps whose log lines an `expect` on `log` checks |
 
 `get` also reads three things no `set` changes:
 
@@ -172,13 +247,16 @@ Other setup steps:
   logical pixels or `"fit"`.
 - `{"action":"menu","path":"View > Appearance > Status Bar"}` runs a main menu item by its path, whichever way
   the IDE shows the menu, including the macOS screen menu bar; a checkable item's report gives its state before
-  and after, and the same step in `cleanup` puts it back. A path to a submenu lists its items.
+  and after. A path to a submenu lists its items.
+- `{"action":"check","path":"View > Appearance > Status Bar"}`, or `uncheck`, runs a checkable main menu item
+  only when its state differs, so the step leaves the item checked, or unchecked, however it started.
+- `{"action":"menu","mode":"merged"}` sets how the main menu shows: `merged`, `hamburger` or `toolbar`.
 - `{"action":"window","width":1800,"height":1200}` sizes the topmost window, or the one a target or `title`
-  names; `"maximize":true` fills the screen and `false` restores it. The report gives the size it had, which
-  a cleanup step restores.
+  names; `"maximize":true` fills the screen and `false` restores it. The report gives the size it had.
+  `"class":"IdeFrameImpl"` names the IDE window whatever dialog shows.
 - `{"action":"write","file":"src/Sample.kt","text":"..."}` creates or replaces a project file, with its
-  folders, through the IDE's documents, so the editor and the index see it at once. A path outside the
-  project folder is refused.
+  folders, through the IDE's documents, so the editor and the index see it at once; `"delete":true` in place
+  of `text` deletes it. A path outside the project folder is refused.
 - `{"action":"code","code":"...","modal":"non_modal"}` runs a Kotlin body exactly as `steroid_execute_code`
   does, for setup that no step covers, and fails the step when the script fails. Its default `modal` closes
   open dialogs, so pass `non_modal` or `dialog` in the middle of a dialog flow.
@@ -190,6 +268,8 @@ Other setup steps:
 With a target, such as `{"action":"screenshot","name":"Settings categories","save":"tree"}`, it pictures the
 window that holds the target. It paints only that window, never the rest of the screen, and lets the UI
 settle first. Read the saved file to review it, or keep it next to the scenario to compare with a later run.
+The report, and `appearance-page.json` beside the picture, give what makes two pictures of one state differ:
+the window's size, the screen's scale and the IDE's zoom, the theme, the editor font, the build and the OS.
 `save` is required: name each picture after the state it shows, so a replay's pictures line up with the
 earlier ones.
 
@@ -244,10 +324,12 @@ These follow the practices of Playwright and other UI test tools:
   Keep to one bug check per reported problem.
 - **Set up by value, not by clicks.** A `set` step pins a setting the bug depends on whatever the machine had.
   Clicks are for the part of the report that is about the UI.
-- **Pin the window size.** A `window` step with a width and a height at the start, and a `toolwindow` step
-  with a width for a tool window the steps use, give every machine the same layout: a scenario recorded on
-  a large screen otherwise meets cut controls on a small one, and its pictures do not line up.
-- **Leave the IDE as you found it.** Restore every `set` in `cleanup`, and close what the steps opened.
+- **Pin the layout.** A `setup` block with the window's size and the width of each tool window the steps use
+  gives every machine the same layout: a scenario recorded on a large screen otherwise meets cut controls on a
+  small one, and its pictures do not line up. Add `"layout":"auto"` to make room wherever it still runs short.
+- **Say which IDE it is for.** `requires` turns a replay on an IDE without the feature into `SKIPPED`.
+- **Leave the IDE as you found it.** The replay puts back what the steps changed; close what they opened in
+  `cleanup`.
 - **Keep the intent current.** When a step changes during a repair, its intent is what it must still achieve.
   Update `ide` to the build the repair was made on.
 
@@ -279,6 +361,7 @@ as a Rename dialog: its steps need `"side": "backend"`. Three things differ by s
   disagreement once per task. A file the backend keeps an extra editor of opens neither from the Project view nor
   from a navigation until its tab is clicked.
 - A backend endpoint refuses a step with `"side": "frontend"`, because it cannot reach the client.
+- A restore runs on the side its step ran on: the backend reports the restores of a step the client sent it.
 
 See [Split Mode](mcp-steroid://skill/split-mode) for what each side draws.
 
@@ -302,13 +385,16 @@ do the same job. A new format keeps the old one readable: the reader accepts bot
 `UiScenarioFormatTest` holds the contract. Its fixture, `ui-scenarios/format-1.scenario.json` in the server
 tests, uses every released step, field and value. Removing or renaming one fails the parse, and adding one fails
 the coverage check until the fixture uses it. The fixture takes new lines only: editing or deleting a line to
-make the test pass is a breaking change.
+make the test pass is a breaking change. `UiScenarioSchemaTest` checks that the schema names every field and
+value the parser takes and that the fixture is valid against it.
 
 ## Extending the format
 
 A new step, field or check is added in `UiSteps` (parsing and validation, with a message that names the
 problem), `UiSession` or one of the classes it dispatches to (`UiExpect`, `UiConfig`, `UiIdeSteps`), the step
-list of the `steroid_ui` tool description, this recipe, and a line in the format fixture.
+list of the `steroid_ui` tool description, this recipe, the schema `ui-scenarios/scenario-1.schema.json` in the
+server's resources, and a line in the format fixture. A step that changes the IDE's state gives the steps that
+put it back to `UiRestore`.
 
 # See also
 

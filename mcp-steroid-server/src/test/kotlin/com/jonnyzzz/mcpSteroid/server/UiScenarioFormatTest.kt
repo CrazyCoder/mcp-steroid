@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test
  */
 class UiScenarioFormatTest {
     private val text = javaClass.getResource("/ui-scenarios/format-1.scenario.json")!!.readText()
+    private val root = Json.parseToJsonElement(text).jsonObject
     private val steps = (Json.parseToJsonElement(text).jsonObject.let { it["steps"]!!.jsonArray + it["cleanup"]!!.jsonArray })
         .map { it.jsonObject }
 
@@ -45,5 +46,18 @@ class UiScenarioFormatTest {
         assertCovers("buttons", UiSteps.BUTTONS, values("button"))
         assertCovers("modal values", UiSteps.MODALS, values("modal"))
         assertCovers("sides", UiSteps.SIDES, values("side"))
+        assertCovers("menu modes", UiSteps.MENU_MODES, values("mode"))
+        assertCovers("scenario fields", UiScenario.FIELDS, root.keys)
+        assertCovers("setup fields", UiScenario.SETUP_FIELDS, root["setup"]!!.jsonObject.keys)
+        assertCovers("requires fields", UiScenarioRequires.FIELDS, root["requires"]!!.jsonObject.keys)
+    }
+
+    @Test
+    fun `the setup block runs as steps, in its order`() {
+        val setup = UiScenario.parse(text).setup
+        assertEquals(listOf(UiAction.SET, UiAction.SET, UiAction.MENU, UiAction.WINDOW, UiAction.TOOLWINDOW, UiAction.TOOLWINDOW, UiAction.TOOLWINDOW, UiAction.GOTO),
+            setup.map { it.action })
+        assertEquals(UiScenario.IDE_FRAME_CLASS, setup[3].target?.cls)
+        assertEquals("auto", UiScenario.parse(text).layout)
     }
 }

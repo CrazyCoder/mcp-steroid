@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.server
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
@@ -24,13 +25,80 @@ data class UiScenario(
     val steps: List<UiStep>,
     /** Steps that run after the others whether they pass or fail, to put the IDE back as it was. */
     val cleanup: List<UiStep>,
+    /** Steps that lay the IDE out before the others, from the `setup` block; they run even when a replay starts later. */
+    val setup: List<UiStep> = emptyList(),
+    /** What a run does about a window or tool window that cuts controls, one of [LAYOUT_MODES]; null is `note`. */
+    val layout: String? = null,
+    /** What the IDE must be for the scenario to mean anything; a replay elsewhere is SKIPPED. */
+    val requires: UiScenarioRequires? = null,
 ) {
     companion object {
         const val FORMAT_VERSION = 1
 
+        /**
+         * What a run does when a step opens a window, or shows a tool window, that cuts controls: `note` says so in
+         * the step's report, `check` also counts it as a failed soft check, and `auto` makes room with the step the
+         * layout line names, as it does before a click on a control past an edge and for the IDE window at the start.
+         */
+        val LAYOUT_MODES = setOf("note", "check", "auto")
+
+        /** The class of the IDE window, which a setup step targets so that it sizes that window whatever else shows. */
+        const val IDE_FRAME_CLASS = "IdeFrameImpl"
+
         /** Format 1 only grows, so a name this reader does not know may come from a newer plugin. */
         private const val NEWER = " A scenario written for a newer MCP Steroid can use steps and fields this version does not know; update the plugin to replay it"
-        private val FIELDS = setOf("scenario", "title", "issue", "description", "ide", "project", "steps", "cleanup")
+        /** `$schema` names the JSON schema an editor checks the file against, and the replay ignores it. */
+        internal val FIELDS = setOf("\$schema", "scenario", "title", "issue", "description", "ide", "project", "requires", "setup", "steps", "cleanup")
+        internal val SETUP_FIELDS = setOf("window", "toolwindows", "menu", "settings", "steps", "layout")
+
+        /**
+         * The steps of a `setup` block, in the order they run: settings, the menu mode, the IDE window, the tool windows,
+         * then its own steps; and its layout mode.
+         */
+        private fun setup(obj: JsonObject): Pair<List<UiStep>, String?> {
+            val unknown = obj.keys - SETUP_FIELDS
+            require(unknown.isEmpty()) { "unknown setup field(s) ${unknown.joinToString()}; known fields: ${SETUP_FIELDS.sorted().joinToString()}.$NEWER" }
+            fun action(name: String, fields: JsonObject) = JsonObject(mapOf("action" to JsonPrimitive(name)) + fields)
+            fun objectOf(key: String, e: JsonElement): JsonObject = e as? JsonObject ?: throw IllegalArgumentException("setup.$key must be an object")
+            fun steps(key: String, list: List<JsonObject>): List<UiStep> = try {
+                UiSteps.parse(JsonArray(list))
+            } catch (e: IllegalArgumentException) {
+                throw IllegalArgumentException("setup.$key: ${e.message}", e)
+            }
+            val settings = obj["settings"]?.let { s ->
+                val array = s as? JsonArray ?: throw IllegalArgumentException("setup.settings must be an array of settings, such as {\"registry\":\"key\",\"value\":\"1\"}")
+                steps("settings", array.map { action("set", objectOf("settings", it)) })
+            }.orEmpty()
+            val menu = obj["menu"]?.let {
+                val mode = (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw IllegalArgumentException("setup.menu must be a string")
+                steps("menu", listOf(action("menu", JsonObject(mapOf("mode" to JsonPrimitive(mode))))))
+            }.orEmpty()
+            val window = obj["window"]?.let {
+                val fields = objectOf("window", it)
+                require(fields.keys.all { k -> k in WINDOW_FIELDS }) { "setup.window takes ${WINDOW_FIELDS.joinToString()}" }
+                steps("window", listOf(action("window", JsonObject(fields + ("class" to JsonPrimitive(IDE_FRAME_CLASS))))))
+            }.orEmpty()
+            val toolWindows = obj["toolwindows"]?.let { tw ->
+                objectOf("toolwindows", tw).map { (id, fields) ->
+                    val f = objectOf("toolwindows.$id", fields)
+                    require(f.keys.all { k -> k in TOOL_WINDOW_FIELDS }) { "setup.toolwindows.$id takes ${TOOL_WINDOW_FIELDS.joinToString()}" }
+                    action("toolwindow", JsonObject(f + ("id" to JsonPrimitive(id))))
+                }.let { steps("toolwindows", it) }
+            }.orEmpty()
+            val own = obj["steps"]?.let { s ->
+                val array = s as? JsonArray ?: throw IllegalArgumentException("setup.steps must be an array of steps")
+                steps("steps", array.map { objectOf("steps", it) })
+            }.orEmpty()
+            val layout = obj["layout"]?.let {
+                val mode = (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content
+                require(mode in LAYOUT_MODES) { "setup.layout is one of ${LAYOUT_MODES.joinToString()}" }
+                mode
+            }
+            return settings + menu + window + toolWindows + own to layout
+        }
+
+        private val WINDOW_FIELDS = listOf("width", "height", "maximize")
+        private val TOOL_WINDOW_FIELDS = listOf("width", "height", "hide", "tab")
 
         fun parse(json: String): UiScenario {
             val root = try {
@@ -59,6 +127,9 @@ data class UiScenario(
             }
             val steps = steps("steps")
             require(steps.isNotEmpty()) { "a scenario needs steps" }
+            val (setup, layout) = obj["setup"]?.let { s ->
+                setup(s as? JsonObject ?: throw IllegalArgumentException("setup must be an object, such as {\"window\":{\"maximize\":true}}"))
+            } ?: (emptyList<UiStep>() to null)
             return UiScenario(
                 title = text("title")?.takeIf { it.isNotBlank() } ?: throw IllegalArgumentException("a scenario needs a title"),
                 issue = text("issue"),
@@ -67,7 +138,92 @@ data class UiScenario(
                 project = text("project"),
                 steps = steps,
                 cleanup = steps("cleanup"),
+                setup = setup,
+                layout = layout,
+                requires = obj["requires"]?.let {
+                    UiScenarioRequires.parse(it as? JsonObject ?: throw IllegalArgumentException("requires must be an object, such as {\"since\":\"262.10000\"}"))
+                },
             )
+        }
+    }
+}
+
+/**
+ * The JSON schema of scenario format 1, which `steroid_fetch_resource` serves at [URI] for an agent or an editor to
+ * check a scenario file against. It checks the shape; [UiScenario.parse] also checks what depends on several fields.
+ */
+object UiScenarioSchema {
+    const val URI = "mcp-steroid://ide/ui-scenario-schema"
+
+    fun text(): String = UiScenarioSchema::class.java.getResource("/ui-scenarios/scenario-1.schema.json")!!.readText()
+}
+
+/**
+ * What an IDE must be for a scenario to mean anything: a build range, as a plugin's `since-build` and `until-build`
+ * give it, product codes, plugins that must be enabled, operating systems, and Split Mode or a regular IDE. A replay
+ * on an IDE that is not is SKIPPED, not FAILED: its steps would test something else.
+ */
+data class UiScenarioRequires(
+    val since: String? = null,
+    val until: String? = null,
+    val products: List<String> = emptyList(),
+    val plugins: List<String> = emptyList(),
+    val os: List<String> = emptyList(),
+    val mode: String? = null,
+) {
+    /** The IDE a replay runs on: its build number without the product code, such as `262.10968.63`. */
+    data class Here(val build: String, val product: String, val plugins: Set<String>, val os: String, val mode: String)
+
+    /** What [here] lacks, one reason each, or none when it meets every requirement. */
+    fun unmet(here: Here): List<String> = listOfNotNull(
+        since?.takeIf { compareBuild(here.build, it) < 0 }?.let { "build ${here.build} is older than $it" },
+        until?.takeIf { compareBuild(here.build, it) > 0 }?.let { "build ${here.build} is newer than $it" },
+        products.takeIf { it.isNotEmpty() && here.product !in it }?.let { "product ${here.product} is not ${it.joinToString(" or ")}" },
+        (plugins - here.plugins).takeIf { it.isNotEmpty() }?.let { "plugin(s) ${it.joinToString()} not enabled" },
+        os.takeIf { it.isNotEmpty() && here.os !in it }?.let { "the OS is ${here.os}, not ${it.joinToString(" or ")}" },
+        mode?.takeIf { it != here.mode }?.let { "this is ${if (here.mode == SPLIT) "Split Mode" else "a regular IDE"}, not ${if (it == SPLIT) "Split Mode" else "a regular IDE"}" },
+    )
+
+    companion object {
+        const val SPLIT = "split"
+        val MODES = setOf(SPLIT, "monolith")
+        val OSES = setOf("windows", "macos", "linux")
+        internal val FIELDS = setOf("since", "until", "products", "plugins", "os", "mode")
+        private val BUILD = Regex("""\d+(\.(\d+|\*))*""")
+
+        fun parse(obj: JsonObject): UiScenarioRequires {
+            val unknown = obj.keys - FIELDS
+            require(unknown.isEmpty()) { "unknown requires field(s) ${unknown.joinToString()}; known fields: ${FIELDS.sorted().joinToString()}" }
+            fun text(key: String): String? = obj[key]?.let {
+                (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw IllegalArgumentException("requires.$key must be a string")
+            }
+            fun list(key: String): List<String> = obj[key]?.let { e ->
+                (e as? JsonArray)?.map { (it as? JsonPrimitive)?.takeIf { p -> p.isString }?.content ?: throw IllegalArgumentException("requires.$key lists strings") }
+                    ?: throw IllegalArgumentException("requires.$key must be an array of strings")
+            }.orEmpty()
+            val r = UiScenarioRequires(text("since"), text("until"), list("products"), list("plugins"), list("os"), text("mode"))
+            for ((key, build) in listOf("since" to r.since, "until" to r.until)) {
+                build?.let { require(BUILD.matches(it)) { "requires.$key is a build number such as 262.10968 or 262.*, without the product code" } }
+            }
+            require(r.os.all { it in OSES }) { "requires.os lists ${OSES.joinToString()}" }
+            r.mode?.let { require(it in MODES) { "requires.mode is ${MODES.joinToString(" or ")}" } }
+            return r
+        }
+
+        /**
+         * Compares build [a] with [bound] by their numbers, left to right; a `*` in [bound] matches any number from
+         * there on, and a missing number counts as 0.
+         */
+        internal fun compareBuild(a: String, bound: String): Int {
+            val x = a.split('.')
+            val y = bound.split('.')
+            for (i in 0 until maxOf(x.size, y.size)) {
+                val b = y.getOrNull(i) ?: "0"
+                if (b == "*") return 0
+                val c = (x.getOrNull(i)?.toLongOrNull() ?: 0).compareTo(b.toLongOrNull() ?: 0)
+                if (c != 0) return c
+            }
+            return 0
         }
     }
 }
@@ -78,7 +234,8 @@ data class UiScenario(
  * lines after it, and ends with its own verdict and recording lines, which the client leaves out.
  */
 object UiForwardedStep {
-    data class Report(val passed: Boolean, val text: String)
+    /** [undo] holds the steps that restore what the step changed there, from the response's [UiRestore.LINE]. */
+    data class Report(val passed: Boolean, val text: String, val undo: List<JsonObject> = emptyList())
 
     private val VERDICTS = UiVerdict.Kind.entries.map { it.name.replace('_', ' ') }
 
@@ -88,15 +245,17 @@ object UiForwardedStep {
 
     /** [text] is the backend's response, [isError] its error flag, used only when the step's line is missing. */
     fun parse(text: String, label: String, isError: Boolean): Report {
-        val lines = text.lines()
+        val all = text.lines()
+        val undo = all.firstOrNull { it.startsWith(UiRestore.LINE) }?.let(UiRestore::parse).orEmpty()
+        val lines = all.filterNot { it.startsWith(UiRestore.LINE) }
         val failedLine = "FAILED $label failed: "
         val start = lines.indexOfFirst { it.startsWith("$label: ") || it.startsWith(failedLine) }
-        if (start < 0) return Report(!isError, lines.filterNot { it.startsWith("execution_id:") }.joinToString("\n").trim())
+        if (start < 0) return Report(!isError, lines.filterNot { it.startsWith("execution_id:") }.joinToString("\n").trim(), undo)
         val more = lines.drop(start + 1).takeWhile { it.isNotBlank() && !it.startsWith("recorded:") && VERDICTS.none(it::startsWith) }
             .filterNot { it.startsWith("execution_id:") }
         // The backend's keyboard focus is not where the user types in the JetBrains Client, so it is left out.
         val first = lines[start].removePrefix(failedLine).removePrefix("$label: ").substringBeforeLast(FOCUS)
-        return Report(!lines[start].startsWith(failedLine), (listOf(first) + more).joinToString("\n"))
+        return Report(!lines[start].startsWith(failedLine), (listOf(first) + more).joinToString("\n"), undo)
     }
 }
 
@@ -110,7 +269,10 @@ data class UiStepOutcome(val index: Int, val step: UiStep, val passed: Boolean, 
  * the bug is present with `bug`, and its verdict says whether the bug reproduced.
  */
 object UiVerdict {
-    enum class Kind { PASSED, FAILED, BROKEN, INCOMPLETE, REPRODUCED, NOT_REPRODUCED }
+    enum class Kind { PASSED, FAILED, BROKEN, INCOMPLETE, REPRODUCED, NOT_REPRODUCED, SKIPPED }
+
+    /** The verdict of a scenario whose `requires` this IDE does not meet, [unmet] naming what it lacks. */
+    fun skipped(unmet: List<String>) = Verdict(Kind.SKIPPED, "SKIPPED: this IDE does not meet the scenario's requires: ${unmet.joinToString("; ")}")
 
     data class Verdict(val kind: Kind, val line: String)
 
@@ -137,7 +299,8 @@ object UiVerdict {
             failure != null -> Verdict(Kind.BROKEN, "BROKEN at step ${failure.index}: the step could not be done$repair$soft")
             checked < bugSteps -> Verdict(Kind.INCOMPLETE, "INCOMPLETE: the run stopped before ${bugSteps - checked} bug check(s)$soft")
             bugSteps > 0 -> Verdict(Kind.NOT_REPRODUCED, "NOT REPRODUCED: every bug check passed$soft")
-            else -> Verdict(Kind.PASSED, "PASSED: all ${outcomes.size} step(s)$soft")
+            // A step's layout check is an outcome of that step, not a step of its own.
+            else -> Verdict(Kind.PASSED, "PASSED: all ${outcomes.distinctBy { it.index }.size} step(s)$soft")
         }
     }
 }

@@ -84,6 +84,8 @@ class FetchResourceToolHandler(
         val projectName = context[projectName]
 
         log.info("steroid_fetch_resource: $uri")
+        // The scenario schema is JSON, not an article.
+        if (uri == UiScenarioSchema.URI) return ToolCallResult(content = listOf(ContentItem.Text(text = UiScenarioSchema.text())))
 
         val promptsContext = handler().buildPromptsContext(projectName)
         val article = resolveResourceArticle(uri, promptsContext)

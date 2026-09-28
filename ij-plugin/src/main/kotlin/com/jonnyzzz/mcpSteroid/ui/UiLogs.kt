@@ -114,15 +114,18 @@ internal object UiLogs {
 
     /** The debug level set for [category], and whether its debug and trace output is on now. */
     fun level(category: String): String {
-        val set = LogLevelConfigurationManager.getInstance().getCategories().firstOrNull { same(it.category, category) }?.level
         val logger = Logger.getInstance(category)
         val now = when {
             logger.isTraceEnabled -> "trace"
             logger.isDebugEnabled -> "debug"
             else -> "info"
         }
-        return "log $category = ${set?.name?.lowercase() ?: "default"} (logs $now and above)"
+        return "log $category = ${levelSet(category)} (logs $now and above)"
     }
+
+    /** The level set for [category] as a set step takes it: trace, debug, all, or default when none is set. */
+    fun levelSet(category: String): String =
+        LogLevelConfigurationManager.getInstance().getCategories().firstOrNull { same(it.category, category) }?.level?.name?.lowercase() ?: "default"
 
     /** Sets [category]'s debug level, or with `default` removes the level set for it; reports before and after. */
     fun setLevel(category: String, value: String): String {

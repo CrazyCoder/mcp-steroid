@@ -24,7 +24,9 @@ import com.intellij.openapi.util.JDOMUtil
 import com.intellij.openapi.util.registry.Registry
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
 import com.intellij.util.xmlb.XmlSerializer
+import com.jonnyzzz.mcpSteroid.server.UiRestore
 import com.jonnyzzz.mcpSteroid.server.UiStep
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jdom.Element
@@ -48,8 +50,11 @@ import java.util.MissingResourceException
 internal class UiConfig(private val project: Project) {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
-    /** What a get or set step did, and the step's portable name for the setting, when it differs from the one given. */
-    class Outcome(val line: String, val option: String? = null)
+    /**
+     * What a get or set step did, the step's portable name for the setting, when it differs from the one given, and
+     * for a set the steps that put the value before back.
+     */
+    class Outcome(val line: String, val option: String? = null, val undo: List<JsonObject> = emptyList())
 
     suspend fun get(step: UiStep): Outcome = when {
         step.registry != null -> Outcome("registry ${step.registry} = ${registryValue(step.registry!!).asString()}")
@@ -67,7 +72,7 @@ internal class UiConfig(private val project: Project) {
                 val rv = registryValue(step.registry!!)
                 val before = rv.asString()
                 withContext(edtAny) { rv.setValue(value) }
-                Outcome("registry ${step.registry}: $before -> ${rv.asString()}")
+                Outcome("registry ${step.registry}: $before -> ${rv.asString()}", undo = listOf(UiRestore.step("set", "registry" to step.registry!!, "value" to before)))
             }
             step.advanced != null -> {
                 val bean = advancedBean(step.advanced!!)
@@ -84,12 +89,15 @@ internal class UiConfig(private val project: Project) {
                     }
                 }
                 withContext(edtAny) { advanced().setSetting(bean.id, parsed, type) }
-                Outcome("advanced ${bean.id}: $before -> ${advancedValue(bean)}")
+                Outcome("advanced ${bean.id}: $before -> ${advancedValue(bean)}", undo = listOf(UiRestore.step("set", "advanced" to bean.id, "value" to before)))
             }
             step.option != null -> setOption(step.option!!, bool(value))
-            step.inspection != null -> Outcome(setInspection(step.inspection!!, value))
-            step.log != null -> Outcome(UiLogs.setLevel(step.log!!, value))
-            else -> Outcome(setComponent(step.component!!, step.field!!, value))
+            step.inspection != null -> setInspection(step.inspection!!, value)
+            step.log != null -> {
+                val before = UiLogs.levelSet(step.log!!)
+                Outcome(UiLogs.setLevel(step.log!!, value), undo = listOf(UiRestore.step("set", "log" to step.log!!, "value" to before)))
+            }
+            else -> setComponent(step.component!!, step.field!!, value)
         }
     }
 
@@ -160,7 +168,8 @@ internal class UiConfig(private val project: Project) {
         }
         val before = option.isOptionEnabled
         option.setOptionState(value)
-        Outcome("option \"${option.option}\": $before -> ${option.isOptionEnabled}", option = option.option)
+        Outcome("option \"${option.option}\": $before -> ${option.isOptionEnabled}", option = option.option,
+            undo = listOf(UiRestore.step("set", "option" to option.option.orEmpty(), "value" to before.toString())))
     }
 
     // ---- inspections
@@ -184,8 +193,14 @@ internal class UiConfig(private val project: Project) {
         "inspection $shortName (\"${tool.displayName}\"): ${if (on) "on" else "off"}, ${profile.getErrorLevel(key, null).name} in profile ${profile.name}"
     }
 
-    private suspend fun setInspection(shortName: String, value: String): String {
+    private suspend fun setInspection(shortName: String, value: String): Outcome {
         val before = inspectionState(shortName)
+        // A severity turns the inspection on, so one that was off gets its severity back first, then goes off.
+        val undo = withContext(edtAny) {
+            val key = inspectionKey(shortName)
+            val level = UiRestore.step("set", "inspection" to shortName, "value" to profile().getErrorLevel(key, null).name)
+            if (profile().isToolEnabled(key)) listOf(level) else listOf(level, UiRestore.step("set", "inspection" to shortName, "value" to "off"))
+        }
         withContext(edtAny) {
             val key = inspectionKey(shortName)
             val profile = profile()
@@ -202,7 +217,7 @@ internal class UiConfig(private val project: Project) {
             profile.profileChanged()
             DaemonCodeAnalyzer.getInstance(project).restart()
         }
-        return "$before -> ${inspectionState(shortName).substringAfter(": ")}"
+        return Outcome("$before -> ${inspectionState(shortName).substringAfter(": ")}", undo = undo)
     }
 
     // ---- persistent settings components
@@ -253,7 +268,7 @@ internal class UiConfig(private val project: Project) {
         }
     }
 
-    private suspend fun setComponent(name: String, field: String, value: String): String = withContext(edtAny) {
+    private suspend fun setComponent(name: String, field: String, value: String): Outcome = withContext(edtAny) {
         val (component, level) = component(name)
         val xml = stateXml(component)
         val existing = option(xml, field)
@@ -261,6 +276,8 @@ internal class UiConfig(private val project: Project) {
             throw UiStepFailure("$name.$field holds structured XML, not a value; change it with a code step")
         }
         val before = existing?.getAttributeValue("value") ?: "(default)"
+        // The settings XML leaves out a field at its default value, which a fresh instance of the state class holds.
+        val restored = existing?.getAttributeValue("value") ?: component.state?.let { defaultOf(it, field) }
         (existing ?: Element("option").setAttribute("name", field).also { xml.addContent(it) }).setAttribute("value", value)
         @Suppress("UNCHECKED_CAST")
         val target = component as PersistentStateComponent<Any>
@@ -275,7 +292,8 @@ internal class UiConfig(private val project: Project) {
         }
         target.loadState(newState)
         val after = option(stateXml(component), field)?.getAttributeValue("value") ?: "(default)"
-        "$level component $name: $field $before -> $after (applied with loadState; windows open before may need reopening)"
+        Outcome("$level component $name: $field $before -> $after (applied with loadState; windows open before may need reopening)",
+            undo = listOfNotNull(restored?.let { UiRestore.step("set", "component" to name, "field" to field, "value" to it) }))
     }
 
     /** The value [field] has in a fresh instance of [state]'s class, which the settings XML leaves out. */

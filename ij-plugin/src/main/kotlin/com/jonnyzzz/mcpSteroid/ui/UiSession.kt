@@ -26,6 +26,8 @@ import com.intellij.openapi.util.Disposer
 import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiEditorState
+import com.jonnyzzz.mcpSteroid.server.UiForwardedStep
+import com.jonnyzzz.mcpSteroid.server.UiRestore
 import com.jonnyzzz.mcpSteroid.server.UiSnapshotMode
 import com.jonnyzzz.mcpSteroid.server.UiStep
 import com.jonnyzzz.mcpSteroid.server.UiStepOutcome
@@ -68,7 +70,10 @@ import javax.swing.tree.TreePath
 import kotlin.time.TimeSource
 
 /** A step that could not do what it asked for. The message says what the IDE showed instead. */
-class UiStepFailure(message: String) : RuntimeException(message)
+open class UiStepFailure(message: String) : RuntimeException(message)
+
+/** A step whose target lies past the edge of a panel or of its window, where no pointer reaches it. */
+class UiUnreachable(message: String, val component: Component) : UiStepFailure(message)
 
 data class UiStepReport(val index: Int, val line: String)
 
@@ -80,6 +85,8 @@ data class UiSessionResult(
     val outcomes: List<UiStepOutcome> = emptyList(),
     /** The steps that ran, rewritten to replay in another session: refs replaced by names, row indexes by row text. */
     val recorded: List<JsonObject> = emptyList(),
+    /** The steps that put back what the session's recorded runs changed, the last change first. */
+    val undo: List<JsonObject> = emptyList(),
 )
 
 /**
@@ -96,10 +103,10 @@ class UiSession(
     /** Where a screenshot step saves its picture: the call's execution folder. */
     private val artifacts: Path? = null,
     /**
-     * In a JetBrains Client, runs one step on the Remote Development backend and returns its report line, throwing
-     * [UiStepFailure] when it fails there. Null in a regular IDE and on the backend, where every step runs here.
+     * In a JetBrains Client, runs one step on the Remote Development backend and returns its report. Null in a
+     * regular IDE and on the backend, where every step runs here.
      */
-    private val forward: (suspend (UiStep) -> String)? = null,
+    private val forward: (suspend (UiStep) -> UiForwardedStep.Report)? = null,
     /** When the run started: an expect on errors or notifications counts the ones since then. */
     private val startedMs: Long = System.currentTimeMillis(),
 ) {
@@ -125,10 +132,25 @@ class UiSession(
     private var clickOpensWindow = false
 
     /**
-     * Runs [steps], numbered from [firstIndex] in the reports, as a scenario run from a later step numbers them, and
-     * named [labelPrefix], as a scenario's cleanup steps are.
+     * What a step does about a window it opened, or a tool window it showed, that cuts controls: one of
+     * [UiScenario.LAYOUT_MODES], or null for nothing, as in a call whose snapshot already shows the layout lines.
      */
-    suspend fun run(steps: List<UiStep>, mode: UiSnapshotMode, firstIndex: Int = 1, labelPrefix: String = "step"): UiSessionResult {
+    var layoutMode: String? = null
+
+    /** The layout lines a step in `check` mode found, which count as a failed soft check. */
+    private var layoutFailure: String? = null
+
+    /** The restores of the changes recorded runs made, and those of the step that runs. */
+    private val journal = UiRestore.Journal()
+    private val stepUndo = mutableListOf<JsonObject>()
+    private val undo: (List<JsonObject>) -> Unit = { stepUndo += it }
+
+    /**
+     * Runs [steps], numbered from [firstIndex] in the reports, as a scenario run from a later step numbers them, and
+     * named [labelPrefix], as a scenario's cleanup steps are. With [record], the restores of what the steps change go
+     * to the session's journal; a cleanup's and a restore's do not.
+     */
+    suspend fun run(steps: List<UiStep>, mode: UiSnapshotMode, firstIndex: Int = 1, labelPrefix: String = "step", record: Boolean = true): UiSessionResult {
         val before = if (mode == UiSnapshotMode.DIFF) render(withBounds = false) else null
         val reports = mutableListOf<UiStepReport>()
         val outcomes = mutableListOf<UiStepOutcome>()
@@ -151,14 +173,23 @@ class UiSession(
                 portableTarget = null
                 portableRow = null
                 portableFields.clear()
+                layoutFailure = null
+                suspend fun attempt(): String = when {
+                    forward != null && runsOnBackend(step) -> onBackend(step).let { line ->
+                        if (step.action == UiAction.GOTO) line + focusClientEditor(step.file!!) else line
+                    }
+                    step.action == UiAction.EXPECT -> expect.run(step)
+                    else -> runStep(step)
+                }
                 val outcome = try {
                     Result.success(
-                        when {
-                            forward != null && runsOnBackend(step) -> forward.invoke(step).let { line ->
-                                if (step.action == UiAction.GOTO) line + focusClientEditor(step.file!!) else line
-                            }
-                            step.action == UiAction.EXPECT -> expect.run(step)
-                            else -> runStep(step)
+                        try {
+                            attempt()
+                        } catch (e: UiUnreachable) {
+                            // In auto mode a control past an edge gets room, as a person drags the edge, and one more try.
+                            val fix = if (layoutMode == AUTO) withContext(edtAny) { UiLayout.fixFor(e.component, project) } else null
+                            fix ?: throw e
+                            "made room: ${actStep(UiSteps.parse("[$fix]").single())}; then " + attempt()
                         }
                     )
                 } catch (e: UiStepFailure) {
@@ -171,6 +202,9 @@ class UiSession(
                     Result.failure(e)
                 } finally {
                     current = null
+                    // A step that failed part way may have changed some of what it restores.
+                    if (record) journal.add(UiRestore.onSide(stepUndo.toList(), step.side))
+                    stepUndo.clear()
                 }
                 val line = meanwhile + outcome.fold({ it }, { it.message ?: it.javaClass.simpleName })
                 trace?.let { t ->
@@ -187,6 +221,10 @@ class UiSession(
                 if (step.action !in NOT_RECORDED) step.source?.let { recorded += portable(step, it) }
                 windowsAfterLastStep = UiSettle.showingWindows()
                 reports += UiStepReport(index, if (outcome.isSuccess) "$label: $line" else "$label: SOFT FAILED: $line")
+                layoutFailure?.let { cut ->
+                    outcomes += UiStepOutcome(index, UiStep(UiAction.EXPECT, null, layout = true, soft = true, intent = "no control is cut"), false, cut)
+                    reports += UiStepReport(index, "$labelPrefix $index layout check: SOFT FAILED: $cut")
+                }
             }
         } finally {
             Disposer.dispose(disposable)
@@ -201,7 +239,18 @@ class UiSession(
             mode == UiSnapshotMode.NONE -> ""
             else -> UiSnapshotDiff.diff(before.orEmpty(), render(withBounds = false)).ifEmpty { "(the snapshot did not change)" }
         }
-        return UiSessionResult(reports, failure, snapshot, outcomes, recorded)
+        return UiSessionResult(reports, failure, snapshot, outcomes, recorded, journal.steps())
+    }
+
+    /**
+     * Runs [step] on the backend and returns its report, keeping the restores the backend reported for it. Throws
+     * [UiStepFailure] when it failed there.
+     */
+    private suspend fun onBackend(step: UiStep): String {
+        val report = forward!!.invoke(step)
+        undo(report.undo)
+        if (!report.passed) throw UiStepFailure(ON_BACKEND + report.text)
+        return ON_BACKEND + report.text
     }
 
     /**
@@ -252,8 +301,8 @@ class UiSession(
     private suspend fun editorsReport(step: UiStep): String {
         val local = editors.local()
         val own = UiEditorState.render(listOf(local) + editors.sessions())
-        val send = forward ?: return own
-        val backend = send(step).removePrefix(ON_BACKEND)
+        if (forward == null) return own
+        val backend = onBackend(step).removePrefix(ON_BACKEND)
         val mismatches = UiEditorState.mismatches(local, UiEditorState.parse(backend))
         return own + "\n" + ON_BACKEND.trimEnd() + "\n" + backend +
             mismatches.joinToString("") { "\nmismatch: $it" }
@@ -349,8 +398,8 @@ class UiSession(
             step.file != null -> editors.facts(step.file!!)
             else -> config.get(step).line
         }
-        UiAction.SET -> config.set(step).also { o -> o.option?.let { portableFields["option"] = it } }.line
-        UiAction.WRITE -> ideSteps.write(step)
+        UiAction.SET -> config.set(step).also { o -> o.option?.let { portableFields["option"] = it }; undo(o.undo) }.line
+        UiAction.WRITE -> ideSteps.write(step, undo)
         UiAction.CODE -> ideSteps.code(step)
         UiAction.SETTINGS -> withEffects {
             ideSteps.settings(step).also { o -> o.id?.let { portableFields["page"] = it } }.line
@@ -405,6 +454,7 @@ class UiSession(
             }
             UiAction.CHECK, UiAction.UNCHECK -> {
                 val wanted = step.action == UiAction.CHECK
+                if (step.path != null) return menu.step(step.path, actionComponent(), step.timeoutMs, wanted, undo)
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
                 val toggle = node.component as? AbstractButton ?: throw UiStepFailure("${describe(node)} is not a checkbox or toggle")
                 if (withContext(edtAny) { toggle.isSelected } == wanted) {
@@ -421,9 +471,10 @@ class UiSession(
             UiAction.GOTO -> editorSteps.goto(step)
             UiAction.RUN -> editorSteps.run(step, actionComponent(), ::inplaceActive)
             UiAction.PERF -> ideSteps.perf(step)
-            UiAction.TOOLWINDOW -> ideSteps.toolWindow(step)
+            UiAction.TOOLWINDOW -> ideSteps.toolWindow(step, undo)
             UiAction.WINDOW -> windowStep(step)
-            UiAction.MENU -> menu.step(step.path, actionComponent(), step.timeoutMs)
+            UiAction.MENU -> step.mode?.let { menu.setMode(it, withContext(edtAny) { projectFrame() }, undo) }
+                ?: menu.step(step.path, actionComponent(), step.timeoutMs, undo = undo)
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
             UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
         }
@@ -715,7 +766,16 @@ class UiSession(
                 else -> scopeWindows().firstOrNull()
             }
         } ?: throw UiStepFailure("no window is showing")
+        // The IDE window keeps its size after the run; a dialog closes, and a popup with it.
+        withContext(edtAny) { if (window is IdeFrame && window is Frame) undo(listOf(frameSize(window))) }
         return UiResize.window(window, step.width, step.height, step.maximize)
+    }
+
+    /** The step that gives the IDE window [frame] its size now: maximized, or its width and height. EDT. */
+    private fun frameSize(frame: Frame): JsonObject {
+        val target = "class" to frame.javaClass.simpleName
+        return if (frame.extendedState and Frame.MAXIMIZED_BOTH == Frame.MAXIMIZED_BOTH) UiRestore.step("window", target, "maximize" to true)
+        else UiRestore.step("window", target, "width" to frame.width, "height" to frame.height)
     }
 
     /**
@@ -780,18 +840,23 @@ class UiSession(
     /**
      * Saves a picture of the window that holds the target, or of the topmost window, as `<save>.png` in the call's
      * execution folder, for a visual review: the agent reads the file, or a person compares it with an earlier run.
+     * `<save>.json` beside it records what makes two pictures of the same state differ: the window's size, the
+     * scale, the theme, the editor font and the IDE build.
      */
     private suspend fun screenshotStep(step: UiStep): String {
         val dir = artifacts ?: throw UiStepFailure("screenshot has no folder to save to in this call")
         val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
         UiSettle.settle()
-        return withContext(edtAny) {
+        val (line, facts, file) = withContext(edtAny) {
             val window = node?.let { it.component as? Window ?: SwingUtilities.getWindowAncestor(it.component) }
                 ?: scopeWindows().firstOrNull() ?: throw UiStepFailure("no window is showing")
             val file = dir.resolve("screenshots").resolve(step.save!! + ".png")
             UiTrace.paint(window, file)
-            "saved ${window.width}x${window.height} picture of ${describeWindow(window)} to $file"
+            val facts = UiPictureFacts.of(window)
+            Triple("saved ${window.width}x${window.height} picture of ${describeWindow(window)} to $file (${facts.describe()})", facts, file)
         }
+        withContext(Dispatchers.IO) { java.nio.file.Files.writeString(file.resolveSibling(step.save!! + ".json"), facts.json()) }
+        return line
     }
 
     private suspend fun snapshotStep(step: UiStep): String {
@@ -848,6 +913,7 @@ class UiSession(
             }
         })
         val windowsBefore = UiSettle.showingWindows()
+        val toolWindowsBefore = if (layoutMode == null) null else withContext(edtAny) { UiLayout.toolWindows(project).map { it.id }.toSet() }
         var noWindow = false
         val line = try {
             val result = act()
@@ -864,9 +930,11 @@ class UiSession(
             connection.disconnect()
         }
         val windowsAfter = UiSettle.showingWindows()
+        val layout = toolWindowsBefore?.let { layoutAfter((windowsAfter - windowsBefore).filterNot(UiWindows::isHoverPopup), it) }.orEmpty()
         return withContext(edtAny) {
             buildList {
                 add(line)
+                addAll(layout)
                 if (actions.isNotEmpty()) add("IDE actions: ${actions.joinToString()}")
                 if (noWindow) add("no window opened within ${OPENER_WAIT_MS / 1000} s, although its name ends with an ellipsis")
                 // A hover popup comes and goes with the mouse, so it is not something the step opened.
@@ -875,6 +943,44 @@ class UiSession(
                 KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner?.let { add("focus: ${describeComponent(it)}") }
             }.joinToString("; ")
         }
+    }
+
+    /**
+     * The layout lines of the windows a step [opened] and of the tool windows it showed, which were not among
+     * [toolWindowsBefore], as [layoutMode] wants them: noted, noted and counted as a failed check, or made room for.
+     */
+    private suspend fun layoutAfter(opened: List<Window>, toolWindowsBefore: Set<String>): List<String> {
+        val problems = withContext(edtAny) {
+            val refOf = { node: UiNode -> registry.refFor(node.component) }
+            val frame = projectFrame()
+            (opened + frame).distinct().filter { it.isShowing }.flatMap { window ->
+                val found = UiLayout.problems(window, UiModel.build(window).root, refOf, project)
+                if (window in opened) found else found.filter { it.toolWindow != null && it.toolWindow !in toolWindowsBefore }
+            }
+        }
+        if (problems.isEmpty()) return emptyList()
+        if (layoutMode != AUTO) {
+            if (layoutMode == CHECK) layoutFailure = problems.joinToString("; ") { it.line.removePrefix("layout: ") }
+            return problems.map { it.line }
+        }
+        return problems.map { p -> p.fix?.let { "made room: " + actStep(UiSteps.parse("[$it]").single()) } ?: p.line }
+    }
+
+    /**
+     * In `auto` layout mode, makes room in the IDE window for every tool window and control it cuts, as a person does
+     * before starting, and returns what it did, or null when nothing was cut. The restores go to the journal.
+     */
+    suspend fun makeRoom(): String? {
+        if (layoutMode != AUTO) return null
+        val fixes = withContext(edtAny) {
+            val frame = projectFrame()
+            UiLayout.problems(frame, UiModel.build(frame).root, { registry.refFor(it.component) }, project).mapNotNull { it.fix }
+        }
+        if (fixes.isEmpty()) return null
+        val done = fixes.map { actStep(UiSteps.parse("[$it]").single()) }
+        journal.add(stepUndo.toList())
+        stepUndo.clear()
+        return "made room: " + done.joinToString("; ")
     }
 
     /**
@@ -1097,6 +1203,8 @@ class UiSession(
          * project file by its path, so goto opens it on the backend, whose editor the client shows.
          */
         private val BACKEND_HOME = setOf(UiAction.WRITE, UiAction.CODE, UiAction.GOTO)
+        private const val AUTO = "auto"
+        private const val CHECK = "check"
         private const val EDITOR_WAIT_MS = 3_000L
         private const val ON_BACKEND = "on the backend: "
         private const val LUX_PREFIX = "Lux"

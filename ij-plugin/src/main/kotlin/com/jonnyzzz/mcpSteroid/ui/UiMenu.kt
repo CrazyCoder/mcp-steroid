@@ -24,7 +24,10 @@ import com.intellij.openapi.util.SystemInfo
 import com.intellij.ui.ExperimentalUI
 import com.intellij.ui.mac.screenmenu.Menu
 import com.intellij.util.ui.UIUtil
+import com.jonnyzzz.mcpSteroid.server.UiSteps
+import com.jonnyzzz.mcpSteroid.server.UiRestore
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -81,9 +84,10 @@ class UiMenu {
      * Resolves [path], such as `View > Appearance > Compact Mode`, from the main menu in the context of [component].
      * A path to an item runs it, as a click on it does, and reports a checkable item's state before and after; a
      * path to a submenu, or no path, lists the items. Fails on a segment that matches none or several items, listing
-     * them.
+     * them. With [want], the item must be checkable, and runs only when its state differs, as a check step does.
+     * Gives [undo] the step that puts a checkable item, or the checked item of its group, back.
      */
-    suspend fun step(path: String?, component: Component, timeoutMs: Long): String {
+    suspend fun step(path: String?, component: Component, timeoutMs: Long, want: Boolean? = null, undo: (List<JsonObject>) -> Unit = {}): String {
         val segments = path?.split(UiRows.PATH_SEPARATOR)?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty()
         val (trail, item, siblings) = withContext(edtAny) {
             val context = DataManager.getInstance().getDataContext(component)
@@ -113,8 +117,13 @@ class UiMenu {
                 "  " + it.describe() + if (it.text in folded) " [folded into the Main Menu button]" else ""
             }
         }
+        if (want != null) {
+            val checked = item.checked ?: throw UiStepFailure("${trail.joinToString(" > ")} is not a checkable item; run it with a menu step")
+            if (checked == want) return "${trail.joinToString(" > ")} was already ${state(want)}$where"
+        }
         if (!item.enabled) throw UiStepFailure("${trail.joinToString(" > ")} is disabled here$where")
         val before = item.checked
+        val checkedBefore = siblings.filter { it.checked == true }.map { it.action }
         val ran = CompletableDeferred<Boolean>()
         val windows = UiSettle.showingWindows()
         ApplicationManager.getApplication().invokeLater({
@@ -127,15 +136,58 @@ class UiMenu {
         val started = TimeSource.Monotonic.markNow()
         while (!ran.isCompleted && started.elapsedNow().inWholeMilliseconds < timeoutMs && UiSettle.showingWindows() == windows) delay(POLL_MS)
         if (ran.isCompleted && !ran.await()) throw UiStepFailure("${trail.joinToString(" > ")} did not run$where")
-        val after = if (before == null) null else withContext(edtAny) {
-            val context = DataManager.getInstance().getDataContext(component)
-            siblingsOf(trail, context)?.firstOrNull { it.action === item.action }?.checked
+        val siblingsAfter = if (before == null) null else withContext(edtAny) {
+            siblingsOf(trail, DataManager.getInstance().getDataContext(component))
+        }
+        val after = siblingsAfter?.firstOrNull { it.action === item.action }?.checked
+        if (before != null && after != null && after != before) {
+            // One of a group, such as the main menu modes, unchecks the one checked before: the restore checks that one.
+            val unchecked = siblingsAfter.firstOrNull { it.action !== item.action && it.action in checkedBefore && it.checked == false }
+            val restorePath = if (unchecked != null) trail.dropLast(1) + unchecked.text else trail
+            undo(listOf(UiRestore.step(if (unchecked != null || before) "check" else "uncheck", "path" to restorePath.joinToString(" > "))))
         }
         return "ran ${trail.joinToString(" > ")}${item.id?.let { " ($it)" }.orEmpty()}" +
             (if (before != null && after != null) "; it was ${state(before)}, now ${state(after)}" else "") + where
     }
 
     private fun state(checked: Boolean) = if (checked) "checked" else "unchecked"
+
+    /**
+     * Sets how the IDE shows its main menu: [wanted] is one of [UiSteps.MENU_MODES]. Only the new UI on Windows and
+     * Linux has the setting. Gives [undo] the step that sets the mode before back.
+     */
+    suspend fun setMode(wanted: String, frame: Window?, undo: (List<JsonObject>) -> Unit): String {
+        if (SystemInfo.isMac || !ExperimentalUI.isNewUI()) {
+            throw UiStepFailure("the main menu mode is a setting of the new UI on Windows and Linux; this IDE shows " +
+                if (SystemInfo.isMac) "the macOS screen menu bar" else "the classic UI's menu bar")
+        }
+        val target = MODES.getValue(wanted)
+        val before = withContext(edtAny) {
+            val settings = UISettings.getInstance()
+            val before = settings.mainMenuDisplayMode
+            if (before != target) {
+                // The IDE asks for a restart on Linux for this change, and applies it only after one.
+                if (SystemInfo.isLinux && MainMenuDisplayMode.SEPARATE_TOOLBAR in setOf(before, target)) {
+                    throw UiStepFailure("on Linux, a change to or from a separate menu bar needs a restart of the IDE")
+                }
+                settings.mainMenuDisplayMode = target
+                settings.fireUISettingsChanged()
+            }
+            before
+        }
+        if (before == target) return "the main menu is ${describe(target)} already"
+        undo(listOf(UiRestore.step("menu", "mode" to MODES.entries.first { it.value == before }.key)))
+        // The merged menu measures its room once the toolbar is laid out again.
+        UiSettle.settle()
+        val folded = frame?.let { withContext(edtAny) { summary(it) } }
+        return "the main menu is now ${describe(target)}, was ${describe(before)}" + folded?.let { "; $it" }.orEmpty()
+    }
+
+    private fun describe(mode: MainMenuDisplayMode) = when (mode) {
+        MainMenuDisplayMode.UNDER_HAMBURGER_BUTTON -> "under the Main Menu button"
+        MainMenuDisplayMode.MERGED_WITH_MAIN_TOOLBAR -> "merged into the main toolbar"
+        MainMenuDisplayMode.SEPARATE_TOOLBAR -> "a menu bar of its own"
+    }
 
     /** The items of the menu that holds the last item of [trail], expanded again. EDT. */
     private fun siblingsOf(trail: List<String>, context: DataContext): List<Item>? {
@@ -224,6 +276,11 @@ class UiMenu {
 
     companion object {
         private const val MERGED_MENU = "MergedMainMenu"
+        private val MODES = mapOf(
+            "hamburger" to MainMenuDisplayMode.UNDER_HAMBURGER_BUTTON,
+            "merged" to MainMenuDisplayMode.MERGED_WITH_MAIN_TOOLBAR,
+            "toolbar" to MainMenuDisplayMode.SEPARATE_TOOLBAR,
+        )
 
         /**
          * The index of the text in [texts] that [segment] names: equal to it without a trailing ellipsis or case, else

@@ -5,6 +5,16 @@
   "description": "A frozen fixture: every scenario that parsed when a step or field was released must keep parsing. Add lines for new steps, fields and values; never edit or remove one.",
   "ide": "IU-262.10968.63",
   "project": "any project with src/Split.java",
+  "$schema": "mcp-steroid://ide/ui-scenario-schema",
+  "requires": {"since": "262.10000", "until": "262.*", "products": ["IU", "IC"], "plugins": ["com.intellij.java"], "os": ["windows", "macos", "linux"], "mode": "monolith"},
+  "setup": {
+    "settings": [{"registry": "ide.balloon.shadow.size", "value": "0"}, {"option": "Appearance: Show line numbers:", "value": true}],
+    "menu": "merged",
+    "window": {"width": 1600, "height": 1000},
+    "toolwindows": {"Project": {"width": "fit"}, "Problems View": {"height": 250, "tab": "File"}, "Terminal": {"hide": true}},
+    "steps": [{"action": "goto", "file": "src/Split.java", "line": 1}],
+    "layout": "auto"
+  },
   "steps": [
     {"action": "click", "name": "OK", "button": "left", "count": 1, "modifiers": "shift", "offset_x": 2, "offset_y": 3, "intent": "press OK"},
     {"action": "click", "ref": "e1", "button": "right"},
@@ -93,7 +103,15 @@
     {"action": "expect", "layout": true, "name": "Project Tool Window"},
     {"action": "menu"},
     {"action": "menu", "path": "View > Appearance"},
-    {"action": "menu", "path": "View > Appearance > Status Bar"}
+    {"action": "menu", "path": "View > Appearance > Status Bar"},
+    {"action": "menu", "mode": "hamburger"},
+    {"action": "menu", "mode": "merged"},
+    {"action": "menu", "mode": "toolbar"},
+    {"action": "check", "path": "View > Appearance > Status Bar"},
+    {"action": "uncheck", "path": "View > Appearance > Status Bar"},
+    {"action": "write", "file": "src/Split.java", "delete": true},
+    {"action": "toolwindow", "id": "Project", "hide": false},
+    {"action": "window", "class": "IdeFrameImpl", "maximize": true}
   ],
   "cleanup": [
     {"action": "close"},

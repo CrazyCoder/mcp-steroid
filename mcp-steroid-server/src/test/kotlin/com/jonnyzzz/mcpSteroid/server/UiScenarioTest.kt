@@ -53,6 +53,56 @@ class UiScenarioTest {
         assertTrue(!fails("""{"scenario":1,"title":"t","steps":[{"action":"click"}]}""").contains(newer))
     }
 
+    @Test
+    fun `a setup block names only what it knows, and each part checks as a step`() {
+        fun withSetup(setup: String) = """{"scenario":1,"title":"t","setup":$setup,"steps":[{"action":"close"}]}"""
+        assertTrue(fails(withSetup("""{"windows":{}}""")).contains("unknown setup field(s) windows"))
+        assertTrue(fails(withSetup("""{"window":{"width":10}}""")).contains("setup.window"))
+        assertTrue(fails(withSetup("""{"window":{"title":"x"}}""")).contains("setup.window takes"))
+        assertTrue(fails(withSetup("""{"menu":"sideways"}""")).contains("unknown menu mode"))
+        assertTrue(fails(withSetup("""{"toolwindows":{"Project":{"side":"left"}}}""")).contains("setup.toolwindows.Project takes"))
+        assertTrue(fails(withSetup("""{"settings":[{"registry":"a"}]}""")).contains("set needs a value"))
+        assertTrue(fails(withSetup("""{"layout":"always"}""")).contains("setup.layout is one of"))
+        val s = UiScenario.parse(withSetup("""{"toolwindows":{"Project":{"width":"fit"}},"window":{"maximize":true}}"""))
+        assertEquals(listOf(UiAction.WINDOW, UiAction.TOOLWINDOW), s.setup.map { it.action })
+        assertEquals(null, s.layout)
+    }
+
+    @Test
+    fun `requires tells what an IDE lacks`() {
+        val r = UiScenarioRequires(since = "262.10000", until = "262.*", products = listOf("IU"), plugins = listOf("org.jetbrains.kotlin"),
+            os = listOf("windows"), mode = "split")
+        val here = UiScenarioRequires.Here("262.10968.63", "IU", setOf("org.jetbrains.kotlin"), "windows", "split")
+        assertEquals(emptyList<String>(), r.unmet(here))
+        assertEquals(listOf("build 261.1 is older than 262.10000"), r.unmet(here.copy(build = "261.1")))
+        assertEquals(listOf("build 263.1 is newer than 262.*"), r.unmet(here.copy(build = "263.1")))
+        assertEquals(listOf("product IC is not IU"), r.unmet(here.copy(product = "IC")))
+        assertEquals(listOf("plugin(s) org.jetbrains.kotlin not enabled"), r.unmet(here.copy(plugins = emptySet())))
+        assertEquals(listOf("the OS is linux, not windows"), r.unmet(here.copy(os = "linux")))
+        assertEquals(listOf("this is a regular IDE, not Split Mode"), r.unmet(here.copy(mode = "monolith")))
+        assertEquals(0, UiScenarioRequires.compareBuild("262.10968", "262.10968.0"))
+        assertTrue(UiScenarioRequires.compareBuild("262.9", "262.10") < 0)
+    }
+
+    @Test
+    fun `requires takes known fields and values only`() {
+        fun withRequires(r: String) = """{"scenario":1,"title":"t","requires":$r,"steps":[{"action":"close"}]}"""
+        assertTrue(fails(withRequires("""{"build":"262"}""")).contains("unknown requires field(s) build"))
+        assertTrue(fails(withRequires("""{"since":"IU-262.1"}""")).contains("without the product code"))
+        assertTrue(fails(withRequires("""{"os":["dos"]}""")).contains("requires.os lists"))
+        assertTrue(fails(withRequires("""{"mode":"remote"}""")).contains("requires.mode is"))
+        assertTrue(fails(withRequires("""{"plugins":"a"}""")).contains("array of strings"))
+        assertEquals(listOf("a"), UiScenario.parse(withRequires("""{"plugins":["a"]}""")).requires?.plugins)
+    }
+
+    @Test
+    fun `a skipped scenario says what the IDE lacks and is not a failure`() {
+        val v = UiVerdict.skipped(listOf("the OS is linux, not windows"))
+        assertEquals(UiVerdict.Kind.SKIPPED, v.kind)
+        assertTrue(v.line.startsWith("SKIPPED: "))
+        assertTrue(!UiScenarioBatch.isBad(UiScenarioBatch.verdictOf("x\n${v.line}")))
+    }
+
     private val click = UiStep(UiAction.CLICK, UiTarget(name = "OK"), intent = "confirm")
     private val bugCheck = UiStep(UiAction.EXPECT, UiTarget(name = "A"), bug = "A is lost")
     private val softCheck = UiStep(UiAction.EXPECT, UiTarget(name = "B"), soft = true)

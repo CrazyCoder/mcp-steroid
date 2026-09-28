@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp-steroid://ide/ui-scenario-schema",
+  "title": "MCP Steroid steroid_ui scenario, format 1",
+  "description": "A repeatable IDE procedure that steroid_ui replays with scenario: a bug reproduction, a feature check, a visual review or a setup. mcp-steroid://ide/ui-scenarios describes it. This schema checks the shape of the file; the replay also checks what depends on several fields, such as a step that needs a target.",
+  "type": "object",
+  "required": ["scenario", "title", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {"type": "string", "description": "The schema an editor checks the file against; the replay ignores it."},
+    "scenario": {"const": 1, "description": "The format version."},
+    "title": {"type": "string", "minLength": 1},
+    "issue": {"type": "string", "description": "The issue the scenario reproduces, such as IDEA-123456."},
+    "description": {"type": "string"},
+    "ide": {"type": "string", "description": "The IDE the scenario was recorded or last repaired on, such as IU-262.10968.63."},
+    "project": {"type": "string", "description": "What the scenario needs open, in words."},
+    "requires": {"$ref": "#/$defs/requires"},
+    "setup": {"$ref": "#/$defs/setup"},
+    "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}},
+    "cleanup": {"type": "array", "items": {"$ref": "#/$defs/step"}, "description": "Steps that run after the others whether they pass or fail."}
+  },
+  "$defs": {
+    "requires": {
+      "description": "What the IDE must be for the scenario to mean anything; a replay on another IDE is SKIPPED.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "since": {"$ref": "#/$defs/build"},
+        "until": {"$ref": "#/$defs/build"},
+        "products": {"type": "array", "items": {"type": "string"}, "description": "Product codes, such as IU or IC."},
+        "plugins": {"type": "array", "items": {"type": "string"}, "description": "IDs of plugins that must be enabled."},
+        "os": {"type": "array", "items": {"enum": ["windows", "macos", "linux"]}},
+        "mode": {"enum": ["split", "monolith"], "description": "Split Mode, or a regular IDE."}
+      }
+    },
+    "build": {"type": "string", "pattern": "^\\d+(\\.(\\d+|\\*))*$", "description": "A build number without the product code, such as 262.10968 or 262.*."},
+    "setup": {
+      "description": "How to lay the IDE out before the steps; every replay runs it, one that starts at a later step too, and the replay restores what it changed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "window": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"width": {"$ref": "#/$defs/size"}, "height": {"$ref": "#/$defs/size"}, "maximize": {"type": "boolean"}}
+        },
+        "toolwindows": {
+          "type": "object",
+          "description": "Tool windows by ID, such as Project.",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"width": {"$ref": "#/$defs/size"}, "height": {"$ref": "#/$defs/size"}, "hide": {"type": "boolean"}, "tab": {"type": "string"}}
+          }
+        },
+        "menu": {"$ref": "#/$defs/menuMode"},
+        "settings": {
+          "type": "array",
+          "description": "Settings a set step changes, such as {\"registry\":\"ide.balloon.shadow.size\",\"value\":\"0\"}.",
+          "items": {
+            "type": "object",
+            "required": ["value"],
+            "additionalProperties": false,
+            "properties": {
+              "registry": {"type": "string"}, "advanced": {"type": "string"}, "option": {"type": "string"}, "inspection": {"type": "string"},
+              "component": {"type": "string"}, "field": {"type": "string"}, "log": {"type": "string"}, "value": {"$ref": "#/$defs/primitive"},
+              "side": {"$ref": "#/$defs/side"}, "intent": {"type": "string"}
+            }
+          }
+        },
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}},
+        "layout": {"enum": ["note", "check", "auto"], "description": "What a step that opens a window or shows a tool window that cuts controls does: note it, count it as a failed soft check, or make room."}
+      }
+    },
+    "size": {"anyOf": [{"const": "fit"}, {"type": "integer", "minimum": 50, "maximum": 20000}], "description": "Logical pixels, or fit."},
+    "menuMode": {"enum": ["hamburger", "merged", "toolbar"]},
+    "side": {"enum": ["frontend", "backend"]},
+    "primitive": {"type": ["string", "number", "boolean"]},
+    "step": {
+      "type": "object",
+      "required": ["action"],
+      "additionalProperties": false,
+      "properties": {
+        "action": {"enum": ["click", "hover", "type", "fill", "press", "check", "uncheck", "select", "close", "wait", "snapshot", "goto", "run", "inspect", "scroll", "expect", "settings", "get", "set", "toolwindow", "window", "menu", "write", "perf", "code", "screenshot"]},
+        "ref": {"type": "string"},
+        "name": {"type": "string"},
+        "text": {"type": "string"},
+        "class": {"type": "string"},
+        "xpath": {"type": "string"},
+        "nth": {"type": "integer", "minimum": 0},
+        "button": {"enum": ["left", "right", "middle"]},
+        "count": {"type": "integer", "minimum": 0},
+        "modifiers": {"type": "string"},
+        "offset_x": {"type": "integer"},
+        "offset_y": {"type": "integer"},
+        "keys": {"type": "string", "minLength": 1},
+        "row": {"type": "string"},
+        "index": {"type": "integer", "minimum": 0},
+        "pages": {"type": "integer"},
+        "for": {"enum": ["visible", "hidden", "enabled", "window", "idle"]},
+        "title": {"type": "string"},
+        "timeout_ms": {"type": "integer", "minimum": 0},
+        "file": {"type": "string", "minLength": 1},
+        "line": {"type": "integer", "minimum": 1},
+        "column": {"type": "integer", "minimum": 1},
+        "symbol": {"type": "string"},
+        "id": {"type": "string", "minLength": 1},
+        "intent": {"type": "string"},
+        "bug": {"type": "string", "minLength": 1},
+        "soft": {"type": "boolean"},
+        "not": {"type": "boolean"},
+        "is": {"enum": ["visible", "hidden", "enabled", "disabled", "checked", "unchecked", "focused", "editable", "selected", "expanded", "collapsed"]},
+        "value": {"$ref": "#/$defs/primitive"},
+        "contains": {"type": "string"},
+        "matches": {"type": "string"},
+        "caret": {"type": "string", "pattern": "^\\d+:\\d+$"},
+        "notification": {"type": "string"},
+        "banner": {"type": "string"},
+        "error": {"type": ["string", "boolean"]},
+        "page": {"type": "string", "minLength": 1},
+        "registry": {"type": "string"},
+        "advanced": {"type": "string"},
+        "option": {"type": "string"},
+        "inspection": {"type": "string"},
+        "component": {"type": "string"},
+        "field": {"type": "string"},
+        "tab": {"type": "string"},
+        "hide": {"type": "boolean"},
+        "width": {"$ref": "#/$defs/size"},
+        "height": {"$ref": "#/$defs/size"},
+        "maximize": {"type": "boolean"},
+        "layout": {"type": "boolean"},
+        "path": {"type": "string", "minLength": 1},
+        "mode": {"$ref": "#/$defs/menuMode"},
+        "delete": {"type": "boolean"},
+        "editor": {"type": "string"},
+        "editors": {"type": "boolean"},
+        "log": {"type": "string"},
+        "memory": {"anyOf": [{"type": "boolean"}, {"enum": ["heap_after_gc", "heap", "threads", "gc_signals"]}]},
+        "below": {"type": "integer", "minimum": 0},
+        "save": {"type": "string", "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,79}$"},
+        "side": {"$ref": "#/$defs/side"},
+        "command": {"type": "string", "minLength": 1},
+        "code": {"type": "string", "minLength": 1},
+        "modal": {"enum": ["smart_non_modal", "non_modal", "unleashed", "dialog"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"action": {"enum": ["click", "hover", "fill", "select", "inspect", "scroll"]}}},
+         "then": {"anyOf": [{"required": ["ref"]}, {"required": ["name"]}, {"required": ["text"]}, {"required": ["class"]}, {"required": ["xpath"]}]}},
+        {"if": {"properties": {"action": {"enum": ["check", "uncheck"]}}},
+         "then": {"anyOf": [{"required": ["ref"]}, {"required": ["name"]}, {"required": ["text"]}, {"required": ["class"]}, {"required": ["xpath"]}, {"required": ["path"]}]}},
+        {"if": {"properties": {"action": {"const": "press"}}}, "then": {"required": ["keys"]}},
+        {"if": {"properties": {"action": {"const": "wait"}}}, "then": {"required": ["for"]}},
+        {"if": {"properties": {"action": {"const": "goto"}}}, "then": {"required": ["file"]}},
+        {"if": {"properties": {"action": {"const": "run"}}}, "then": {"required": ["id"]}},
+        {"if": {"properties": {"action": {"const": "settings"}}}, "then": {"required": ["page"]}},
+        {"if": {"properties": {"action": {"const": "set"}}}, "then": {"required": ["value"]}},
+        {"if": {"properties": {"action": {"const": "toolwindow"}}}, "then": {"required": ["id"]}},
+        {"if": {"properties": {"action": {"const": "write"}}}, "then": {"required": ["file"], "anyOf": [{"required": ["text"]}, {"required": ["delete"]}]}},
+        {"if": {"properties": {"action": {"const": "perf"}}}, "then": {"required": ["command"]}},
+        {"if": {"properties": {"action": {"const": "code"}}}, "then": {"required": ["code"]}},
+        {"if": {"properties": {"action": {"const": "screenshot"}}}, "then": {"required": ["save"]}}
+      ]
+    }
+  }
+}

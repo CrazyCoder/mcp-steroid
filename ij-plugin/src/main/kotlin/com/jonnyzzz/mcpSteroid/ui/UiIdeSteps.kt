@@ -8,6 +8,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.application.readAction
 import com.intellij.openapi.command.writeCommandAction
 import com.intellij.openapi.components.service
 import com.intellij.openapi.extensions.PluginId
@@ -29,7 +30,10 @@ import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.ModalMode
+import com.jonnyzzz.mcpSteroid.server.UiRestore
 import com.jonnyzzz.mcpSteroid.server.UiStep
+import com.intellij.openapi.wm.ToolWindowType
+import kotlinx.serialization.json.JsonObject
 import com.intellij.openapi.extensions.ExtensionPointName
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -143,12 +147,31 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
 
     /**
      * Shows a tool window and selects its tab, or hides it. Waits up to the step's timeout for the tool window: a
-     * JetBrains Client registers the backend's tool windows only a moment after it connects.
+     * JetBrains Client registers the backend's tool windows only a moment after it connects. Gives [undo] the steps
+     * that restore its tab, size and visibility.
      */
-    suspend fun toolWindow(step: UiStep): String {
+    suspend fun toolWindow(step: UiStep, undo: (List<JsonObject>) -> Unit = {}): String {
         val wanted = step.id!!
         val started = TimeSource.Monotonic.markNow()
         while (withContext(edtAny) { toolWindowId(wanted) } == null && started.elapsedNow().inWholeMilliseconds < step.timeoutMs) delay(POLL_MS)
+        // What the step changes, read before it does: the restore shows the tab and the size first, then hides.
+        val before = withContext(edtAny) {
+            toolWindowId(wanted)?.let { id ->
+                val window = ToolWindowManager.getInstance(project).getToolWindow(id)!!
+                val view = (window as? ToolWindowEx)?.takeIf { it.type != ToolWindowType.FLOATING && it.type != ToolWindowType.WINDOWED }
+                    ?.let { UiLayout.ToolWindowView(id, it) }
+                Triple(id, window.isVisible, window.contentManager.selectedContent?.let(::tabName)) to view?.let { it.axis to it.size }
+            }
+        }
+        val restore = before?.let { (state, size) ->
+            val (id, visible, tab) = state
+            listOfNotNull(
+                tab?.takeIf { step.tab != null }?.let { UiRestore.step("toolwindow", "id" to id, "tab" to it) },
+                size?.takeIf { step.width != null || step.height != null }?.let { (axis, px) -> UiRestore.step("toolwindow", "id" to id, axis to px) },
+                UiRestore.step("toolwindow", "id" to id, "hide" to !visible).takeIf { visible == step.hide },
+            )
+        }.orEmpty()
+        undo(restore)
         val shown = showToolWindow(step, wanted)
         if (step.width == null && step.height == null) return shown
         val view = withContext(edtAny) {
@@ -157,6 +180,10 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         }
         return shown + "; " + UiResize.toolWindow(view, step.width, step.height)
     }
+
+    /** A tab's name as a toolwindow step takes it; a tab name can be HTML, as the Problems tool window's are. */
+    private fun tabName(c: com.intellij.ui.content.Content) =
+        StringUtil.removeHtmlTags(c.displayName.orEmpty(), true).replace(Regex("\\s+"), " ").trim()
 
     private fun toolWindowId(wanted: String): String? {
         val manager = ToolWindowManager.getInstance(project)
@@ -179,28 +206,41 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         withTimeoutOrNull(step.timeoutMs) { shown.await() }
             ?: throw UiStepFailure("the $id tool window did not show within ${step.timeoutMs} ms" + if (!window.isAvailable) "; it is not available in this project" else "")
         val contents = window.contentManager.contents.toList()
-        // A tab name can be HTML, as the Problems tool window's are.
-        fun name(c: com.intellij.ui.content.Content) = StringUtil.removeHtmlTags(c.displayName.orEmpty(), true).replace(Regex("\\s+"), " ").trim()
         step.tab?.let { tab ->
-            val content = contents.firstOrNull { name(it) == tab } ?: contents.firstOrNull { name(it).contains(tab, ignoreCase = true) }
-                ?: throw UiStepFailure("the $id tool window has no tab \"$tab\"; tabs: ${contents.joinToString { "\"${name(it)}\"" }}")
+            val content = contents.firstOrNull { tabName(it) == tab } ?: contents.firstOrNull { tabName(it).contains(tab, ignoreCase = true) }
+                ?: throw UiStepFailure("the $id tool window has no tab \"$tab\"; tabs: ${contents.joinToString { "\"${tabName(it)}\"" }}")
             window.contentManager.setSelectedContent(content, true)
         }
         val selected = window.contentManager.selectedContent
         "the $id tool window is active" + if (contents.size > 1) {
-            "; tabs: " + contents.joinToString { "\"${name(it)}\"" + if (it === selected) " [selected]" else "" }
+            "; tabs: " + contents.joinToString { "\"${tabName(it)}\"" + if (it === selected) " [selected]" else "" }
         } else ""
     }
 
-    /** Writes [UiStep.text] as the whole content of [UiStep.file], creating the file and its folders. */
-    suspend fun write(step: UiStep): String {
+    /**
+     * Writes [UiStep.text] as the whole content of [UiStep.file], creating the file and its folders, or deletes the
+     * file. Gives [undo] the step that puts the text before back, or deletes a file the step created.
+     */
+    suspend fun write(step: UiStep, undo: (List<JsonObject>) -> Unit = {}): String {
         val path = step.file!!
         val base = project.basePath?.let(Path::of) ?: throw UiStepFailure("the project has no folder to resolve $path against")
         val target = base.resolve(path).normalize()
         if (!target.startsWith(base.normalize())) throw UiStepFailure("write changes files of the project only; $path is outside ${project.basePath}")
         val parent = target.parent ?: throw UiStepFailure("$path has no parent folder")
+        val existing = withContext(Dispatchers.IO) { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target) }
+        // A binary file has no text to write back, so its change is not restored.
+        val before = existing?.takeIf { !it.fileType.isBinary }?.let { file ->
+            readAction { FileDocumentManager.getInstance().getDocument(file)?.text } ?: withContext(Dispatchers.IO) { VfsUtil.loadText(file) }
+        }
+        if (step.delete) {
+            existing ?: return "there is no $path to delete"
+            writeCommandAction(project, "steroid_ui write") { existing.delete(this) }
+            before?.let { undo(listOf(UiRestore.step("write", "file" to path, "text" to it))) }
+            return "deleted $path"
+        }
         val text = step.text!!
-        val created = withContext(Dispatchers.IO) { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(target) } == null
+        val created = existing == null
+        undo(listOfNotNull(if (created) UiRestore.step("write", "file" to path, "delete" to true) else before?.let { UiRestore.step("write", "file" to path, "text" to it) }))
         writeCommandAction(project, "steroid_ui write") {
             val dir = VfsUtil.createDirectoryIfMissing(parent.invariantSeparatorsPathString) ?: throw UiStepFailure("cannot create folder $parent")
             val file = dir.findChild(target.fileName.toString()) ?: dir.createChildData(this, target.fileName.toString())

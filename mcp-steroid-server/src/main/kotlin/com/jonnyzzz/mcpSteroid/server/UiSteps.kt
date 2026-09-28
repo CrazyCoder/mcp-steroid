@@ -163,8 +163,15 @@ data class UiStep(
     val maximize: Boolean? = null,
     /** On an expect step: no control in the window, or under the target, lies past an edge. */
     val layout: Boolean = false,
-    /** On a menu step: the item or submenu, as `View > Appearance > Compact Mode`. */
+    /**
+     * On a menu step: the item or submenu, as `View > Appearance > Compact Mode`. On a check or uncheck step: a
+     * checkable main menu item, which the step runs only when its state differs.
+     */
     val path: String? = null,
+    /** On a menu step: how the IDE shows its main menu, one of [UiSteps.MENU_MODES]. */
+    val mode: String? = null,
+    /** On a write step: delete the file instead of writing it. */
+    val delete: Boolean = false,
     /** On a screenshot step: the picture's file name, without folder or extension. Required there. */
     val save: String? = null,
     /**
@@ -201,9 +208,11 @@ object UiSteps {
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
-        "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path",
+        "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
     )
     val SIDES = setOf("frontend", "backend")
+    /** How a menu step shows the main menu: under the Main Menu button, merged into the main toolbar, or in a bar of its own. */
+    val MENU_MODES = setOf("hamburger", "merged", "toolbar")
     /**
      * The figures an expect of memory checks: the heap in use right after a full GC, which the check runs first, and
      * the heap in use now, both in MB; the thread count; and the overloaded-GC signals of the last 15 minutes.
@@ -220,10 +229,11 @@ object UiSteps {
     /** Actions whose "text" is what they enter, look for in the editor or write, not a target. */
     private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO, UiAction.WRITE)
     private val NEEDS_TARGET = setOf(
-        UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.CHECK, UiAction.UNCHECK, UiAction.SELECT, UiAction.INSPECT, UiAction.SCROLL,
+        UiAction.CLICK, UiAction.HOVER, UiAction.FILL, UiAction.SELECT, UiAction.INSPECT, UiAction.SCROLL,
     )
     /** Actions that take a row of a list, tree, table or tabbed pane: "row", "index" or a row ref. */
     private val ROW_ACTIONS = setOf(UiAction.SELECT, UiAction.INSPECT, UiAction.CLICK, UiAction.HOVER, UiAction.SCROLL, UiAction.EXPECT, UiAction.FILL)
+    private val PATH_ACTIONS = setOf(UiAction.MENU, UiAction.CHECK, UiAction.UNCHECK)
     private val ROW_REF = Regex("""(e\d+)#(\d+)""")
     private val CARET = Regex("""(\d+):(\d+)""")
 
@@ -340,6 +350,8 @@ object UiSteps {
             maximize = obj.boolean("maximize"),
             layout = obj.boolean("layout") ?: false,
             path = obj.string("path"),
+            mode = obj.string("mode"),
+            delete = obj.boolean("delete") ?: false,
             save = obj.string("save"),
             side = obj.string("side"),
             command = obj.string("command"),
@@ -396,7 +408,13 @@ object UiSteps {
             require(step.width == null && step.height == null) { "maximize fills the screen; drop width and height" }
         }
         if (step.layout) require(step.action == UiAction.EXPECT) { "layout goes with expect, not $action" }
-        if (step.path != null) require(step.action == UiAction.MENU) { "path goes with menu, not $action" }
+        if (step.path != null) require(step.action in PATH_ACTIONS) { "path goes with menu, check and uncheck, not $action" }
+        step.mode?.let {
+            require(step.action == UiAction.MENU) { "mode goes with menu, not $action" }
+            require(it in MENU_MODES) { "unknown menu mode '$it'; use one of ${MENU_MODES.joinToString()}" }
+            require(step.path == null) { "a menu step runs a path or sets the mode, not both" }
+        }
+        if (step.delete) require(step.action == UiAction.WRITE) { "delete goes with write, not $action" }
         step.save?.let {
             require(step.action == UiAction.SCREENSHOT) { "save goes with screenshot, not $action" }
             require(SAVE_NAME.matches(it) && !it.startsWith(".")) { "save is a plain file name of letters, digits, '.', '_' and '-', such as \"settings-appearance\"" }
@@ -461,7 +479,11 @@ object UiSteps {
             UiAction.WINDOW -> require(step.target == null || step.title == null) { "window takes a target or a title, not both" }
             UiAction.WRITE -> {
                 require(!step.file.isNullOrBlank()) { "write needs a file" }
-                require(step.text != null) { "write needs text, the whole new content of the file" }
+                if (step.delete) require(step.text == null) { "a write that deletes the file takes no text" }
+                else require(step.text != null) { "write needs text, the whole new content of the file, or \"delete\":true" }
+            }
+            UiAction.CHECK, UiAction.UNCHECK -> require((step.target != null) != (step.path != null)) {
+                "$action needs a target, a checkbox or toggle, or a path, a checkable main menu item, and not both"
             }
             UiAction.PERF -> require(!step.command.isNullOrBlank()) { "perf needs a command, such as \"%openFile src/A.kt\"" }
             // A fixed name lines the pictures of two replays up with each other.
