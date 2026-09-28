@@ -144,11 +144,12 @@ change first, as `restore step` lines:
 
 | Step | What is put back |
 |---|---|
-| `set` | The value before, for every kind; an inspection gets its severity and then its on or off state |
+| `set` | The value before, for every kind; an inspection gets its severity and then its on or off state; a theme gets the theme before, or following the OS again |
 | `check`, `uncheck` or `menu` of a checkable main menu item | Its state before; for one of a group, such as the main menu modes, the item that was checked |
 | `menu` with `mode` | The menu mode before |
 | `toolwindow` | The tab, the size and whether it showed |
-| `window` on the IDE window | Its size, or maximized; a dialog closes, so its size is not restored |
+| `window` on the IDE window | Its size, or maximized |
+| `window` on a dialog or the Settings window | The size the IDE saved for its next opening: the window closes, but Settings and most dialogs reopen at their last size |
 | `write` | The text before, or no file when the step created it |
 | Any step that changed project files: a refactoring through its dialog, a generator, typing, a `code` step | Each file's text before, and no file where a step created one |
 
@@ -227,6 +228,7 @@ window opened. A set reports the value before and after, and a scenario's replay
 | `inspection` | `{"action":"set","inspection":"UnusedDeclaration","value":"off"}` | An inspection of the project's current profile by short name: `on`, `off`, or a severity such as `ERROR`, `WARNING`, `WEAK WARNING`, `INFORMATION`. Highlighting restarts |
 | `component` + `field` | `{"action":"set","component":"EditorSettings","field":"IS_WHITESPACES_SHOWN","value":"true"}` | A field of a persistent settings component, by the state name it is saved under. `get` with `component` alone shows its saved XML, which lists the fields that differ from their defaults. Only components already loaded are found, and a field that holds structured XML needs a `code` step |
 | `log` | `{"action":"set","log":"#com.jetbrains.rdserver.fileEditors","value":"debug"}` | A debug log category, as Help \| Diagnostic Tools \| Debug Log Settings sets it: `trace`, `debug`, `all`, or `default` to remove the level set for it. It lasts across restarts until the replay puts the level before back. Set it before the steps whose log lines an `expect` on `log` checks |
+| `theme` | `{"action":"set","theme":"Light"}` | An installed theme by its name, without case, or its id; `"sync"` follows the OS's light or dark mode again. It takes no `value`. The step waits until the theme is current and every window has repainted, 30 s by default, since a switch takes seconds. The editor color scheme follows the theme, as the Appearance page switches it. `{"action":"get","themes":true}` lists the installed themes with their ids and the current one |
 
 `get` also reads what no `set` changes:
 
@@ -277,6 +279,9 @@ Other setup steps:
 - `{"action":"check","path":"View > Appearance > Status Bar"}`, or `uncheck`, runs a checkable main menu item
   only when its state differs, so the step leaves the item checked, or unchecked, however it started.
 - `{"action":"menu","mode":"merged"}` sets how the main menu shows: `merged`, `hamburger` or `toolbar`.
+- `{"action":"menu","path":"View > Appearance","show":true}` opens the main menu along the path as a person
+  does and leaves it open for a picture; a last segment that is an item is highlighted. A menu outside the IDE
+  window, such as the macOS screen menu bar, cannot be pictured and fails.
 - `{"action":"window","width":1800,"height":1200}` sizes the topmost window, or the one a target or `title`
   names; `"maximize":true` fills the screen and `false` restores it. The report gives the size it had.
   `"class":"IdeFrameImpl"` names the IDE window whatever dialog shows.
@@ -287,21 +292,86 @@ Other setup steps:
   does, for setup that no step covers, and fails the step when the script fails. Its default `modal` closes
   open dialogs, so pass `non_modal` or `dialog` in the middle of a dialog flow.
 
-## Pictures for a visual review
+## Pictures: captures with highlights
 
 `{"action":"screenshot","save":"appearance-page"}` saves a picture of the topmost window as
 `screenshots/appearance-page.png` in the call's execution folder, and the step's report gives the full path.
 With a target, such as `{"action":"screenshot","name":"Settings categories","save":"tree"}`, it pictures the
-window that holds the target. It paints only that window, never the rest of the screen, and lets the UI
-settle first. Read the saved file to review it, or keep it next to the scenario to compare with a later run.
-The report, and `appearance-page.json` beside the picture, give what makes two pictures of one state differ:
-the window's size, the screen's scale and the IDE's zoom, the theme, the editor font, the build and the OS.
-`save` is required: name each picture after the state it shows, so a replay's pictures line up with the
-earlier ones.
+window that holds the target. It paints the IDE's own windows, never the rest of the screen, so other
+applications do not show through, and lets the UI settle first. A menu, list popup or completion open above
+the window is in the picture at its place, and a picture of such a popup shows the window it opened from.
+The report, and the `.json` file beside the picture, give what makes two pictures of one state differ: the
+window's size, the screen's scale and the IDE's zoom, the theme, the editor font, the build, the OS and the crop.
 
-Use pictures for what text cannot check: icons, colors, a theme, how a layout looks. For anything a snapshot
-shows, an `expect` is the stronger check, because it fails on its own, and cut or hidden controls are one of
-those: `{"action":"expect","layout":true}`.
+| Field | Example | Does |
+|---|---|---|
+| `save` | `"appearance-page"` | The picture's name in the execution folder. Name each picture after the state it shows |
+| `out` | `"C:/docs/img/appearance.png"` | The picture's path instead: absolute in a call with `steps`, relative to the scenario file's folder in a replay. PNG, the default for a path without an extension, or JPEG for `.jpg`. The folders are made |
+| `highlight` | `["breadcrumb", {"name":"Show line numbers","label":"Turn this on"}]` | Outlines each control and numbers it 1, 2, 3 in this order. An item takes any locator, plus `row` or `index` for a row of a list, tree or table, and `label`, text drawn beside it. `"breadcrumb"` is the path above the Settings page |
+| `crop` | `"page"`, `"highlights"`, `"popups"`, `{"name":"Settings categories"}` | Cuts the picture to the Settings page with its breadcrumb, to the highlights, to the open menus, or to a control's visible part. The whole window without it |
+| `margin` | `8` | The padding around a crop, 16 px without it |
+
+A highlight out of view is scrolled to the middle of its view first; a control larger than its view, such as a
+tree, is outlined as far as it shows. A highlight that is not showing, such as one on another tab, fails the
+step rather than outlining the wrong place. The badge with the number sits just left of its outline, and a
+label right of it on the same line. In Split Mode the JetBrains Client takes the picture and saves the file on
+its machine; a highlight on a host Settings page, whose controls exist only on the backend, is found there.
+
+When `out` replaces a PNG, the report adds `unchanged`, or `changed: N pixels differ`, so a replay of
+documentation pictures names the stale ones.
+
+### Frame the picture
+
+Set the frame up with steps before the `screenshot`:
+
+- `{"action":"window","width":1400,"height":900}` sizes Settings or the dialog, so every replay pictures the
+  same frame. The restore puts back the size the IDE saved for its next opening.
+- `{"action":"scroll","name":"Show whitespaces","align":"top"}` scrolls a long page so the control is at the top
+  of its view; `"center"` puts it in the middle.
+- `{"action":"menu","path":"View > Appearance","show":true}` opens a menu and leaves it open, with
+  `"crop":"popups"` on the picture.
+- `{"action":"set","theme":"Light"}` pictures the IDE in a theme; `get` with `"themes":true` lists the installed
+  ones.
+
+### One call that leaves the IDE as it was
+
+A `steroid_ui` call with `"restore": true` closes the windows and menus its steps opened, and puts back what
+they changed, as a replay does, whether the steps passed or failed. A picture for a user or an article is one
+such call:
+
+```
+[{"action":"settings","page":"editor.preferences.appearance"},
+ {"action":"screenshot","out":"C:/pics/line-numbers.png","highlight":["breadcrumb",{"name":"Show line numbers"}],"crop":"page"}]
+```
+
+### Documentation screenshots
+
+A scenario per documentation page keeps its pictures current: replay it on a new build and the pictures are
+saved again, each report saying whether it changed. Fix the size and the theme so that every replay pictures
+the same thing, and give `out` relative to the scenario file, so the pictures land in the documentation's
+folder wherever it is checked out:
+
+```
+{
+  "scenario": 1,
+  "title": "Pictures of Editor > General > Appearance",
+  "setup": {"steps": [{"action": "set", "theme": "Light"}]},
+  "steps": [
+    {"action": "settings", "page": "editor.preferences.appearance"},
+    {"action": "window", "width": 1100, "height": 750},
+    {"action": "screenshot", "out": "img/appearance.png", "crop": "page"},
+    {"action": "screenshot", "out": "img/line-numbers.png", "highlight": [{"name": "Show line numbers"}], "crop": "highlights", "margin": 24}
+  ],
+  "cleanup": [{"action": "close"}]
+}
+```
+
+Replay a folder of such scenarios to refresh them all. Name controls by `name` or `text` in a scenario's
+highlights: a ref from a snapshot does not carry over to another session.
+
+Use pictures for what text cannot check: icons, colors, a theme, how a layout looks, and for people. For
+anything a snapshot shows, an `expect` is the stronger check, because it fails on its own, and cut or hidden
+controls are one of those: `{"action":"expect","layout":true}`.
 
 ## Editor steps from the Performance Testing plugin
 

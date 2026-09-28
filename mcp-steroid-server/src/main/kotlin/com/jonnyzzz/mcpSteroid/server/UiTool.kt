@@ -84,10 +84,11 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           is the row's text, else part of it, and "A > B > C" is a tree path, whose collapsed parents it
           expands; several matching rows are an error that lists them by index. An open combo box popup's
           rows are the combo box's items
-        - {"action":"scroll", target, optional "row" or "index"}: scrolls the control or row into view, for a
-          screenshot; or {"action":"scroll", target, "pages":N}: scrolls the scroll pane around the target by N
-          pages, up when negative. Reports which part of the content shows. Other steps scroll their target
-          into view by themselves
+        - {"action":"scroll", target, optional "row" or "index", optional "align":"top|center"}: scrolls the control
+          or row into view, or to the top or middle of its view, for a screenshot; or {"action":"scroll", target,
+          "pages":N}: scrolls the scroll pane around the target by N pages, up when negative. Reports which part
+          of the content shows and the control's screen bounds. Other steps scroll their target into view by
+          themselves
         - {"action":"close", optional target}: cancels the dialog or popup, or closes a separate window such
           as Settings (the topmost one without a target)
         - {"action":"wait", "for":"visible|hidden|enabled", target} or {"for":"window","title":"..."} or {"for":"idle"}
@@ -131,6 +132,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           outside the window (the macOS screen menu bar, a Linux global menu) that no click reaches. Each
           segment is an item's text, its start or part of it. Reports a checkable item's state before and
           after. A path to a submenu, or no path, lists its items with action ids, shortcuts and states.
+          "show":true opens the menus along the path and leaves them open for a screenshot instead.
           {"action":"menu","mode":"merged|hamburger|toolbar"} sets how the menu shows (new UI, Windows and Linux)
         - {"action":"window", optional target or "title", "width", "height", or "maximize":true|false}: sizes
           the window that holds the target, the one whose title contains "title", or the topmost one, in
@@ -139,6 +141,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           its screen and above its minimum size, and reports the size before and the screen's
         - {"action":"get"|"set", one of "registry":"key", "advanced":"id", "option":"name", "inspection":"ShortName",
           "component":"StateName" with "field", and "value" for set}: reads or changes a setting without a dialog.
+          {"action":"set","theme":"Light"} switches to an installed theme and waits for the repaint ("sync" follows
+          the OS); {"action":"get","themes":true} lists the installed themes.
           "option" is an on/off option as Search Everywhere lists it (get with part of the name lists matches);
           "inspection" takes on, off or a severity; "component" is a persistent settings component by its state
           name, get alone shows its saved XML. "log":"#category" reads or sets a debug log level (trace, debug,
@@ -155,8 +159,12 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           with "delete":true deletes it
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
         - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does
-        - {"action":"screenshot", optional target, "save":"name"}: saves a picture of the target's window, or of
-          the topmost one, to the execution folder, for a visual review
+        - {"action":"screenshot", optional target, "save":"name" or "out":"C:/pics/a.png", optional "highlight",
+          "crop", "margin"}: saves a picture of the target's window, or of the topmost one, with the menus and
+          popups open above it. "highlight":["breadcrumb",{"name":"Show line numbers","label":"..."}] outlines
+          and numbers controls (rows with "row"); "crop" is "page" (the Settings page), "highlights", "popups" or
+          a locator. With the call's "restore": true, one call opens a setting, captures it and puts the IDE
+          back: a picture to show a user where an option is
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In
         Split Mode any step takes "side":"backend" to run on the Remote Development backend from a JetBrains
         Client call; write, code, goto, file, banner and console expects, inspection settings, and gets of

@@ -70,6 +70,17 @@ To check what the IDE shows (`expect`), change settings without opening their di
 pictures for a visual review (`screenshot`), and keep the steps as a scenario that replays with a verdict, read
 [IDE scenarios](mcp-steroid://ide/ui-scenarios).
 
+To show a person a setting, a menu or a dialog, save a capture in one call and leave the IDE as it was: open it,
+then take a `screenshot` with the controls to point at outlined and numbered, and pass `"restore": true`:
+
+```
+[{"action":"settings","page":"editor.preferences.appearance"},
+ {"action":"screenshot","out":"C:/pics/line-numbers.png","highlight":["breadcrumb",{"name":"Show line numbers"}],"crop":"page"}]
+```
+
+The crops, the framing steps (window size, scroll alignment, an open menu, a theme) and documentation
+screenshots that a replay refreshes are in [IDE scenarios](mcp-steroid://ide/ui-scenarios).
+
 ## See the UI with refs
 
 When the text is not enough, because layout, icons or colours matter or a control has no name, take
@@ -80,7 +91,8 @@ such as `e12#3`, at the row's right end. Read the ref off the picture and act by
 A control scrolled out of view, or hidden under a popup, has no mark: bring it in with
 `{"action":"scroll","name":"Gherkin"}`, or page with `{"action":"scroll","ref":"e30","pages":1}`, whose
 report says which part of the content shows and whose diff lists the controls that came into view, then
-take the screenshot. Do not click at pixel
+take the screenshot. `"align":"top"` or `"center"` places the control at the top or in the middle of its view.
+A scroll report ends with the control's screen bounds. Do not click at pixel
 coordinates with `steroid_input` for a control that has a ref: a ref needs no HiDPI scale arithmetic,
 still finds the control after a resize or scroll, and the step reports what it caused. Keep coordinates
 for what has no ref: a web view (JCEF), a canvas, a drag.
@@ -112,7 +124,9 @@ has one. Make room, then act:
 - `{"action":"window","maximize":true}` fills the screen with the IDE window, and `"maximize":false`
   restores it. `{"action":"window","width":1800,"height":1200}` sets a size.
 - `{"action":"window"}` on a dialog or a separate window such as Settings grows it to its preferred size,
-  which shows its content. A target or `title` picks the window; without one, the topmost.
+  which shows its content. A target or `title` picks the window; without one, the topmost. Settings and most
+  dialogs save their size for the next opening, which the restore of a replay, or of a call with `"restore":
+  true`, puts back.
 
 A window stays on its screen and above its minimum size; the step reports the size it had, the size it
 got and the screen's usable area. `{"action":"expect","layout":true}` checks that the topmost window has
