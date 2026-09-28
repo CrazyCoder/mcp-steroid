@@ -129,10 +129,10 @@ class FreezeMonitor(private val scope: CoroutineScope) {
     internal var ideMemory: () -> IdeMemory? = IdeMemory::getInstanceOrNull
 
     /**
-     * Runs [call] and puts any freeze, the errors the IDE logged since [session]'s last call, the warning
-     * banners above open editors and the memory pressure it was not told about, in front of its result. A call still running once a
-     * freeze has been known for [EARLY_ANSWER_MS] is answered with the freeze instead, and keeps running in the
-     * IDE. [reportsIdeErrors] tells that the call's own result lists the errors logged while it ran, as
+     * Runs [call] and puts any freeze, the errors the IDE logged since [session]'s last call, and the warning
+     * banners above open editors and the memory pressure it was not told about, in front of its result. A call
+     * still running once a freeze has been known for [EARLY_ANSWER_MS] is answered with the freeze instead, and
+     * keeps running in the IDE. [reportsIdeErrors] tells that the call's own result lists the errors logged while it ran, as
      * steroid_execute_code does.
      */
     suspend fun guard(session: Any, reportsIdeErrors: Boolean = false, call: suspend () -> ToolCallResult): ToolCallResult {

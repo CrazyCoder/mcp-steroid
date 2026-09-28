@@ -63,6 +63,13 @@ each disagreement, and a `steroid_ui` call that opens or closes editors reports 
 notice. The backend logs each open as `Opening remote editor for file=...`, and each close as
 `Removing editor`, which `{"action":"expect","log":"...","side":"backend"}` checks.
 
+## Memory on each side
+
+Each side has its own heap. The backend holds the project model, the indexes and the inspections, so it is
+usually the side that runs short. A `LOW MEMORY` notice names the side it comes from, as `LOW MEMORY in the
+backend`. `{"action":"get","memory":true}` and an `expect` on `memory` read the side the step runs on: through
+the Client's endpoint, add `"side":"backend"` for the backend's figures.
+
 ## Where each tool runs
 
 Through the client's endpoint:
