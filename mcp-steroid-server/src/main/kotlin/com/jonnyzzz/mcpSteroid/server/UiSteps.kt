@@ -647,7 +647,9 @@ object UiSteps {
                 "window with dimension needs width and height in pixels"
             }
         }
-        if (step.action in NEEDS_TARGET) require(step.target != null) { "$action needs a target: ref, name, text, class or xpath" }
+        val selectsInspection = step.action == UiAction.SELECT && step.inspection != null
+        if (selectsInspection) require(step.row == null && step.index == null) { "select of an inspection finds its row itself; drop row and index" }
+        if (step.action in NEEDS_TARGET && !selectsInspection) require(step.target != null) { "$action needs a target: ref, name, text, class or xpath" }
         step.button?.let { require(it in BUTTONS) { "unknown button '$it'; use left, right or middle" } }
         require(step.count in 1..2) { "count must be 1 or 2, was ${step.count}" }
         if (step.row != null || step.index != null) {
@@ -703,7 +705,7 @@ object UiSteps {
         if (step.action != UiAction.GET && step.action != UiAction.SET) {
             val config = listOfNotNull(
                 step.registry?.let { "registry" }, step.advanced?.let { "advanced" }, step.option?.let { "option" },
-                step.inspection?.let { "inspection" }, step.component?.let { "component" }, step.field?.let { "field" },
+                step.inspection?.takeIf { step.action != UiAction.SELECT }?.let { "inspection" }, step.component?.let { "component" }, step.field?.let { "field" },
             )
             require(config.isEmpty()) { "${config.joinToString()} go(es) with get and set, not $action" }
             require(!step.editors) { "editors goes with get, not $action" }
@@ -720,7 +722,9 @@ object UiSteps {
         when (step.action) {
             UiAction.FILL, UiAction.TYPE -> require(step.text != null) { "$action needs text" }
             UiAction.PRESS -> require(!step.keys.isNullOrBlank()) { "press needs keys, such as \"ENTER\" or \"ctrl+shift+A\"" }
-            UiAction.SELECT -> require(step.row != null || step.index != null) { "select needs a row (its text) or an index" }
+            UiAction.SELECT -> require(step.row != null || step.index != null || step.inspection != null) {
+                "select needs a row (its text) or an index, or an inspection by its short name"
+            }
             UiAction.WAIT -> when (step.condition) {
                 null -> throw IllegalArgumentException("wait needs \"for\": ${UiWaitCondition.entries.joinToString { it.wire }}")
                 UiWaitCondition.VISIBLE, UiWaitCondition.HIDDEN, UiWaitCondition.ENABLED ->

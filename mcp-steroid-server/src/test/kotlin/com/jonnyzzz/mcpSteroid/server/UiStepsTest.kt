@@ -67,6 +67,13 @@ class UiStepsTest {
     }
 
     @Test
+    fun `select takes an inspection by its short name, without a target or row`() {
+        assertEquals("NullableProblems", UiSteps.parse("""[{"action":"select","inspection":"NullableProblems"}]""").single().inspection)
+        assertMentions(fails("""[{"action":"select","inspection":"NullableProblems","row":"Java"}]"""), "inspection")
+        assertMentions(fails("""[{"action":"click","name":"a","inspection":"NullableProblems"}]"""), "get and set")
+    }
+
+    @Test
     fun `a screenshot crops to a tool window and fits`() {
         val s = UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","crop":{"toolwindow":"Run"},"fit":true}]""").single()
         assertEquals(UiCrop.ToolWindow("Run"), s.crop)

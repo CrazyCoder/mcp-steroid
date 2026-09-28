@@ -147,6 +147,9 @@ class UiSession(
     /** The windows after the previous step, to report the ones that opened or closed between two steps. */
     private var windowsAfterLastStep: Set<Window>? = null
 
+    /** The window and screen point of the call's last click, which a `{"click":true}` highlight marks. */
+    private var lastClick: Pair<Window, Point>? = null
+
     /** Set by a click on a button whose text ends with an ellipsis, which by convention opens a dialog. */
     private var clickOpensWindow = false
 
@@ -506,8 +509,14 @@ class UiSession(
                 }
                 val offset = if (step.offsetX != null || step.offsetY != null) {
                     Point(step.offsetX ?: (node.component.width / 2), step.offsetY ?: (node.component.height / 2))
-                } else null
+                } else withContext(edtAny) { editorClickPoint(node.component, step) }
                 val click = input.click(node.component, button(step.button), step.count, UiInput.modifiersMask(step.modifiers), offset, row?.area)
+                withContext(edtAny) {
+                    if (node.component.isShowing) {
+                        val at = offset ?: row?.area?.let { Point(it.centerX.toInt(), it.centerY.toInt()) } ?: Point(node.component.width / 2, node.component.height / 2)
+                        lastClick = windowOf(node.component)?.let { it to Point(at).apply { translate(node.component.locationOnScreen.x, node.component.locationOnScreen.y) } }
+                    }
+                }
                 (node.component as? JMenu)?.let { menu -> return submenu(menu, node, "clicked") }
                 withContext(edtAny) { row?.let { "on ${it.label}: " }.orEmpty() + describeClick(node, click) }
             }
@@ -576,9 +585,20 @@ class UiSession(
     }
 
     /**
-     * The field a fill types into: [c] itself, an editable combo box's editor, or the one editable text field inside
-     * a wrapper such as `SearchTextField`. EDT.
+     * Where a click without an offset lands on an editor: at its caret, as a person's right click on the code a goto
+     * found opens the context menu there, or at the step's line and column or symbol, where the caret moves first.
+     * Null for any other control, which is clicked in its middle. EDT.
      */
+    private fun editorClickPoint(c: Component, step: UiStep): Point? {
+        val editor = (c as? EditorComponentImpl)?.editor ?: return null
+        if (step.line != null || step.symbol != null) {
+            val range = CodeLocation.resolve(editor.document.text, step.line, step.column, step.symbol, null, 0)
+            editor.caretModel.moveToOffset(range.first)
+            editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.MAKE_VISIBLE)
+        }
+        return UiCodeRange.caretPoint(editor)
+    }
+
     /**
      * Selects all of [field]'s text, so that typing replaces it. An IDE editor field, such as the name field of a
      * Rename dialog that preselects the name without its extension, keeps its own selection, which selectAll on its
@@ -589,6 +609,10 @@ class UiSession(
         if (editor != null) editor.selectionModel.setSelection(0, editor.document.textLength) else field.selectAll()
     }
 
+    /**
+     * The field a fill types into: [c] itself, an editable combo box's editor, or the one editable text field inside
+     * a wrapper such as `SearchTextField`. EDT.
+     */
     private fun textField(c: Component): JTextComponent? {
         (c as? JTextComponent)?.let { return it }
         (c as? JComboBox<*>)?.takeIf { it.isEditable }?.let { return it.editor?.editorComponent as? JTextComponent }
@@ -647,7 +671,8 @@ class UiSession(
      * Selects a row through the component's selection, as the keyboard does. A click would also activate the row in
      * a list that acts on a click, such as Find Action's results, and a combo box would need its popup opened.
      */
-    private suspend fun selectStep(step: UiStep): String {
+    private suspend fun selectStep(given: UiStep): String {
+        val step = given.inspection?.let { given.copy(target = UiTarget(cls = INSPECTIONS_TREE), row = inspectionPath(it), inspection = null) } ?: given
         val found = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
         // An open combo box popup's list shows the combo box's items: selecting in the list alone would not pick one.
         val node = withContext(edtAny) { UiRows.comboOf(found.component)?.let { FallbackUiWalker().leaf(it) } } ?: found
@@ -1033,29 +1058,45 @@ class UiSession(
         UiSettle.settle()
         val (canvas, facts, line) = withContext(edtAny) {
             if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
-            val marks = highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label) }
-            val painted = UiCapture.paint(window).let { if (marks.isEmpty()) it else UiCapture.highlight(it, marks) }
+            val marks = highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label, h.pointer) }
+            val obstacles = if (marks.isEmpty()) emptyList() else textObstacles(window, highlights)
+            // A picture of code shows the code, not where the caret happens to be.
+            val codeEditors = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct()
+            val showCarets = codeEditors.map(UiCodeRange::hideCaret)
+            val painted = try {
+                UiCapture.paint(window).let { if (marks.isEmpty()) it else UiCapture.highlight(it, marks, obstacles) }
+            } finally {
+                showCarets.forEach { it() }
+            }
             val area = when (val crop = step.crop) {
                 null -> null
-                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCapture.withMarks(painted, it, marks) }
+                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCapture.withMarks(painted, it, marks, obstacles) }
                     ?: throw UiStepFailure("crop \"page\" needs a Settings page, and ${describeWindow(window)} shows none")
-                UiCrop.Highlights -> UiCapture.markArea(painted, marks)
-                UiCrop.Popups -> UiCapture.popupArea(window)?.let { UiCapture.withMarks(painted, it, marks) }
-                    ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
+                // Code cut to its lines keeps their line numbers: the crop reaches left to the editor's gutter.
+                UiCrop.Highlights -> codeEditors.fold(UiCapture.markArea(painted, marks, obstacles)) { a, editor ->
+                    val gutter = (editor as? com.intellij.openapi.editor.ex.EditorEx)?.gutterComponentEx?.takeIf { it.isShowing }
+                    val x = gutter?.locationOnScreen?.x
+                    if (x == null || x >= a.x) a else Rectangle(x, a.y, a.x + a.width - x, a.height)
+                }
+                UiCrop.Popups -> UiCapture.popupArea(window)?.let { area ->
+                    // The point a menu was opened from belongs with it.
+                    val points = marks.filter { it.pointer }.map { Rectangle(it.bounds.x, it.bounds.y, 1, 1) }
+                    UiCapture.withMarks(painted, UiCapture.union(listOf(area) + points), marks, obstacles)
+                } ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
                 is UiCrop.ToolWindow -> {
                     val views = UiLayout.toolWindows(project)
                     val view = views.firstOrNull { it.id.equals(crop.id, ignoreCase = true) }
                         ?: throw UiStepFailure("no tool window ${crop.id} is showing; showing: ${views.joinToString { it.id }}")
                     val decorator = view.window.decorator
                     if (windowOf(decorator) !== window) throw UiStepFailure("the ${view.id} tool window is in another window than the picture")
-                    UiCapture.withMarks(painted, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks)
+                    UiCapture.withMarks(painted, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks, obstacles)
                 }
-                is UiCrop.Control -> if (cropOnBackend != null) UiCapture.withMarks(painted, cropOnBackend, marks) else {
+                is UiCrop.Control -> if (cropOnBackend != null) UiCapture.withMarks(painted, cropOnBackend, marks, obstacles) else {
                     val c = cropControl!!.component
                     if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")
                     // A tree or list in a scroll pane is as tall as all its rows: the part in view is what shows.
                     val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)
-                    UiCapture.withMarks(painted, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks)
+                    UiCapture.withMarks(painted, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks, obstacles)
                 }
             }
             val canvas = area?.let { UiCapture.crop(painted, UiCapture.cropArea(it, step.margin ?: UiSteps.DEFAULT_MARGIN, painted.bounds)) } ?: painted
@@ -1063,6 +1104,7 @@ class UiSession(
             val what = listOfNotNull(
                 highlights.takeIf { it.isNotEmpty() }?.withIndex()?.joinToString(", ", prefix = "highlights: ") { (i, h) -> "${i + 1} ${h.what}" },
                 step.crop?.let { "crop ${if (it is UiCrop.Control) it.target.toString() else it.toString()}" },
+                "the caret is hidden in the picture".takeIf { codeEditors.isNotEmpty() },
             )
             Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
                 what.joinToString("") { "; $it" })
@@ -1108,8 +1150,11 @@ class UiSession(
     /** [area], in [c]'s coordinates, on screen. EDT. */
     private fun onScreen(c: Component, area: Rectangle): Rectangle = Rectangle(area).apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }
 
-    /** A highlight found: where to outline it, how to name it, and its label. */
-    private sealed class Located(val what: String, val label: String?) {
+    /**
+     * A highlight found: where to outline it, how to name it, and its label. [component] is the control it outlines,
+     * whose own text is no obstacle to its badge; [pointer] draws it as the point of a click.
+     */
+    private sealed class Located(val what: String, val label: String?, val component: Component? = null, val pointer: Boolean = false) {
         /** Scrolls the highlight to the middle of its view when part of it is out of view. EDT. */
         abstract fun bringIntoView()
 
@@ -1122,14 +1167,14 @@ class UiSession(
      * a control larger than its view, the outline covers the part that shows when the picture is taken.
      */
     private inner class LocalHighlight(
-        val component: Component, val area: Rectangle, what: String, label: String?, val visibleOnly: Boolean = false,
-    ) : Located(what, label) {
+        val target: Component, val area: Rectangle, what: String, label: String?, val visibleOnly: Boolean = false,
+    ) : Located(what, label, target) {
         override fun bringIntoView() {
-            if (!visibleOnly && !UiScrollAlign.inView(component, area)) UiScrollAlign.scroll(component, area, "center")
+            if (!visibleOnly && !UiScrollAlign.inView(target, area)) UiScrollAlign.scroll(target, area, "center")
         }
 
         override fun screenBounds(): Rectangle =
-            onScreen(component, if (visibleOnly) (component as? JComponent)?.visibleRect ?: area else area)
+            onScreen(target, if (visibleOnly) (target as? JComponent)?.visibleRect ?: area else area)
     }
 
     /** A highlight on a host Settings page, which the backend found and scrolled into view: its screen bounds. */
@@ -1138,11 +1183,116 @@ class UiSession(
         override fun screenBounds(): Rectangle = Rectangle(bounds)
     }
 
+    /** Lines or a symbol of code: an area of [editor]'s content, which the editor scrolls into the middle of its view. */
+    private inner class CodeHighlight(val editor: Editor, val area: Rectangle, what: String, label: String?) : Located(what, label, editor.contentComponent) {
+        override fun bringIntoView() = UiCodeRange.bringIntoView(editor, area, what)
+        override fun screenBounds(): Rectangle = onScreen(editor.contentComponent, area)
+    }
+
+    /** The screen point of the call's last click, drawn as a pointer. */
+    private class PointHighlight(val point: Point, label: String?) : Located("the point of the last click", label, pointer = true) {
+        override fun bringIntoView() = Unit
+        override fun screenBounds(): Rectangle = Rectangle(point.x, point.y, 1, 1)
+    }
+
+    /**
+     * The editor a code highlight names: the one of [file] that shows, or the selected one without a file; either must
+     * be in [window]. EDT.
+     */
+    private fun highlightEditor(file: com.intellij.openapi.vfs.VirtualFile?, path: String?, window: Window): Editor {
+        val manager = FileEditorManager.getInstance(project)
+        val editor = if (file == null) manager.selectedTextEditor ?: throw UiStepFailure("no editor is selected; open the file with a goto step first")
+        else manager.getAllEditors(file).filterIsInstance<com.intellij.openapi.fileEditor.TextEditor>().map { it.editor }.firstOrNull { it.contentComponent.isShowing }
+            ?: throw UiStepFailure("$path shows in no editor; open it with a goto step first")
+        if (!SwingUtilities.isDescendingFrom(editor.contentComponent, window)) {
+            throw UiStepFailure("the editor of ${editor.virtualFile?.name ?: "the file"} is not in the pictured ${describeWindow(window)}")
+        }
+        return editor
+    }
+
+    /**
+     * The row of inspection [shortName] on the Inspections page: its group path and display name, as the tree shows
+     * them, which the row search expands.
+     */
+    private suspend fun inspectionHighlight(shortName: String, label: String?, window: Window, timeoutMs: Long): Located =
+        locateHighlight(UiHighlight(UiTarget(cls = INSPECTIONS_TREE), row = inspectionPath(shortName), label = label), window, timeoutMs)
+
+    /** The row path of inspection [shortName] in the Inspections tree: its groups, then its display name. */
+    private suspend fun inspectionPath(shortName: String): String = withContext(edtAny) {
+        val tool = com.intellij.profile.codeInspection.InspectionProjectProfileManager.getInstance(project).currentProfile.getInspectionTool(shortName, project)
+            ?: throw UiStepFailure("no inspection has the short name \"$shortName\"; a get of an inspection lists short names as it finds them")
+        (tool.groupPath.toList() + tool.displayName).joinToString(UiRows.PATH_SEPARATOR)
+    }
+
+    /**
+     * The lines of the console of run [name] that hold [text], the last of them unless [nth] counts back further, in a
+     * console built on an editor. EDT.
+     */
+    private fun consoleHighlight(name: String, text: String, nth: Int, label: String?, window: Window): Located {
+        val descriptors = com.intellij.execution.ui.RunContentManager.getInstance(project).allDescriptors
+        val descriptor = descriptors.lastOrNull { it.displayName == name } ?: descriptors.lastOrNull { it.displayName.contains(name, ignoreCase = true) }
+            ?: throw UiStepFailure("no run named \"$name\" has a console; runs: ${descriptors.joinToString { "\"${it.displayName}\"" }}")
+        val console = descriptor.executionConsole
+        val editor = (console as? com.intellij.execution.impl.ConsoleViewImpl)?.editor
+            ?: throw UiStepFailure("the console of '${descriptor.displayName}' is a ${console?.let { UiComponentFacts.simpleClassName(it.component) } ?: "console"} without an editor; outline it with a locator")
+        if (!editor.contentComponent.isShowing) throw UiStepFailure("the console of '${descriptor.displayName}' is not showing; show its tab first")
+        val doc = editor.document
+        val lines = (0 until doc.lineCount).filter { line ->
+            doc.charsSequence.subSequence(doc.getLineStartOffset(line), doc.getLineEndOffset(line)).contains(text)
+        }
+        val line = lines.reversed().getOrNull(nth)
+            ?: throw UiStepFailure(if (lines.isEmpty()) "no line of the console of '${descriptor.displayName}' holds \"$text\"" else "\"$text\" is on ${lines.size} lines; nth $nth asked")
+        if (!SwingUtilities.isDescendingFrom(editor.contentComponent, window)) throw UiStepFailure("the console of '${descriptor.displayName}' is not in the pictured ${describeWindow(window)}")
+        return CodeHighlight(editor, UiCodeRange.linesArea(editor, (line + 1)..(line + 1)), "line ${line + 1} of the console of '${descriptor.displayName}'", label)
+    }
+
+    /**
+     * The screen bounds of the text other controls in [window] and its popups show, such as neighbouring tabs, which a
+     * badge or label should not cover. The highlighted controls, and what holds them or lies inside them, are left out. EDT.
+     */
+    private fun textObstacles(window: Window, highlights: List<Located>): List<Rectangle> {
+        val marked = highlights.mapNotNull { it.component }
+        return (listOf(window) + UiCapture.popupsOf(window)).asSequence()
+            .flatMap { UIUtil.uiTraverser(it).asSequence() }
+            .filter { c ->
+                c.isShowing && c.width > 0 && c.height > 0 && showsText(c) &&
+                    marked.none { m -> SwingUtilities.isDescendingFrom(c, m) || SwingUtilities.isDescendingFrom(m, c) }
+            }
+            .map { onScreen(it, Rectangle(0, 0, it.width, it.height)) }
+            .take(MAX_OBSTACLES)
+            .toList()
+    }
+
+    private fun showsText(c: Component): Boolean = when (c) {
+        is javax.swing.JLabel -> !c.text.isNullOrBlank()
+        is SimpleColoredComponent -> c.getCharSequence(false).isNotBlank()
+        is AbstractButton -> !c.text.isNullOrBlank()
+        else -> false
+    }
+
     /**
      * Finds [h] in [window] or a popup above it: the Settings breadcrumb, a row of a list, tree or table, or a control.
      * A control in another window, or one that is not showing, fails the step: its outline would land elsewhere.
      */
     private suspend fun locateHighlight(h: UiHighlight, window: Window, timeoutMs: Long): Located {
+        if (h.lines != null || h.symbol != null) {
+            val file = h.file?.let { path -> withContext(Dispatchers.IO) { CodeLocation.findFile(project, path) } ?: throw UiStepFailure("file not found: $path") }
+            return withContext(edtAny) {
+                val editor = highlightEditor(file, h.file, window)
+                val name = editor.virtualFile?.name ?: "the editor"
+                if (h.lines != null) CodeHighlight(editor, UiCodeRange.linesArea(editor, UiSteps.parseLines(h.lines!!)), "lines ${h.lines} of $name", h.label)
+                else CodeHighlight(editor, UiCodeRange.symbolArea(editor, h.symbol!!, h.nth ?: 0), "\"${h.symbol}\" in $name", h.label)
+            }
+        }
+        if (h.click) return withContext(edtAny) {
+            val (clicked, point) = lastClick ?: throw UiStepFailure("a click highlight marks the call's last click, and no step clicked before it")
+            if (clicked !== window && clicked !in UiCapture.popupsOf(window)) {
+                throw UiStepFailure("the last click was in ${describeWindow(clicked)}, not in the pictured ${describeWindow(window)}")
+            }
+            PointHighlight(point, h.label)
+        }
+        h.inspection?.let { return inspectionHighlight(it, h.label, window, timeoutMs) }
+        h.console?.let { name -> return withContext(edtAny) { consoleHighlight(name, h.contains!!, h.nth ?: 0, h.label, window) } }
         if (h.breadcrumb) return withContext(edtAny) {
             val bar = UiSettingsParts.breadcrumbs(window) ?: throw UiStepFailure("no Settings page is showing, so there is no breadcrumb to highlight")
             val crumbs = UiSettingsParts.crumbsBounds(bar)
@@ -1593,6 +1743,10 @@ class UiSession(
         private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")
         private val UNCHECKED_WORDS = setOf("false", "off", "no", "[ ]")
         private const val POLL_MS = 100L
+        /** The tree table of Settings | Editor | Inspections, which an inspection highlight searches. */
+        private const val INSPECTIONS_TREE = "InspectionsConfigTreeTable"
+        /** The most text controls a picture's badges keep off: an IDE window shows a few hundred. */
+        private const val MAX_OBSTACLES = 2_000
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L
         private const val FIRST_TEXT_MAX = 60
