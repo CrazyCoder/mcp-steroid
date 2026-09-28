@@ -453,6 +453,7 @@ object UiSteps {
                 require(!(step.hide && step.tab != null)) { "hide a tool window or select its tab, not both" }
                 require(!(step.hide && (step.width != null || step.height != null))) { "hide a tool window or size it, not both" }
             }
+            UiAction.WINDOW -> require(step.target == null || step.title == null) { "window takes a target or a title, not both" }
             UiAction.WRITE -> {
                 require(!step.file.isNullOrBlank()) { "write needs a file" }
                 require(step.text != null) { "write needs text, the whole new content of the file" }

@@ -41,6 +41,7 @@ class UiStepsTest {
         assertTrue(fails("""[{"action":"window","maximize":true,"width":900}]""").contains("drop width and height"))
         assertTrue(fails("""[{"action":"toolwindow","id":"Project","maximize":true}]""").contains("maximize goes with window"))
         assertTrue(fails("""[{"action":"toolwindow","id":"Project","hide":true,"width":300}]""").contains("hide a tool window or size it"))
+        assertTrue(fails("""[{"action":"window","name":"OK","title":"Settings"}]""").contains("a target or a title, not both"))
     }
 
     @Test

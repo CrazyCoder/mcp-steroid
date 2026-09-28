@@ -109,7 +109,7 @@ object UiLayout {
         return if (need > shown + SLACK) "rows need $need px and the view shows $shown px, so they are cut at the right" else null
     }
 
-    /** A docked tool window of [project], with its id. */
+    /** A showing tool window of a project, with its id. */
     class ToolWindowView(val id: String, val window: ToolWindowEx) {
         private val decorator get() = window.decorator
         private val sideways get() = window.anchor == ToolWindowAnchor.LEFT || window.anchor == ToolWindowAnchor.RIGHT
@@ -135,7 +135,7 @@ object UiLayout {
         fun holds(c: Component): Boolean = SwingUtilities.isDescendingFrom(c, decorator)
     }
 
-    /** The project's docked tool windows that show. */
+    /** The project's tool windows that show, docked or in a window of their own. */
     fun toolWindows(project: Project): List<ToolWindowView> {
         val manager = ToolWindowManager.getInstance(project)
         return manager.toolWindowIds.mapNotNull { id ->

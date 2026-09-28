@@ -724,12 +724,10 @@ class UiSession(
         return withContext(edtAny) {
             val refOf = { node: UiNode -> registry.refFor(node.component) }
             if (scope != null) {
-                val window = scope.component as? Window ?: SwingUtilities.getWindowAncestor(scope.component)
-                val model = UiModel.build(window ?: scope.component)
-                val under = model.root.walk().firstOrNull { it.component === scope.component } ?: model.root
-                val cut = under.walk().filter { it.listed && (it.clip == UiClip.OUTSIDE || it.clip == UiClip.CLIPPED) }.toList()
+                val cut = UiModel.build(scope.component).root.walk()
+                    .filter { it.listed && (it.clip == UiClip.OUTSIDE || it.clip == UiClip.CLIPPED) }.toList()
                 if (cut.isEmpty()) emptyList()
-                else listOf(cut.joinToString("; ", prefix = "${cut.size} control(s) lie past an edge: ") { "${describe(it)} [${it.clip!!.label}]" } +
+                else listOf(cut.joinToString("; ", prefix = "${cut.size} control(s) are cut: ") { "${describe(it)} [${it.clip!!.label}]" } +
                     "; " + UiLayout.unreachable(cut.first().component, project))
             } else {
                 // The window in front, as a person checks it: the others may lie under it.

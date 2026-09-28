@@ -52,6 +52,17 @@ class UiLayoutTest {
     }
 
     @Test
+    fun `a window side fits to its preferred size without shrinking, and stays within its minimum and its screen`() {
+        // size(wanted, current, preferred, minimum, screen)
+        assertEquals(900, UiResize.size("fit", 700, 900, 400, 2500))
+        assertEquals(1000, UiResize.size("fit", 1000, 900, 400, 2500))
+        assertEquals(700, UiResize.size(null, 700, 900, 400, 2500))
+        assertEquals(400, UiResize.size("300", 700, 900, 400, 2500))
+        assertEquals(2500, UiResize.size("3000", 700, 900, 400, 2500))
+        assertEquals(2500, UiResize.size("fit", 700, 4000, 400, 2500))
+    }
+
+    @Test
     fun `a tree wider than its view says its rows are cut, a narrow one says nothing`() {
         val tree = object : JTree() {
             var wide = 452

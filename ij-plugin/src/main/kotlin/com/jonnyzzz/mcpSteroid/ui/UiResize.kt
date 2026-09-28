@@ -52,7 +52,7 @@ object UiResize {
                 append("the ${view.id} tool window's ${view.axis} is now $now px, was $before px")
                 if (wanted == UiSteps.FIT) append("; fit is $target px: its header needs ${view.needs} px")
                 if (now < target - 2) append("; it asked for $target px, and the IDE window leaves no more room")
-                if (other != null) append("; its ${if (view.axis == "width") "height" else "width"} comes from the IDE window, so ${other} was left alone")
+                if (other != null) append("; its ${if (view.axis == "width") "height" else "width"} comes from the IDE window, so the one given is ignored")
             }
         }
     }
@@ -100,7 +100,7 @@ object UiResize {
                         "held at its minimum size, ${min.width}x${min.height}".takeIf { asked(width) { it < min.width } || asked(height) { it < min.height } },
                         "held at the screen's size".takeIf { asked(width) { it > screen.width } || asked(height) { it > screen.height } },
                         "fit keeps the size, which already shows its preferred ${pref.width}x${pref.height}".takeIf {
-                            (width == UiSteps.FIT || fitAll) && w == before.width && h == before.height
+                            (width == UiSteps.FIT || height == UiSteps.FIT || fitAll) && w == before.width && h == before.height
                         },
                     )
                     "resized"
@@ -119,7 +119,7 @@ object UiResize {
     }
 
     /** One side of a window: [wanted] pixels, "fit" (at least the preferred size, never smaller than now), or unchanged. */
-    private fun size(wanted: String?, current: Int, preferred: Int, minimum: Int, screen: Int): Int {
+    internal fun size(wanted: String?, current: Int, preferred: Int, minimum: Int, screen: Int): Int {
         val asked = when (wanted) {
             null -> current
             UiSteps.FIT -> maxOf(current, preferred)
