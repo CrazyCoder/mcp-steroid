@@ -63,6 +63,11 @@ object UiScrollAlign {
         Rectangle(x.toInt(), y.toInt(), w.toInt(), h.toInt())
     }
 
+    /** What a scroll [report] scrolled, as the other side names it, without that side's ref; null when it names nothing. */
+    fun parseWhat(report: String): String? = WHAT.find(report)?.let { m -> (m.groups[1] ?: m.groups[2])!!.value.replace(REF, "") }
+
+    private val WHAT = Regex("""^(?:scrolled (.+?) to the (?:top|middle) of its view|(.+?) is in no scroll pane)""")
+    private val REF = Regex(""" \[ref=[^\]]*]""")
     private val BOUNDS = Regex("""screen (-?\d+),(-?\d+) (\d+)x(\d+)""")
 
     /** Whether [area], in [c]'s coordinates, is all in the visible part of [c]'s viewport, or [c] is in none. EDT. */

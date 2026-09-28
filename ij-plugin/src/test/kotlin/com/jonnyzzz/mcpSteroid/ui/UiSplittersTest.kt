@@ -8,6 +8,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.awt.Dimension
@@ -50,6 +51,15 @@ class UiSplittersTest {
         assertEquals(300.0, r.after.toDouble(), 2.0)
         assertTrue("proportion ${r.proportionAfter}", r.proportionAfter in 0.29..0.31)
         assertNull(r.heldBack)
+    }
+
+    @Test
+    fun `a splitter with no room fails a size and keeps its proportion`() = onEdt {
+        val first = JPanel()
+        val s = Splitter(false, 0.4f).apply { firstComponent = first; secondComponent = JPanel() }
+        val e = assertThrows(UiStepFailure::class.java) { UiSplitters.setSize(UiSplitters.paneOf(first)!!, 300) }
+        assertEquals("the splitter has no room to share out: it is 0 px wide until it shows", e.message)
+        assertEquals(0.4f, s.proportion, 0.0001f)
     }
 
     @Test

@@ -24,6 +24,17 @@ class UiScrollAlignTest {
     }
 
     @Test
+    fun `a report names what it scrolled, row included, without the other side's ref`() {
+        val bounds = UiScrollAlign.boundsNote(java.awt.Rectangle(1, 2, 3, 4))
+        assertEquals(
+            "row #70 \"Java > Probable bugs > Nullability problems\" of InspectionsConfigTreeTable",
+            UiScrollAlign.parseWhat("scrolled row #70 \"Java > Probable bugs > Nullability problems\" of InspectionsConfigTreeTable [ref=e12] to the middle of its view; 3 of 9 pages; $bounds"),
+        )
+        assertEquals("JCheckBox \"Smart tabs\"", UiScrollAlign.parseWhat("JCheckBox \"Smart tabs\" [ref=e3] is in no scroll pane, so it stays where it is; $bounds"))
+        assertEquals(null, UiScrollAlign.parseWhat("scrolled into view"))
+    }
+
+    @Test
     fun `a control larger than its view is outlined as far as it shows, and never scrolled`() {
         val tree = java.awt.Dimension(300, 1400)
         val shown = java.awt.Rectangle(0, 500, 300, 600)

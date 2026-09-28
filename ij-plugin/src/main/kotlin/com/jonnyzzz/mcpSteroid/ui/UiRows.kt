@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.ui
 
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.ui.EditorTextField
+import com.intellij.ui.EditorTextFieldCellRenderer
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.ui.popup.PopupFactoryImpl
 import com.intellij.ui.tabs.JBTabs
@@ -11,6 +12,7 @@ import java.awt.Component
 import java.awt.Container
 import java.awt.Point
 import java.awt.Rectangle
+import java.awt.image.BufferedImage
 import javax.swing.AbstractButton
 import javax.swing.JComboBox
 import javax.swing.JComponent
@@ -285,7 +287,7 @@ object UiRows {
 
     /** A cell's text, or null for one that paints only an icon, such as a severity column. */
     private fun cell(table: JTable, row: Int, column: Int): String? {
-        val shown = runCatching { table.prepareRenderer(table.getCellRenderer(row, column), row, column) }.getOrNull()
+        val shown = runCatching { rendered(table, row, column) }.getOrNull()
         // A checkbox cell shows no text, only its state.
         if (shown is AbstractButton && shown.text.isNullOrBlank()) return if (shown.isSelected) "[x]" else "[ ]"
         if (shown is JLabel && shown.text.isNullOrBlank() && shown.icon != null) return null
@@ -296,8 +298,29 @@ object UiRows {
 
     private fun tableRow(table: JTable, row: Int): String {
         val value = table.getValueAt(row, 0)
-        val shown = table.prepareRenderer(table.getCellRenderer(row, 0), row, 0)
-        return text(shown) ?: value?.toString().orEmpty()
+        return text(rendered(table, row, 0)) ?: value?.toString().orEmpty()
+    }
+
+    /**
+     * The renderer of a cell, prepared as the table paints it. An editor-based renderer, as Change Signature's parameter
+     * table has, writes its text into its editor only when painted, so it is painted at the cell's size first: else it
+     * holds the text of the row painted last.
+     */
+    private fun rendered(table: JTable, row: Int, column: Int): Component {
+        val shown = table.prepareRenderer(table.getCellRenderer(row, column), row, column)
+        if (shown is EditorTextFieldCellRenderer.RendererComponent) {
+            val cell = table.getCellRect(row, column, false)
+            shown.setBounds(0, 0, maxOf(1, cell.width), maxOf(1, cell.height))
+            shown.doLayout()
+            val scratch = BufferedImage(shown.width, shown.height, BufferedImage.TYPE_INT_ARGB)
+            val g = scratch.createGraphics()
+            try {
+                shown.paint(g)
+            } finally {
+                g.dispose()
+            }
+        }
+        return shown
     }
 
     /** A tab's title, else the text of the component shown as its tab, such as a label with a counter. */
@@ -324,6 +347,7 @@ object UiRows {
             is SimpleColoredComponent -> c.getCharSequence(false).toString()
             // An editor-based renderer, as Change Signature's cells are, whose own toString names its PSI file.
             is EditorTextField -> c.text
+            is EditorTextFieldCellRenderer.RendererComponent -> c.editor.document.text
             is JLabel -> c.text
             is JTextComponent -> c.text
             is Container -> c.components.asSequence().mapNotNull(::text).filter { it.isNotBlank() }.joinToString(" ").ifEmpty { null }

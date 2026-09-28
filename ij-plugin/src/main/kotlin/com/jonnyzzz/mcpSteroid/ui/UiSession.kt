@@ -1516,7 +1516,7 @@ class UiSession(
         val report = forward.invoke(step)
         if (!report.passed) throw UiStepFailure("on the backend's host page: ${report.text}")
         val bounds = UiScrollAlign.parseBounds(report.text) ?: throw UiStepFailure("the backend gave no screen bounds: ${report.text}")
-        return bounds to "${target} on the backend's host page"
+        return bounds to "${UiScrollAlign.parseWhat(report.text) ?: target} on the backend's host page"
     }
 
     /** The window that holds [c], or [c] itself when it is one. EDT. */

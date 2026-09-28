@@ -120,6 +120,9 @@ object UiSplitters {
         val before = size(p)
         val proportionBefore = proportion(s)
         val total = total(s)
+        if (total <= 0) {
+            throw UiStepFailure("the splitter has no room to share out: it is ${along(p.axis, s.size)} px ${if (p.axis == Axis.HEIGHT) "high" else "wide"} until it shows")
+        }
         when (s) {
             is Splitter -> {
                 val share = px.toDouble() / total
