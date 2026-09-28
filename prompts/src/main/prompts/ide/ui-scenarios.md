@@ -150,6 +150,7 @@ change first, as `restore step` lines:
 | `toolwindow` | The tab, the size and whether it showed |
 | `window` on the IDE window | Its size, or maximized |
 | `window` on a dialog or the Settings window | The size the IDE saved for its next opening: the window closes, but Settings and most dialogs reopen at their last size |
+| `splitter`, and a screenshot's `fit` | The pane's size while it shows, and the proportion the IDE saved for the splitter's next opening |
 | `write` | The text before, or no file when the step created it |
 | Any step that changed project files: a refactoring through its dialog, a generator, typing, a `code` step | Each file's text before, and no file where a step created one |
 
@@ -307,15 +308,74 @@ window's size, the screen's scale and the IDE's zoom, the theme, the editor font
 |---|---|---|
 | `save` | `"appearance-page"` | The picture's name in the execution folder. Name each picture after the state it shows |
 | `out` | `"C:/docs/img/appearance.png"` | The picture's path instead: absolute in a call with `steps`, relative to the scenario file's folder in a replay. PNG, the default for a path without an extension, or JPEG for `.jpg`. The folders are made |
-| `highlight` | `["breadcrumb", {"name":"Show line numbers","label":"Turn this on"}]` | Outlines each control and numbers it 1, 2, 3 in this order. An item takes any locator, plus `row` or `index` for a row of a list, tree or table, and `label`, text drawn beside it. `"breadcrumb"` is the path above the Settings page |
-| `crop` | `"page"`, `"highlights"`, `"popups"`, `{"name":"Settings categories"}` | Cuts the picture to the Settings page with its breadcrumb, to the highlights, to the open menus, or to a control's visible part. The whole window without it |
+| `highlight` | `["breadcrumb", {"name":"Show line numbers","label":"Turn this on"}]` | Outlines each control and numbers it 1, 2, 3 in this order. An item takes any locator, plus `row` or `index` for a row of a list, tree, table or tab row, and `label`, text drawn beside it. `"breadcrumb"` is the path above the Settings page. The kinds for code, clicks, inspections and consoles are below |
+| `crop` | `"page"`, `"highlights"`, `"popups"`, `{"toolwindow":"Run"}`, `{"name":"Settings categories"}` | Cuts the picture to the Settings page with its breadcrumb, to the highlights, to the open menus, to a tool window by its id, or to a control's visible part. The whole window without it |
 | `margin` | `8` | The padding around a crop, 16 px without it |
+| `fit` | `true` | Runs the steps the `cut:` lines name before the picture, and puts the sizes back with the restore |
 
 A highlight out of view is scrolled to the middle of its view first; a control larger than its view, such as a
 tree, is outlined as far as it shows. A highlight that is not showing, such as one on another tab, fails the
 step rather than outlining the wrong place. The badge with the number sits just left of its outline, and a
-label right of it on the same line. In Split Mode the JetBrains Client takes the picture and saves the file on
-its machine; a highlight on a host Settings page, whose controls exist only on the backend, is found there.
+label right of it on the same line; where they would cover the text of another control, such as the next tab
+of a tab row, they go below the outline, or above it. In Split Mode the JetBrains Client takes the picture and
+saves the file on its machine; a highlight on a host Settings page, whose controls exist only on the backend,
+is found there.
+
+The report ends with a `cut:` line for each content the picture shows cut, with the step that makes room, so a
+bad picture is known without looking at it:
+
+```
+cut: XDebuggerTree [ref=e109] shows 3 of 8 rows; {"action":"splitter","ref":"e109","size":"fit"} makes room
+cut: the header "Default parameter" of TableView [ref=e223] is cut; {"action":"window","width":612} makes room
+```
+
+Run the step and take the picture again, or pass `"fit": true` to run them first.
+
+### Code, the click point, inspections and consoles
+
+| Highlight | Outlines |
+|---|---|
+| `{"lines":"20-27","file":"src/a.ts"}` | Those lines as the editor paints them, wrapped lines and folds included; `file` is optional for the selected editor. `"crop":"highlights"` cuts to them and keeps the line numbers; the caret is hidden while the picture paints |
+| `{"symbol":"parse","nth":1}` | A name in the editor, its first occurrence unless `nth` counts on |
+| `{"click":true,"label":"right-click"}` | The point of the call's last click, drawn as a mouse pointer |
+| `{"inspection":"NullableProblems"}` | The inspection's row on the Settings Inspections page, its groups expanded |
+| `{"console":"App","contains":"Exception"}` | The last line of a run's console that holds the text, in a console built on an editor or on a terminal |
+
+A `click` on an editor lands at its caret, or at `line` and `column` or a `symbol`, so a picture of a context
+menu is one call:
+
+```
+[{"action":"goto","file":"src/format.ts","symbol":"parseThreadUrl"},
+ {"action":"click","class":"EditorComponentImpl","button":"right"},
+ {"action":"screenshot","out":"C:/pics/refactor-menu.png","highlight":[{"click":true,"label":"right-click"},{"text":"Refactor"}],"crop":"popups"},
+ {"action":"press","keys":"ESCAPE"}]
+```
+
+`{"action":"select","inspection":"NullableProblems"}` selects that row on the Inspections page.
+
+### Tabs of run and debug tool windows
+
+A tool window lists its runs as tabs: `{"action":"toolwindow","id":"Debug","tab":"App"}` switches to one. The
+inner tabs of a run, such as Threads & Variables and Console, are rows of their `JBRunnerTabs`, as the tabs of
+`GridCellTabs` and `EditorTabs` are: `{"action":"select","class":"JBRunnerTabs","row":"Console"}` switches, and
+a highlight with the same `row` outlines the tab. `"crop":{"toolwindow":"Debug"}` cuts the picture to the tool
+window whichever run it shows. A `run` step of `RunClass`, `DebugClass`, `Rerun` or `Stop` says which runs it
+started or stopped, or that it started none, as a configuration that already runs does.
+
+### Splitters
+
+A snapshot lists each splitter with its state, such as `OnePixelSplitter [ref=e40] horizontal 0.25` or
+`ThreeComponentsSplitter [ref=e41] horizontal first 240 px, last 0 px`.
+
+- `{"action":"splitter","ref":"e40","proportion":0.3}` gives the first pane that share.
+- `{"action":"splitter","ref":"e41","size":240}` gives the pane that holds the target that many pixels; the
+  target can be a control inside the pane, whose nearest splitter moves.
+- `{"action":"splitter","ref":"e109","size":"fit"}` gives the pane the room its content lacks, along the axis
+  where the control is cut, within what the other panes' minimum sizes leave.
+
+The report gives the pane's size and the proportion before and after, what held the divider back, and when the
+other pane now cuts content, the window step that gives both room. The restore puts the divider back, and the
+proportion the IDE saves for the next opening.
 
 When `out` replaces a PNG, the report adds `unchanged`, or `changed: N pixels differ`, so a replay of
 documentation pictures names the stale ones.

@@ -109,10 +109,12 @@ snapshot marks them:
 - `rows need 452 px and the view shows 84 px, so they are cut at the right`, above a tree's or list's rows.
 
 Each window ends with a `layout:` line for each tool window narrower than its header or cutting controls,
-and for the other cut controls, with the step that makes room:
+for the other cut controls, and for content cut inside them: rows a splitter pane squeezes, a tree cut at the
+right, the text of a field or a table header in a dialog. Each names the step that makes room:
 
 ```
 layout: the Project tool window is 90 px wide and its header needs 258 px: 4 controls are cut (3 past an edge, 1 clipped: e39, e40, e41, e42); {"action":"toolwindow","id":"Project","width":"fit"} makes room
+layout: XDebuggerTree [ref=e109] shows 3 of 8 rows; {"action":"splitter","ref":"e109","size":"fit"} makes room
 ```
 
 A click on an `[outside]` control fails with the same step, and with a `run` step for its action when it
@@ -126,7 +128,11 @@ has one. Make room, then act:
 - `{"action":"window"}` on a dialog or a separate window such as Settings grows it to its preferred size,
   which shows its content. A target or `title` picks the window; without one, the topmost. Settings and most
   dialogs save their size for the next opening, which the restore of a replay, or of a call with `"restore":
-  true`, puts back.
+  true`, puts back. A dialog that prefers the size it has gets a `width` in its `layout:` line instead.
+- `{"action":"splitter","ref":"e109","size":"fit"}` moves the divider of the splitter around a pane, such as
+  the debugger's Variables or Project Structure's lists; `"proportion":0.3` or a `size` in pixels sets it. A
+  snapshot lists each splitter with its ref and state, such as `Splitter [ref=e13] horizontal 0.50` for an
+  editor split.
 
 A window stays on its screen and above its minimum size; the step reports the size it had, the size it
 got and the screen's usable area. `{"action":"expect","layout":true}` checks that the topmost window has
