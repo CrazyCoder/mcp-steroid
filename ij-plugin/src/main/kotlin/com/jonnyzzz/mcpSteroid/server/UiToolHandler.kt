@@ -141,8 +141,7 @@ class UiToolHandlerIJ : UiToolHandler {
             val judged = scenario != null || planned.any { it.bug != null }
             val setupFailed = setupResult?.failure != null
             val verdict = when {
-                setupFailed -> UiVerdict.Verdict(UiVerdict.Kind.BROKEN,
-                    "BROKEN at setup step ${result.outcomes.last().index}: the scenario's setup could not be done, so no step ran. Repair the setup")
+                setupFailed -> UiVerdict.setupBroken(result.outcomes.last().index)
                 judged -> UiVerdict.of(planned, result.outcomes)
                 else -> null
             }

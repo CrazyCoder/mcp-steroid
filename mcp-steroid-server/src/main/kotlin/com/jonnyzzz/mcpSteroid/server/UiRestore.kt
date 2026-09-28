@@ -17,7 +17,11 @@ import kotlinx.serialization.json.jsonObject
  * the first one's restore, which runs after it.
  */
 object UiRestore {
-    /** The line of a steroid_ui response that carries a run's restore steps, as a JSON array, for a JetBrains Client. */
+    /**
+     * The line of a steroid_ui response that carries a run's restore steps, as a JSON array: a JetBrains Client reads
+     * it from the backend's report of a step it sent there, and a scenario run that stops before its last step ends
+     * with it, for whoever resumes the run.
+     */
     const val LINE = "undo: "
 
     /** The fields that hold the value a restore sets; the others name the state it sets. */
@@ -59,8 +63,6 @@ object UiRestore {
 
         /** The restore steps to run: the last change's first. */
         fun steps(): List<JsonObject> = groups.asReversed().flatten()
-
-        val isEmpty: Boolean get() = groups.isEmpty()
     }
 
     /** A step of [action] with [fields], each a string, a whole number or true or false. */

@@ -275,6 +275,10 @@ object UiVerdict {
     /** The verdict of a scenario whose `requires` this IDE does not meet, [unmet] naming what it lacks. */
     fun skipped(unmet: List<String>) = Verdict(Kind.SKIPPED, "SKIPPED: this IDE does not meet the scenario's requires: ${unmet.joinToString("; ")}")
 
+    /** The verdict of a scenario whose setup step [index] failed, so that none of its steps ran. */
+    fun setupBroken(index: Int) =
+        Verdict(Kind.BROKEN, "BROKEN at setup step $index: the scenario's setup could not be done, so no step ran. Repair the setup")
+
     data class Verdict(val kind: Kind, val line: String)
 
     /**

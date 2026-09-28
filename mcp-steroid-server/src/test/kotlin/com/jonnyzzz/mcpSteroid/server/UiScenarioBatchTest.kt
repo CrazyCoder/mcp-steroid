@@ -85,6 +85,7 @@ class UiScenarioBatchTest {
             UiVerdict.of(listOf(click, bug), listOf(ok(1, click), ok(2, bug))),
             UiVerdict.of(listOf(click, bug), listOf(ok(1, click))),
             UiVerdict.skipped(listOf("the OS is linux, not windows")),
+            UiVerdict.setupBroken(2),
         )
         assertEquals(UiVerdict.Kind.entries.toSet(), verdicts.map { it.kind }.toSet())
         for (v in verdicts) {

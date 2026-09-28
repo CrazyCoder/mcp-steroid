@@ -60,7 +60,7 @@ object UiScenarioBatch {
      */
     fun verdictOf(report: String): String {
         val lines = report.lines()
-        return lines.lastOrNull { l -> VERDICTS.any { l.startsWith("$it:") || l.startsWith("$it at step ") } }
+        return lines.lastOrNull { l -> VERDICTS.any { l.startsWith("$it:") || l.startsWith("$it at step ") || l.startsWith("$it at setup step ") } }
             ?: lines.firstOrNull { it.startsWith("ERROR") }
             ?: "no verdict: see its report below"
     }
