@@ -229,6 +229,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         .enumString(mapOf("frontend" to "frontend", "backend" to "backend"))
         .registerToSchema()
 
+    /** Read from the raw arguments by [ToolOutputContract.wantsJson]. */
+    val output = outputParam().registerToSchema()
+
     override suspend fun call(context: ToolCallContext): ToolCallResult =
         handler().handleUi(
             context[projectName],
@@ -245,6 +248,7 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
                 maxNodes = context[maxNodes],
                 trace = context[trace],
                 side = context[side],
+                jsonOutput = ToolOutputContract.wantsJson(context.params.arguments),
                 executionBackend = context.executionBackendProvenance(),
             ),
         )
@@ -269,6 +273,8 @@ data class UiParams(
     val maxNodes: Int = UiToolSpec.DEFAULT_MAX_NODES,
     val trace: Boolean = false,
     val side: String? = null,
+    /** Whether the result is the [ToolOutputContract] envelope rather than text for a model. */
+    val jsonOutput: Boolean = false,
     @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 

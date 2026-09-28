@@ -119,8 +119,7 @@ class McpScriptContextImpl(
 
     override fun println(vararg values: Any?) {
         checkDisposed()
-        resultBuilder.logMessage(values.joinToString(" ") { it?.toString() ?: "null" })
-        resultBuilder.noteUserOutput()
+        resultBuilder.logUserOutput(values.joinToString(" ") { it?.toString() ?: "null" })
     }
 
     override fun printException(message: String, throwable: Throwable) {
@@ -136,8 +135,7 @@ class McpScriptContextImpl(
                 is String -> obj
                 else -> objectMapper.writeValueAsString(obj)
             }
-            resultBuilder.logMessage(jsonString)
-            resultBuilder.noteUserOutput()
+            resultBuilder.logUserOutput(jsonString)
         } catch (e: CancellationException) {
             // Cancellation propagates — don't wrap it as a serialization error.
             throw e
@@ -150,8 +148,7 @@ class McpScriptContextImpl(
         checkDisposed()
         try {
             val csv = formatCsv(headers, rows, dictColumns).trimEnd('\n')
-            resultBuilder.logMessage(csv)
-            resultBuilder.noteUserOutput()
+            resultBuilder.logUserOutput(csv)
         } catch (e: IllegalArgumentException) {
             // formatCsv validates row width and non-empty headers — surface
             // the contract violation as a normal log line so the script
@@ -162,8 +159,7 @@ class McpScriptContextImpl(
 
     override fun printToon(value: Any?) {
         checkDisposed()
-        resultBuilder.logMessage(formatToon(value))
-        resultBuilder.noteUserOutput()
+        resultBuilder.logUserOutput(formatToon(value))
     }
 
     override fun progress(message: String) {

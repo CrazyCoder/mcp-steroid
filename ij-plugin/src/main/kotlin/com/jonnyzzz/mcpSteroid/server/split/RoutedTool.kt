@@ -5,14 +5,17 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.freeze.FreezeMonitor
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.errorResult
+import com.jonnyzzz.mcpSteroid.server.ToolOutputContract
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 
 /**
  * Runs [delegate] locally or forwards the call to the backend, per [routeTool]. [FreezeMonitor.guard]
  * reports a UI freeze and the errors the IDE logged in the result, and answers a call that a freeze holds up.
+ * A call with "output":"json" is answered with the [ToolOutputContract] envelope whatever happens.
  */
 class RoutedTool(
     private val delegate: McpTool,
@@ -20,9 +23,25 @@ class RoutedTool(
     private val bridge: () -> SplitFrontendBridge?,
 ) : McpTool by delegate {
     override suspend fun call(context: ToolCallContext): ToolCallResult {
+        // With "output":"json", every answer, an error too, is the ToolOutputContract envelope.
+        val json = ToolOutputContract.wantsJson(context.params.arguments)
+        if (!json) return guarded(context, json)
+        return try {
+            ToolOutputContract.wrap(delegate.name, guarded(context, json))
+        } catch (e: ToolCallErrorException) {
+            // Thrown before the tool answers, as for an unknown project; the registry would answer it as text.
+            ToolOutputContract.wrap(delegate.name, e.toolCallResult)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ToolOutputContract.wrap(delegate.name, ToolCallResult.errorResult("${delegate.name} failed: ${e.message}"))
+        }
+    }
+
+    private suspend fun guarded(context: ToolCallContext, json: Boolean): ToolCallResult {
         val monitor = FreezeMonitor.getInstanceOrNull() ?: return route(context)
         val reports = reportsOwnIdeErrors(role(), delegate.name, context.params.arguments)
-        return monitor.guard(context.session, reportsIdeErrors = reports) { route(context) }
+        return monitor.guard(context.session, reportsIdeErrors = reports, jsonOutput = json, tool = delegate.name) { route(context) }
     }
 
     private suspend fun route(context: ToolCallContext): ToolCallResult {

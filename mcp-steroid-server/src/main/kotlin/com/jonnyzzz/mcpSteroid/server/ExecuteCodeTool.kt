@@ -88,6 +88,9 @@ data class ExecCodeParams(
     /** How to treat IDE modality around the script. See [ModalMode]. Default [ModalMode.SMART_NON_MODAL]. */
     val modal: ModalMode = ModalMode.DEFAULT,
 
+    /** Whether the result is the [ToolOutputContract] envelope rather than text for a model. */
+    val jsonOutput: Boolean = false,
+
     @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 
@@ -197,6 +200,9 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         .enumString(mapOf("frontend" to "frontend", "backend" to "backend"))
         .registerToSchema()
 
+    /** Read from the raw arguments by [ToolOutputContract.wantsJson]; the envelope's fields are the contract's. */
+    val output = outputParam().registerToSchema()
+
     override suspend fun call(context: ToolCallContext): ToolCallResult {
         val projectName = context[projectName]
         val code = context[code]
@@ -211,12 +217,23 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
             reason = reason,
             timeout = timeout,
             modal = modal,
+            jsonOutput = ToolOutputContract.wantsJson(context.params.arguments),
             executionBackend = context.executionBackendProvenance(),
         )
 
         return handler().executeCode(projectName, execCodeParams, context.mcpProgressReporter)
     }
 }
+
+/** The `output` parameter of the tools that follow [ToolOutputContract]. */
+fun outputParam() = InputSchemaElement.param(ToolOutputContract.PARAM)
+    .description(
+        "'json' for programs that read the result: the response is then exactly one text item holding one JSON " +
+            "object, versioned and only ever extended, with the script's output, errors and IDE notices in fields " +
+            "of their own. mcp-steroid://skill/output-contract documents it. Leave it out when a model reads the result."
+    )
+    .cliSynopsis("json for a machine-readable result")
+    .enumString(mapOf(ToolOutputContract.JSON_MODE to ToolOutputContract.JSON_MODE))
 
 interface ExecuteCodeToolHandler {
     suspend fun executeCode(

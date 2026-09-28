@@ -75,7 +75,7 @@ class CommandHelpRoutingTest {
             }
             assertEquals(
                 tool.cli.producesImage,
-                "--out" in text,
+                Regex("--out\\b") in text, // a whole flag: --output is another one
                 "${tool.cli.name}'s --out help must follow producesImage; got:\n$text",
             )
         }

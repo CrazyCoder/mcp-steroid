@@ -11,6 +11,7 @@ import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.execution.RunningExecutions
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.server.ToolOutputContract
 import com.jonnyzzz.mcpSteroid.server.split.SplitRole
 import com.jonnyzzz.mcpSteroid.server.split.currentSplitRole
 import kotlinx.coroutines.CancellationException
@@ -133,37 +134,49 @@ class FreezeMonitor(private val scope: CoroutineScope) {
      * banners above open editors and the memory pressure it was not told about, in front of its result. A call
      * still running once a freeze has been known for [EARLY_ANSWER_MS] is answered with the freeze instead, and
      * keeps running in the IDE. [reportsIdeErrors] tells that the call's own result lists the errors logged while it ran, as
-     * steroid_execute_code does.
+     * steroid_execute_code does. With [jsonOutput] every answer is the [ToolOutputContract] envelope of [tool], and the
+     * notices are in its `notices` field instead of in front of it.
      */
-    suspend fun guard(session: Any, reportsIdeErrors: Boolean = false, call: suspend () -> ToolCallResult): ToolCallResult {
+    suspend fun guard(
+        session: Any,
+        reportsIdeErrors: Boolean = false,
+        jsonOutput: Boolean = false,
+        tool: String = "",
+        call: suspend () -> ToolCallResult,
+    ): ToolCallResult {
         val errors = ideErrors()
         val banners = ideBanners()
         val memory = ideMemory()
         val startedAtMs = System.currentTimeMillis()
+        // Each notice is marked told when it is read, so a result reads them once.
         fun notices() = listOfNotNull(noticeFor(session), memory?.noticeFor(session), errors?.noticeFor(session), banners?.noticeFor(session))
-            .joinToString("").ifEmpty { null }
+        // An answer the monitor makes itself, as text or as an envelope.
+        fun answer(notices: List<String>, text: String, how: ToolOutputContract.Interruption) =
+            if (jsonOutput) ToolOutputContract.result(ToolOutputContract.interrupted(tool, how, text, notices))
+            else ToolCallResult(listOf(ContentItem.Text(notices.joinToString("") + text)), isError = true)
 
         val run = scope.async(currentCoroutineContext().minusKey(Job)) { call() }
         try {
             while (withTimeoutOrNull(POLL_MS) { run.join() } == null) {
                 val freeze = active ?: continue
                 if (System.currentTimeMillis() - freeze.detectedAtMs < EARLY_ANSWER_MS) continue
-                val notice = notices() ?: continue
-                return ToolCallResult(listOf(ContentItem.Text(notice + STILL_RUNNING)), isError = true)
+                val told = notices().ifEmpty { null } ?: continue
+                return answer(told, STILL_RUNNING, ToolOutputContract.Interruption.STILL_RUNNING)
             }
             val result = run.await()
             if (reportsIdeErrors) errors?.reportedBy(session, startedAtMs, System.currentTimeMillis())
             // After the call, which may have opened a file or changed the setup a banner is about.
             banners?.refresh()
-            val notice = notices() ?: return result
-            return result.copy(content = listOf(ContentItem.Text(notice)) + result.content)
+            val told = notices()
+            if (jsonOutput) return ToolOutputContract.withNotices(tool, result, told)
+            if (told.isEmpty()) return result
+            return result.copy(content = listOf(ContentItem.Text(told.joinToString(""))) + result.content)
         } catch (e: CancellationException) {
             run.cancel(e)
             // The caller's own cancellation propagates; a call cancelled inside the IDE, as a freeze
             // cancels the execution that holds its lock, is answered.
             currentCoroutineContext().ensureActive()
-            val text = (notices() ?: "") + "The call was cancelled inside the IDE: ${e.message}"
-            return ToolCallResult(listOf(ContentItem.Text(text)), isError = true)
+            return answer(notices(), "The call was cancelled inside the IDE: ${e.message}", ToolOutputContract.Interruption.CANCELLED)
         }
     }
 

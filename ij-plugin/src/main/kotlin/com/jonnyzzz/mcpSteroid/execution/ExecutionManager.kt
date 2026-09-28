@@ -12,6 +12,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.builder
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.ToolOutputContract
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.ExecutionEventRecord
 import com.jonnyzzz.mcpSteroid.storage.ExecutionEventWriteQueue
@@ -43,6 +44,17 @@ interface ExecutionResultBuilder {
     fun reportFailed(message: String)
     /** Called from McpScriptContextImpl.println/printJson to mark genuine user output. */
     fun noteUserOutput()
+
+    /** An error with its stack trace already written out, as a script's exception with its lines mapped to the script. */
+    fun logError(message: String, stackTrace: String) {
+        logMessage("ERROR: $message\n$stackTrace")
+    }
+
+    /** What the script itself printed: its output, as opposed to the framework's messages. */
+    fun logUserOutput(message: String) {
+        logMessage(message)
+        noteUserOutput()
+    }
 }
 
 /** The status-bar title of a running steroid_execute_code call. */
@@ -87,7 +99,7 @@ class ExecutionManager(
                     project = project
                 )
 
-                val builder = responseBuilder(this, executionId, mcpProgressReporter)
+                val builder = responseBuilder(this, executionId, mcpProgressReporter, exec.jsonOutput)
 
                 suspend fun runExecution(): ToolCallResult {
                     try {
@@ -157,8 +169,19 @@ class ExecutionManager(
         } }
     }
 
-    private fun responseBuilder(parentScope: CoroutineScope, executionId: ExecutionId, mcpProgress: McpProgressReporter) = object : ExecutionResultBuilder {
+    private fun responseBuilder(
+        parentScope: CoroutineScope,
+        executionId: ExecutionId,
+        mcpProgress: McpProgressReporter,
+        jsonOutput: Boolean,
+    ) = object : ExecutionResultBuilder {
         private val responseBuilder = ToolCallResult.builder()
+        // The ToolOutputContract fields, kept apart as each part arrives; build() uses them with jsonOutput.
+        private val executionIdLine = "execution_id: ${executionId.executionId}"
+        private val stdout = mutableListOf<String>()
+        private val messages = mutableListOf<String>()
+        private val errors = mutableListOf<ToolOutputContract.ExecError>()
+        private val images = mutableListOf<Pair<String, String>>()
         // Storage writes go through a single-worker queue so output.jsonl lines land in the
         // exact order they were emitted (fan-out onto Dispatchers.IO used to scramble them)
         // and a genuine write failure surfaces from build() instead of being logged and
@@ -196,7 +219,19 @@ class ExecutionManager(
             // data loss if the parent scope is cancelled immediately AND re-raises any write
             // failure (a genuine IO error must fail the tool call, never be ACKed as success).
             storageQueue.awaitCompletion()
-            return responseBuilder.build()
+            if (!jsonOutput) return responseBuilder.build()
+            return ToolOutputContract.result(ToolOutputContract.executeCode(executionId.executionId, !failed, stdout, messages, errors, images))
+        }
+
+        override fun logError(message: String, stackTrace: String) {
+            errors += ToolOutputContract.ExecError("exception", message, stackTrace)
+            logMessage("ERROR: $message\n$stackTrace", inMessages = false)
+        }
+
+        override fun logUserOutput(message: String) {
+            stdout += message
+            logMessage(message, inMessages = false)
+            noteUserOutput()
         }
 
         /** Finish the event queue without raising — for the paths that never reach [build]. */
@@ -204,7 +239,11 @@ class ExecutionManager(
             storageQueue.flushRemaining()
         }
 
-        override fun logMessage(message: String) {
+        override fun logMessage(message: String) = logMessage(message, inMessages = true)
+
+        /** [inMessages] false keeps the text out of the envelope's messages: it is output, or an error, in a field of its own. */
+        fun logMessage(message: String, inMessages: Boolean) {
+            if (inMessages && message != executionIdLine) messages += message
             responseBuilder.addTextContent(message)
             mcpProgress.report(message)
             // Broadcast output event for Demo Mode
@@ -226,12 +265,14 @@ class ExecutionManager(
         }
 
         override fun logImage(mimeType: String, data: String, fileName: String) {
+            images += mimeType to fileName
             responseBuilder.addContent(ContentItem.Image(data = data, mimeType = mimeType))
             storageQueue.submit(ExecutionEventRecord.Append(executionId, "IMAGE: $fileName ($mimeType)"))
         }
 
         override fun logException(message: String, throwable: Throwable) {
             val text = "ERROR: $message: ${throwable.message}\n${throwable.stackTraceToString()}"
+            errors += ToolOutputContract.ExecError("exception", "$message: ${throwable.message}", throwable.stackTraceToString())
             responseBuilder.addTextContent(text)
             mcpProgress.report(text)
             _errorMessages.add(throwable.message ?: message)
@@ -241,6 +282,7 @@ class ExecutionManager(
 
         override fun reportFailed(message: String) {
             val text = "FAILED: $message"
+            errors += ToolOutputContract.ExecError("failed", message)
             responseBuilder.addTextContent(text)
             mcpProgress.report(text)
             responseBuilder.markAsError()

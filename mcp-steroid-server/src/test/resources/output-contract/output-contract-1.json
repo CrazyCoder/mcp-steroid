@@ -1,0 +1,16 @@
+{
+  "comment": "The released fields of output contract 1. Frozen: add a field here when it ships, never change or remove one. A type ending in ? may be absent.",
+  "contract": 1,
+  "envelope": {"contract": "number", "tool": "string", "ok": "boolean", "notices": "array"},
+  "notice": {"kind": "string", "side": "string?", "text": "string"},
+  "notice_kinds": ["IDE_FREEZE", "IDE_ERRORS", "EDITOR_BANNERS", "LOW_MEMORY", "EDITOR_STATE"],
+  "wrapped": {"text": "string"},
+  "still_running": {"still_running": "boolean", "text": "string"},
+  "cancelled": {"cancelled": "boolean", "text": "string"},
+  "steroid_execute_code": {"execution_id": "string", "stdout": "string", "result": "any?", "messages": "array", "errors": "array", "images": "array"},
+  "execute_code_error": {"kind": "string", "message": "string", "stack_trace": "string?"},
+  "execute_code_image": {"mime_type": "string", "file": "string"},
+  "steroid_ui": {"execution_id": "string", "verdict": "string?", "verdict_kind": "string?", "report": "string"},
+  "steroid_ui_batch": {"files": "array", "report": "string"},
+  "steroid_ui_batch_file": {"file": "string", "verdict": "string", "ok": "boolean", "report": "string"}
+}

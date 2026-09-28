@@ -128,13 +128,16 @@ class UiToolHandlerIJ : UiToolHandler {
                 }
             }
             project.executionStorage.writeCodeExecutionData(executionId, "ui.txt", text)
-            editorNotice?.let { builder.addTextContent(it) }
-            builder.addTextContent(text)
             val failed = when (verdict?.kind) {
                 null -> result.failure != null
                 UiVerdict.Kind.BROKEN, UiVerdict.Kind.FAILED -> true
                 else -> false
             }
+            if (params.jsonOutput) return ToolOutputContract.result(
+                ToolOutputContract.ui(executionId.executionId, !failed, verdict, text, listOfNotNull(editorNotice?.let(ToolOutputContract::noticeOf)))
+            )
+            editorNotice?.let { builder.addTextContent(it) }
+            builder.addTextContent(text)
             if (failed) builder.markAsError()
             builder.build()
         } catch (e: TimeoutCancellationException) {
@@ -222,12 +225,16 @@ class UiToolHandlerIJ : UiToolHandler {
         }
         if (!params.steps.isNullOrBlank()) return error("pass steps or scenario, not both")
         if (params.fromStep != null || params.toStep != null) return error("from_step and to_step pick the steps of one scenario, not of several files")
+        // Each file replays in text mode: the batch reads its verdict from the text.
         val reports = files.map { file ->
-            val result = handleUi(projectName, params.copy(scenario = file.toString()))
+            val result = handleUi(projectName, params.copy(scenario = file.toString(), jsonOutput = false))
             file to result.content.filterIsInstance<ContentItem.Text>().joinToString("\n") { it.text }
         }
-        val builder = ToolCallResult.builder().addTextContent(UiScenarioBatch.render(reports, base))
-        if (reports.any { (_, report) -> UiScenarioBatch.isBad(UiScenarioBatch.verdictOf(report)) }) builder.markAsError()
+        val summary = UiScenarioBatch.render(reports, base)
+        val bad = reports.any { (_, report) -> UiScenarioBatch.isBad(UiScenarioBatch.verdictOf(report)) }
+        if (params.jsonOutput) return ToolOutputContract.result(ToolOutputContract.uiBatch(reports.map { (f, r) -> f.toString() to r }, summary))
+        val builder = ToolCallResult.builder().addTextContent(summary)
+        if (bad) builder.markAsError()
         return builder.build()
     }
 

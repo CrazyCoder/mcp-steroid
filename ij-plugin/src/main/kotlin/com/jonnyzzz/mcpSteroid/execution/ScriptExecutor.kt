@@ -487,9 +487,7 @@ class ScriptExecutor(
         throwable: Throwable,
         lineMapping: LineMapping,
     ) {
-        val cleanTrace = lineMapping.cleanStackTrace(throwable.stackTraceToString())
-        val text = "ERROR: $message\n$cleanTrace"
-        logMessage(text)
+        logError(message, lineMapping.cleanStackTrace(throwable.stackTraceToString()))
     }
 }
 
