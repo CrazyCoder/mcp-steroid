@@ -25,6 +25,7 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.TextRange
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.profile.codeInspection.InspectionProjectProfileManager
@@ -590,20 +591,38 @@ class RefactorEngine(private val project: Project) {
 
     /** The lines [prepare]'s change would add and remove, made on a copy of the file that nobody sees. */
     private suspend fun preview(target: Target, prepare: (PsiFile) -> Runnable): String = try {
-        val (before, copy) = smartReadAction(project) { target.psiFile.text to target.psiFile.copy() as PsiFile }
+        val (before, copy) = smartReadAction(project) { target.psiFile.text to previewCopy(target.psiFile) }
         val change = smartReadAction(project) { prepare(copy) }
         withContext(Dispatchers.EDT + ModalityState.any().asContextElement()) { ApplicationManager.getApplication().runWriteAction(change) }
         val after = readAction { copy.text }
         if (after == before) "no change"
-        else lineCounts(before, after).let { (added, removed) -> "would change the file +$added -$removed; pass apply to change it" }
+        else {
+            val (added, removed) = lineCounts(before, after)
+            val lines = changedLines(before, after)
+            "would change the file +$added -$removed; pass apply to change it" + lines.take(MAX_LINES).joinToString("") { "\n$it" } +
+                if (lines.size > MAX_LINES) "\n… ${lines.size - MAX_LINES} more" else ""
+        }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         "the change cannot be previewed (${e.javaClass.simpleName}); pass apply to change it"
     }
 
+    /**
+     * A copy of [file] that resolves as [file] does. Kotlin analyses a copy on its own, without the defaults of its
+     * module, so its import optimizer would add an explicit import for every `kotlin.*` name; the copy takes [file] as
+     * its analysis context under the key Kotlin reads, found by name so the plugin needs no Kotlin dependency. Read
+     * action.
+     */
+    private fun previewCopy(file: PsiFile): PsiFile = (file.copy() as PsiFile).also { copy ->
+        @Suppress("DEPRECATION", "UNCHECKED_CAST")
+        (Key.findKeyByName(KOTLIN_ANALYSIS_CONTEXT) as Key<PsiElement>?)?.let { copy.putUserData(it, file) }
+    }
+
     private companion object {
         const val MAX_LINES = 30
+        /** The user data key of `KtFile.analysisContext`, the element a Kotlin file is analysed in. */
+        const val KOTLIN_ANALYSIS_CONTEXT = "ANALYSIS_CONTEXT"
         /** Languages of documents whose references to code are prose: a mention, not a use. */
         val TEXT_LANGUAGES = setOf("Markdown", "AsciiDoc", "ReST", "TEXT")
         const val MAX_FIXES = 50

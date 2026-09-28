@@ -29,6 +29,20 @@ import java.awt.Window
 import java.awt.event.WindowEvent
 import kotlin.time.TimeSource
 
+/**
+ * The lines that differ between two texts, one change at a time: `N: - text` for a line removed at line N of [before],
+ * then `N: + text` for a line added at line N of [after].
+ */
+internal fun changedLines(before: String, after: String): List<String> {
+    val old = before.split('\n')
+    val new = after.split('\n')
+    val changes = runCatching { Diff.buildChanges(before, after) }.getOrNull()
+    return generateSequence(changes) { it.link }.flatMap { c ->
+        (0 until c.deleted).map { "${c.line0 + it + 1}: - ${old[c.line0 + it]}" } +
+            (0 until c.inserted).map { "${c.line1 + it + 1}: + ${new[c.line1 + it]}" }
+    }.toList()
+}
+
 /** The lines added and removed between two texts. */
 internal fun lineCounts(before: String, after: String): Pair<Int, Int> {
     var added = 0
