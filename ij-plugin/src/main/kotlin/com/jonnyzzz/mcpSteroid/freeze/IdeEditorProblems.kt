@@ -44,8 +44,8 @@ data class EditorProblem(val project: String, val file: String, val line: Int, v
  * warnings and other severities with them.
  *
  * The problems are the editor's own: what its code analysis found the last time it ran on the file, read without
- * running it again. For the notice, a file still being analyzed keeps its last reading. In Split Mode the backend reads them: the
- * JetBrains Client's copy of the highlighting has no descriptions.
+ * running it again. For the notice, a file still being analyzed keeps its last reading. In Split Mode the backend
+ * reads them: the JetBrains Client's copy of the highlighting has no descriptions.
  */
 @Service(Service.Level.APP)
 class IdeEditorProblems {

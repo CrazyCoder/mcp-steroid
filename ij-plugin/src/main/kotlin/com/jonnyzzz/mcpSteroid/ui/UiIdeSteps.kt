@@ -123,8 +123,8 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         val editor = Window.getWindows().asSequence()
             .filter { (it as? Dialog)?.isModal == true }
             .firstNotNullOfOrNull(::settingsEditor) ?: return null
-        val configurable = page.id?.let { id -> Settings.KEY.getData(DataManager.getInstance().getDataContext(editor))?.let { it to it.find(id) } }
-        val (settings, found) = configurable?.takeIf { it.second != null }
+        val lookup = page.id?.let { id -> Settings.KEY.getData(DataManager.getInstance().getDataContext(editor))?.let { it to it.find(id) } }
+        val (settings, found) = lookup?.takeIf { it.second != null }
             ?: throw UiStepFailure("the open Settings dialog cannot switch to $page; close it, then open that page")
         return settings.select(found)
     }
