@@ -36,9 +36,10 @@ data class UiScenario(
         const val FORMAT_VERSION = 1
 
         /**
-         * What a run does when a step opens a window, or shows a tool window, that cuts controls: `note` says so in
-         * the step's report, `check` also counts it as a failed soft check, and `auto` makes room with the step the
-         * layout line names, as it does before a click on a control past an edge and for the IDE window at the start.
+         * What a run does when a step opens a window, or shows or sizes a tool window, that cuts controls: `note`
+         * says so in the step's report, `check` also counts it as a failed soft check, and `auto` makes room with the
+         * step the layout line names, as it does before a click on a control past an edge and for the IDE window at
+         * the start.
          */
         val LAYOUT_MODES = setOf("note", "check", "auto")
 

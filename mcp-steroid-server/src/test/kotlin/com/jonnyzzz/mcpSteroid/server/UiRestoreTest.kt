@@ -31,6 +31,27 @@ class UiRestoreTest {
     }
 
     @Test
+    fun `a step's restore of a state restored before leaves its other restores in`() {
+        val journal = UiRestore.Journal()
+        val size = UiRestore.step("toolwindow", "id" to "Project", "width" to 250)
+        journal.add(listOf(size))
+        // Making room widened the tool window and filled the screen: the width is restored already, the window is not.
+        val window = UiRestore.step("window", "class" to "IdeFrameImpl", "width" to 1400, "height" to 900)
+        journal.add(listOf(UiRestore.step("toolwindow", "id" to "Project", "width" to 80), window))
+        assertEquals(listOf(window, size), journal.steps())
+    }
+
+    @Test
+    fun `consecutive restores of one state stay together`() {
+        val journal = UiRestore.Journal()
+        val level = UiRestore.step("set", "inspection" to "X", "value" to "WARNING")
+        val off = UiRestore.step("set", "inspection" to "X", "value" to "off")
+        journal.add(listOf(level, off))
+        journal.add(listOf(UiRestore.step("set", "inspection" to "X", "value" to "ERROR")))
+        assertEquals(listOf(level, off), journal.steps())
+    }
+
+    @Test
     fun `a key names the state, not the value, and check and uncheck set one state`() {
         assertEquals(UiRestore.key(set("a", "1")), UiRestore.key(set("a", "2")))
         assertNotEquals(UiRestore.key(set("a", "1")), UiRestore.key(set("b", "1")))

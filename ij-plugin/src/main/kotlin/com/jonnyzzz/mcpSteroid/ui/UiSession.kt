@@ -189,7 +189,7 @@ class UiSession(
                             // In auto mode a control past an edge gets room, as a person drags the edge, and one more try.
                             val fix = if (layoutMode == AUTO) withContext(edtAny) { UiLayout.fixFor(e.component, project) } else null
                             fix ?: throw e
-                            "made room: ${actStep(UiSteps.parse("[$fix]").single())}; then " + attempt()
+                            "made room: ${applyFix(fix)}; then " + attempt()
                         }
                     )
                 } catch (e: UiStepFailure) {
@@ -946,16 +946,19 @@ class UiSession(
     }
 
     /**
-     * The layout lines of the windows a step [opened] and of the tool windows it showed, which were not among
-     * [toolWindowsBefore], as [layoutMode] wants them: noted, noted and counted as a failed check, or made room for.
+     * The layout lines of the windows a step [opened], of the tool windows it showed, which were not among
+     * [toolWindowsBefore], and of the one a toolwindow step sized, as [layoutMode] wants them: noted, noted and
+     * counted as a failed check, or made room for, which in auto mode overrides a size a step set too small.
      */
     private suspend fun layoutAfter(opened: List<Window>, toolWindowsBefore: Set<String>): List<String> {
+        val sized = current?.takeIf { it.action == UiAction.TOOLWINDOW }?.id
         val problems = withContext(edtAny) {
             val refOf = { node: UiNode -> registry.refFor(node.component) }
             val frame = projectFrame()
             (opened + frame).distinct().filter { it.isShowing }.flatMap { window ->
                 val found = UiLayout.problems(window, UiModel.build(window).root, refOf, project)
-                if (window in opened) found else found.filter { it.toolWindow != null && it.toolWindow !in toolWindowsBefore }
+                if (window in opened) found
+                else found.filter { p -> p.toolWindow != null && (p.toolWindow !in toolWindowsBefore || p.toolWindow.equals(sized, ignoreCase = true)) }
             }
         }
         if (problems.isEmpty()) return emptyList()
@@ -963,7 +966,13 @@ class UiSession(
             if (layoutMode == CHECK) layoutFailure = problems.joinToString("; ") { it.line.removePrefix("layout: ") }
             return problems.map { it.line }
         }
-        return problems.map { p -> p.fix?.let { "made room: " + actStep(UiSteps.parse("[$it]").single()) } ?: p.line }
+        return problems.map { p -> p.fix?.let { "made room: " + applyFix(it) } ?: p.line }
+    }
+
+    /** Runs [fix], the step a layout line names, and reports the size it gave; its restore goes with the step's. */
+    private suspend fun applyFix(fix: String): String {
+        val step = UiSteps.parse("[$fix]").single()
+        return if (step.action == UiAction.TOOLWINDOW) ideSteps.toolWindow(step, undo, sizeOnly = true) else actStep(step)
     }
 
     /**
@@ -977,7 +986,7 @@ class UiSession(
             UiLayout.problems(frame, UiModel.build(frame).root, { registry.refFor(it.component) }, project).mapNotNull { it.fix }
         }
         if (fixes.isEmpty()) return null
-        val done = fixes.map { actStep(UiSteps.parse("[$it]").single()) }
+        val done = fixes.map { applyFix(it) }
         journal.add(stepUndo.toList())
         stepUndo.clear()
         return "made room: " + done.joinToString("; ")

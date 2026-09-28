@@ -148,9 +148,10 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
     /**
      * Shows a tool window and selects its tab, or hides it. Waits up to the step's timeout for the tool window: a
      * JetBrains Client registers the backend's tool windows only a moment after it connects. Gives [undo] the steps
-     * that restore its tab, size and visibility.
+     * that restore its tab, size and visibility. A [sizeOnly] report leaves out the tabs, for a step that only makes
+     * room.
      */
-    suspend fun toolWindow(step: UiStep, undo: (List<JsonObject>) -> Unit = {}): String {
+    suspend fun toolWindow(step: UiStep, undo: (List<JsonObject>) -> Unit = {}, sizeOnly: Boolean = false): String {
         val wanted = step.id!!
         val started = TimeSource.Monotonic.markNow()
         while (withContext(edtAny) { toolWindowId(wanted) } == null && started.elapsedNow().inWholeMilliseconds < step.timeoutMs) delay(POLL_MS)
@@ -178,7 +179,8 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
             val id = toolWindowId(wanted)!!
             UiLayout.ToolWindowView(id, ToolWindowManager.getInstance(project).getToolWindow(id) as ToolWindowEx)
         }
-        return shown + "; " + UiResize.toolWindow(view, step.width, step.height)
+        val sized = UiResize.toolWindow(view, step.width, step.height)
+        return if (sizeOnly) sized else "$shown; $sized"
     }
 
     /** A tab's name as a toolwindow step takes it; a tab name can be HTML, as the Problems tool window's are. */

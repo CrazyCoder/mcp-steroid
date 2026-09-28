@@ -112,14 +112,14 @@ too, so each one starts from the same layout. Its parts run in this order:
 A setup step that fails stops the replay before the steps with `BROKEN at setup step N`, since the steps
 would meet an IDE unlike the one they expect.
 
-`layout` decides what happens when a step opens a window, or shows a tool window, that cuts controls, the
-condition a snapshot's `layout:` line reports:
+`layout` decides what happens when a step opens a window, or shows or sizes a tool window, that cuts
+controls, the condition a snapshot's `layout:` line reports:
 
 | `layout` | Does |
 |---|---|
 | `note` (default) | The step's report gets the `layout:` line |
 | `check` | The same, and it counts as a failed soft check, which the verdict lists |
-| `auto` | Makes room with the step the line names, and reports `made room:`. It also makes room in the IDE window before the first step, and before a click on a control past an edge, which it then retries once |
+| `auto` | Makes room with the step the line names, and reports `made room:`, even after a step that set the size too small. It also makes room in the IDE window before the first step, and before a click on a control past an edge, which it then retries once |
 
 `auto` suits a scenario that must run on any screen; `check` suits one that checks a layout bug, where a cut
 control is the finding.

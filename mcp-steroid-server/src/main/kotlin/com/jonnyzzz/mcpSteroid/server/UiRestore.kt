@@ -40,12 +40,21 @@ object UiRestore {
         private val keys = mutableSetOf<String>()
 
         /**
-         * Adds the restore of one change: [steps] run in their order. A change of a state that an earlier change
-         * already restores adds nothing.
+         * Adds the restores of one step: [steps] run in their order. A run of consecutive steps that set one state,
+         * such as an inspection's severity and then its off state, counts as one restore, and a restore of a state an
+         * earlier one already restores is left out.
          */
         fun add(steps: List<JsonObject>) {
-            val first = steps.firstOrNull() ?: return
-            if (keys.add(key(first))) groups += steps
+            val kept = mutableListOf<JsonObject>()
+            var i = 0
+            while (i < steps.size) {
+                val key = key(steps[i])
+                var end = i + 1
+                while (end < steps.size && key(steps[end]) == key) end++
+                if (keys.add(key)) kept += steps.subList(i, end)
+                i = end
+            }
+            if (kept.isNotEmpty()) groups += kept
         }
 
         /** The restore steps to run: the last change's first. */
