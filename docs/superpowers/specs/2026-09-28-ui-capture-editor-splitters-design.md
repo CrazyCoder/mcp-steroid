@@ -84,6 +84,30 @@ inspection's short name, such as `NullableProblems`: it finds the row, expands
 its groups, scrolls it into view and outlines it. The short names are the ones
 a `get` or `set` of an inspection takes.
 
+## Tabs of run and debug tool windows
+
+A second probe ran two debug sessions, then two runs. What works: the Run and
+Debug tool windows list each run as a `ContentTabLabel` with a ref; a
+`toolwindow` step with `tab` switches runs and reports every tab; a `click` on
+an inner tab's `SingleHeightLabel` (Threads & Variables, Process Console,
+Scripts, Frames, Threads) switches it; highlights outline both; an `expect` or
+`get` of a `console` by run name reads that run. Pictures 08 and 10 in the
+probe folder.
+
+Gaps and what closes them:
+
+| Gap | Change |
+| -- | -- |
+| `select` knows `JTabbedPane` only: on `JBRunnerTabs` it fails with "has no rows" | `select` and row highlights take the tabs of every `JBTabs` (`JBRunnerTabs`, `GridCellTabs`, `JBEditorTabs`) by tab text or index; the snapshot lists them as rows with `[selected]` |
+| A tool window's accessible name follows its selected tab ("tabs-alpha.js Tool Window"), so a crop by name breaks when the run changes | `crop` takes `{"toolwindow":"Run"}`, the tool window by id |
+| A label or badge drawn right of a tab covers the next tab's text | A mark in a row of tabs, or anywhere its label would cover another control's text, puts its badge and label below the outline, or above when below has no room |
+| A `run` of RunClass whose configuration already runs, single instance, starts nothing and reports only "ran RunClass"; the earlier `Stop` step left a session at its breakpoint | A `run` step of a run or debug action reports the run it started, or that none started and why; a `Stop` step reports the processes it stopped and those still running |
+| A console read prints ANSI escapes ("[33m7[39m") | Console text in reports drops ANSI escape sequences |
+
+A code highlight also takes a console: `{"console":"tabs-alpha.js","contains":"tick 25"}`
+outlines the console lines that contain the text, the last match unless `nth`
+picks one, in a console built on an editor or on a terminal panel.
+
 ## The `splitter` step
 
 `{"action":"splitter", ...}` moves the divider of one splitter.
@@ -156,6 +180,7 @@ in the snapshot must read the cell values, not the renderer's `toString`.
 | `--inspection <shortName>` | the Inspections page and an inspection highlight |
 | `--splitter <label>=<proportion or fit>` | a `splitter` step on the pane that holds the control |
 | `--fit` | `"fit": true` on the screenshot |
+| `--toolwindow <id> [--tab <run>] [--subtab <tab>]` | a `toolwindow` step, a `select` of the inner tab, highlights of both, and the crop to the tool window |
 
 `.claude/docs/steroid-ui-driving.md` gains examples for code, a context menu,
 an inspection and the debugger.
@@ -189,5 +214,7 @@ above again, compared picture by picture with the probe's:
 5. The debugger with `fit`: every variable of the frame showing.
 6. An editor split with its divider moved.
 7. Change Signature with `fit`: headers, return type and preview whole, and cells painted right.
+8. Two debug sessions: switch session and inner tab with `select`, outline both with labels below, crop to `{"toolwindow":"Debug"}`.
+9. Two runs: switch with `toolwindow` `tab`, outline a console line, and a `run` of an already running configuration that says it started nothing.
 
 Each run ends with `restore`, and a snapshot afterwards matches the one before.
