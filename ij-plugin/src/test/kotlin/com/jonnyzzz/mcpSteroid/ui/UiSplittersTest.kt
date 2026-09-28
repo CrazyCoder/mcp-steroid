@@ -134,6 +134,23 @@ class UiSplittersTest {
     }
 
     @Test
+    fun `fit never shrinks a pane when the other pane's minimum leaves no room`() = onEdt {
+        val tree = JTree(DefaultMutableTreeNode("a rather long root name that needs room")).apply { }
+        val scroll = JScrollPane(tree)
+        val greedy = JPanel().apply { minimumSize = Dimension(900, 10) }
+        // As the Inspections page's splitter does: the other pane's minimum does not hold the divider.
+        val s = Splitter(false, 0.3f).apply {
+            setHonorComponentsMinimumSize(false)
+            firstComponent = scroll; secondComponent = greedy; setSize(1000, 300); doLayout()
+        }
+        scroll.doLayout()
+        val pane = UiSplitters.paneOf(tree, Axis.WIDTH)!!
+        assertTrue("the pane is wider than the room the minimum leaves: ${UiSplitters.size(pane)}", UiSplitters.size(pane) > 200)
+        assertEquals(UiSplitters.size(pane), UiSplitters.fitSize(pane, tree))
+        assertTrue(s.proportion >= 0.29f)
+    }
+
+    @Test
     fun `fit leaves the other pane its minimum size`() = onEdt {
         val big = JPanel().apply { preferredSize = Dimension(10, 5000) }
         val rest = JPanel().apply { minimumSize = Dimension(10, 100) }

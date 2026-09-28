@@ -186,10 +186,12 @@ object UiLayout {
     private fun cutsOf(node: UiNode, refOf: (UiNode) -> String, inDialog: (Component) -> Boolean): List<Cut> {
         val c = node.component
         val out = mutableListOf<Cut>()
-        fun splitterFix(axis: UiSplitters.Axis) = paneFor(c, axis)?.let { """{"action":"splitter","ref":"${refOf(node)}","size":"fit"}""" }
         fun add(what: String, axis: UiSplitters.Axis) {
-            val fix = splitterFix(axis)
-            if (fix != null || inDialog(c)) out += Cut(node, what, fix)
+            val pane = paneFor(c, axis)
+            // A splitter whose other panes keep their minimum sizes has no room to give: the window's step does then.
+            val fix = pane?.takeIf { UiSplitters.fitSize(it, c) > UiSplitters.size(it) + SLACK }
+                ?.let { """{"action":"splitter","ref":"${refOf(node)}","size":"fit"}""" }
+            if (pane != null || inDialog(c)) out += Cut(node, what, fix)
         }
         val name = describe(node, refOf)
         val total = when (c) {

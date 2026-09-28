@@ -98,12 +98,14 @@ object UiSplitters {
     fun size(p: Pane): Int = along(p.axis, p.child.size)
 
     /**
-     * The size that shows [p]'s content whole, within what the other panes' minimum sizes leave: its size now plus what
-     * [cut], the control a step named, lacks along the axis, or without it, the pane's preferred size.
+     * The size that shows [p]'s content whole, within what the other panes' minimum sizes leave, and never less than it
+     * has: its size now plus what [cut], the control a step named, lacks along the axis, or without it, the pane's
+     * preferred size. A splitter that does not hold its divider to the other panes' minimums, as the Inspections
+     * page's does, can already give a pane more than that room.
      */
     fun fitSize(p: Pane, cut: Component? = null): Int {
         val wanted = cut?.let { size(p) + shortfall(it, p.axis).coerceAtLeast(0) } ?: along(p.axis, p.child.preferredSize)
-        return minOf(wanted, room(p)).coerceAtLeast(0)
+        return maxOf(size(p), minOf(wanted, room(p))).coerceAtLeast(0)
     }
 
     /** The most [p] can get: the splitter's room less the other panes' minimum sizes. */
