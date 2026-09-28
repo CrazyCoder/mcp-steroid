@@ -24,6 +24,21 @@ class UiScrollAlignTest {
     }
 
     @Test
+    fun `a control larger than its view is outlined as far as it shows, and never scrolled`() {
+        val tree = java.awt.Dimension(300, 1400)
+        val shown = java.awt.Rectangle(0, 500, 300, 600)
+        assertEquals(shown to false, UiScrollAlign.wholeArea(tree, shown, java.awt.Dimension(300, 600)))
+    }
+
+    @Test
+    fun `a control that fits its view is outlined whole, and scrolled when part of it is out of view`() {
+        val box = java.awt.Dimension(200, 24)
+        assertEquals(java.awt.Rectangle(0, 0, 200, 24) to false, UiScrollAlign.wholeArea(box, java.awt.Rectangle(0, 0, 200, 24), java.awt.Dimension(900, 600)))
+        assertEquals(java.awt.Rectangle(0, 0, 200, 24) to true, UiScrollAlign.wholeArea(box, java.awt.Rectangle(0, 0, 200, 10), java.awt.Dimension(900, 600)))
+        assertEquals(java.awt.Rectangle(0, 0, 200, 24) to false, UiScrollAlign.wholeArea(box, java.awt.Rectangle(0, 0, 200, 24), null))
+    }
+
+    @Test
     fun `the view stays within the content`() {
         assertEquals(1700, UiScrollAlign.viewY(1990, 10, 300, 2000, "top"))
         assertEquals(0, UiScrollAlign.viewY(10, 10, 300, 2000, "center"))

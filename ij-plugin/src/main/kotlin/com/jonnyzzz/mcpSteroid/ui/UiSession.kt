@@ -1097,13 +1097,19 @@ class UiSession(
         abstract fun screenBounds(): Rectangle
     }
 
-    /** A highlight in this process: its component and the area of it to outline, in its coordinates. */
-    private inner class LocalHighlight(val component: Component, val area: Rectangle, what: String, label: String?) : Located(what, label) {
+    /**
+     * A highlight in this process: its component and the area of it to outline, in its coordinates. With [visibleOnly],
+     * a control larger than its view, the outline covers the part that shows when the picture is taken.
+     */
+    private inner class LocalHighlight(
+        val component: Component, val area: Rectangle, what: String, label: String?, val visibleOnly: Boolean = false,
+    ) : Located(what, label) {
         override fun bringIntoView() {
-            if (!UiScrollAlign.inView(component, area)) UiScrollAlign.scroll(component, area, "center")
+            if (!visibleOnly && !UiScrollAlign.inView(component, area)) UiScrollAlign.scroll(component, area, "center")
         }
 
-        override fun screenBounds(): Rectangle = onScreen(component, area)
+        override fun screenBounds(): Rectangle =
+            onScreen(component, if (visibleOnly) (component as? JComponent)?.visibleRect ?: area else area)
     }
 
     /** A highlight on a host Settings page, which the backend found and scrolled into view: its screen bounds. */
@@ -1132,9 +1138,15 @@ class UiSession(
             if (owner !== window && owner !in UiCapture.popupsOf(window)) {
                 throw UiStepFailure("${describe(node)} is in ${owner?.let { describeWindow(it) } ?: "no window"}, not in the pictured ${describeWindow(window)}")
             }
-            val area = pick?.let { UiRows.bounds(c, it.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup; open it first") }
-                ?: Rectangle(0, 0, c.width, c.height)
-            LocalHighlight(c, area, pick?.let { "row #${it.index} \"${it.text.take(60)}\" of ${describe(node)}" } ?: describe(node), h.label)
+            val what = pick?.let { "row #${it.index} \"${it.text.take(60)}\" of ${describe(node)}" } ?: describe(node)
+            if (pick != null) {
+                val row = UiRows.bounds(c, pick.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup; open it first")
+                LocalHighlight(c, row, what, h.label)
+            } else {
+                val (area, scroll) = UiScrollAlign.wholeAreaOf(c)
+                // A control that fits its view is outlined whole; one larger than its view as far as it shows.
+                LocalHighlight(c, area, what, h.label, visibleOnly = !scroll && area != Rectangle(0, 0, c.width, c.height))
+            }
         }
     }
 

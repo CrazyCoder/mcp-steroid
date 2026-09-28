@@ -2,8 +2,10 @@
 package com.jonnyzzz.mcpSteroid.ui
 
 import java.awt.Component
+import java.awt.Dimension
 import java.awt.Point
 import java.awt.Rectangle
+import javax.swing.JComponent
 import javax.swing.JViewport
 import javax.swing.SwingUtilities
 
@@ -29,6 +31,25 @@ object UiScrollAlign {
         val y = viewY(inView.y, inView.height, port.extentSize.height, view.height, align)
         port.viewPosition = Point(port.viewPosition.x, y)
         return port
+    }
+
+    /**
+     * The area of a whole control of [size] to outline, in its coordinates, and whether to scroll it to the middle of
+     * its view first. A control larger than its view [extent], such as a tree that fills its scroll pane, is outlined
+     * as far as it [shown]s and never scrolled: its outline would run past the picture. One that fits is outlined whole,
+     * and scrolled when part of it is out of view. [extent] is null for a control in no scroll pane.
+     */
+    fun wholeArea(size: Dimension, shown: Rectangle, extent: Dimension?): Pair<Rectangle, Boolean> {
+        val whole = Rectangle(0, 0, size.width, size.height)
+        if (extent != null && (size.width > extent.width || size.height > extent.height) && !shown.isEmpty) return Rectangle(shown) to false
+        return whole to (extent != null && !shown.contains(whole))
+    }
+
+    /** [c]'s size, the part of it its viewport shows, and the viewport's extent, for [wholeArea]. EDT. */
+    fun wholeAreaOf(c: Component): Pair<Rectangle, Boolean> {
+        val port = SwingUtilities.getAncestorOfClass(JViewport::class.java, c) as? JViewport
+        val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)
+        return wholeArea(c.size, shown, port?.extentSize)
     }
 
     /**
