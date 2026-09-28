@@ -6,6 +6,7 @@ import java.awt.BasicStroke
 import java.awt.Color
 import java.awt.Dialog
 import java.awt.Font
+import java.awt.Frame
 import java.awt.Graphics2D
 import java.awt.Point
 import java.awt.Rectangle
@@ -15,6 +16,9 @@ import java.awt.geom.Ellipse2D
 import java.awt.geom.RoundRectangle2D
 import java.awt.image.BufferedImage
 import java.nio.file.Path
+import javax.swing.JMenu
+import javax.swing.MenuSelectionManager
+import javax.swing.SwingUtilities
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -88,6 +92,24 @@ object UiCapture {
      */
     fun popupsOf(window: Window): List<Window> =
         window.ownedWindows.filter { it.isShowing && it !is Dialog }.flatMap { listOf(it) + popupsOf(it) }
+
+    /**
+     * The window a picture of [window] shows: [window] itself, or for a popup, such as an open menu, the frame or dialog
+     * it was opened from, whose picture holds the popup at its place. EDT.
+     */
+    fun pictured(window: Window): Window = generateSequence(window) { it.owner }.firstOrNull { it is Frame || it is Dialog } ?: window
+
+    /**
+     * The screen area of the popups open above [window], with the menu of the menu bar they were opened from, or null
+     * when none is open. EDT.
+     */
+    fun popupArea(window: Window): Rectangle? {
+        val popups = popupsOf(window).map { Rectangle(it.locationOnScreen, it.size) }
+        if (popups.isEmpty()) return null
+        val anchor = MenuSelectionManager.defaultManager().selectedPath.filterIsInstance<JMenu>().firstOrNull()
+            ?.takeIf { it.isShowing && SwingUtilities.getWindowAncestor(it) === window }?.let { Rectangle(it.locationOnScreen, it.size) }
+        return union(popups + listOfNotNull(anchor))
+    }
 
     fun union(rects: List<Rectangle>): Rectangle = rects.reduce { a, b -> a.union(b) }
 

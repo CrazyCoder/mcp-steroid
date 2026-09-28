@@ -31,10 +31,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
+import com.intellij.openapi.actionSystem.impl.ActionButton
 import java.awt.Component
 import java.awt.Window
 import javax.swing.JFrame
+import javax.swing.JMenu
 import javax.swing.JMenuBar
+import javax.swing.JMenuItem
+import javax.swing.JPopupMenu
+import javax.swing.MenuSelectionManager
 import kotlin.time.TimeSource
 
 /**
@@ -148,6 +153,97 @@ class UiMenu {
         }
         return "ran ${trail.joinToString(" > ")}${item.id?.let { " ($it)" }.orEmpty()}" +
             (if (before != null && after != null) "; it was ${state(before)}, now ${state(after)}" else "") + where
+    }
+
+    /**
+     * Opens the main menu along [path] as a person does, and leaves the last menu open for a picture: clicks the
+     * top-level menu in the menu bar, or the Main Menu button first when the menu is under it or folded into it, then
+     * moves over each submenu. A last segment that is an item is moved over, which highlights it. The path is checked
+     * against the menu's action group first, so a wrong segment fails with the same message a menu step gives.
+     */
+    suspend fun show(path: String, component: Component, input: UiInput, timeoutMs: Long): String {
+        val segments = path.split(UiRows.PATH_SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }
+        val (trail, last) = withContext(edtAny) {
+            val context = DataManager.getInstance().getDataContext(component)
+            var items = items(ActionManager.getInstance().getAction(IdeActions.GROUP_MAIN_MENU) as? ActionGroup
+                ?: throw UiStepFailure("the IDE has no main menu group"), context)
+            val trail = mutableListOf<String>()
+            var found: Item? = null
+            for ((i, segment) in segments.withIndex()) {
+                val item = pick(items, segment, trail)
+                trail += item.text
+                found = item
+                if (i < segments.lastIndex) {
+                    if (!item.submenu) throw UiStepFailure("${trail.joinToString(" > ")} is an item, not a menu; drop what follows it")
+                    items = items(item.action as ActionGroup, context)
+                }
+            }
+            trail.toList() to found!!
+        }
+        val frame = withContext(edtAny) { UIUtil.getParentOfType(JFrame::class.java, component) }
+            ?: throw UiStepFailure("the main menu opens from the IDE window, and no IDE window holds the focus")
+        val mode = withContext(edtAny) { mode(frame) }
+        if (mode is Mode.Outside) throw UiStepFailure("the main menu is ${mode.where}, outside the IDE window, so a picture cannot show it open")
+        MenuSelectionManager.defaultManager().let { withContext(edtAny) { it.clearSelectedPath() } }
+        var top = withContext(edtAny) { barMenu(frame, trail.first()) }
+        if (top == null) {
+            val button = withContext(edtAny) { mainMenuButton(frame) }
+                ?: throw UiStepFailure("${trail.first()} shows in no menu bar and the IDE window has no Main Menu button")
+            input.click(button, java.awt.event.MouseEvent.BUTTON1, 1, 0, null)
+            top = waitFor(timeoutMs) { openMenuItem(frame, trail.first()) as? JMenu }
+                ?: throw UiStepFailure("the Main Menu button opened no menu \"${trail.first()}\" within $timeoutMs ms")
+            if (!withContext(edtAny) { top.isPopupMenuVisible }) input.hover(top, null)
+        } else {
+            input.click(top, java.awt.event.MouseEvent.BUTTON1, 1, 0, null)
+        }
+        var menu: JMenu = top
+        waitFor(timeoutMs) { menu.isPopupMenuVisible.takeIf { it } } ?: throw UiStepFailure("menu ${trail.first()} did not open")
+        for ((i, segment) in trail.withIndex().drop(1)) {
+            val item = waitFor(timeoutMs) { itemIn(menu.popupMenu, segment) }
+                ?: throw UiStepFailure("the open menu ${trail.take(i).joinToString(" > ")} shows no item \"$segment\"")
+            input.hover(item, null)
+            if (item is JMenu) {
+                menu = item
+                waitFor(timeoutMs) { item.isPopupMenuVisible.takeIf { it } } ?: throw UiStepFailure("submenu ${trail.take(i + 1).joinToString(" > ")} did not open")
+            }
+        }
+        val shown = withContext(edtAny) { menu.popupMenu.components.count { it is JMenuItem && it.isVisible } }
+        return "opened ${trail.joinToString(" > ")}" + if (last.submenu) "; it shows $shown item(s)" else "; the item is highlighted"
+    }
+
+    /** The showing top-level menu [text] in a menu bar of [frame]: its own, merged into the toolbar, or expanded from the Main Menu button. EDT. */
+    private fun barMenu(frame: JFrame, text: String): JMenu? =
+        UIUtil.uiTraverser(frame).filter(JMenuBar::class.java).filter { it.isShowing }
+            .flatMap { bar -> (0 until bar.menuCount).mapNotNull { bar.getMenu(it) } }
+            .firstOrNull { it.isShowing && UiComponentFacts.clean(it.text.orEmpty()) == text }
+
+    /** The Main Menu button of [frame]'s toolbar, whose action shows the main menu. EDT. */
+    private fun mainMenuButton(frame: JFrame): Component? =
+        UIUtil.uiTraverser(frame).filter(ActionButton::class.java)
+            .firstOrNull { it.isShowing && it.action.javaClass.name.contains(MAIN_MENU_BUTTON) }
+
+    /** A showing menu item [text], in a menu bar of [frame] or in an open popup menu. EDT. */
+    private fun openMenuItem(frame: JFrame, text: String): JMenuItem? =
+        barMenu(frame, text) ?: Window.getWindows().asSequence().filter { it.isShowing }
+            .flatMap { UIUtil.uiTraverser(it).filter(JPopupMenu::class.java).filter { p -> p.isShowing } }
+            .firstNotNullOfOrNull { itemIn(it, text) }
+
+    /** The item of [popup] whose text [segment] names, as a menu step matches it, or null when none shows yet. EDT. */
+    private fun itemIn(popup: JPopupMenu, segment: String): JMenuItem? {
+        if (!popup.isShowing) return null
+        val items = popup.components.filterIsInstance<JMenuItem>().filter { it.isVisible }
+        if (items.isEmpty()) return null
+        return runCatching { items[pickIndex(items.map { UiComponentFacts.clean(it.text.orEmpty()) }, segment, "the open menu")] }.getOrNull()
+    }
+
+    /** Polls [probe] on the EDT until it gives a value or [timeoutMs] passes. */
+    private suspend fun <T : Any> waitFor(timeoutMs: Long, probe: () -> T?): T? {
+        val started = TimeSource.Monotonic.markNow()
+        while (true) {
+            withContext(edtAny) { probe() }?.let { return it }
+            if (started.elapsedNow().inWholeMilliseconds >= timeoutMs) return null
+            delay(POLL_MS)
+        }
     }
 
     private fun state(checked: Boolean) = if (checked) "checked" else "unchecked"
@@ -276,6 +372,8 @@ class UiMenu {
 
     companion object {
         private const val MERGED_MENU = "MergedMainMenu"
+        /** The class of the Main Menu button's action, `MainMenuButton$ShowMenuAction`, internal API. */
+        private const val MAIN_MENU_BUTTON = "MainMenuButton"
         private val MODES = mapOf(
             "hamburger" to MainMenuDisplayMode.UNDER_HAMBURGER_BUTTON,
             "merged" to MainMenuDisplayMode.MERGED_WITH_MAIN_TOOLBAR,

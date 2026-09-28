@@ -32,6 +32,7 @@ class UiStepsTest {
     fun `a crop names a control by its locator, or the highlights`() {
         assertEquals(UiCrop.Control(UiTarget(name = "Settings categories")), UiSteps.parse("""[{"action":"screenshot","save":"a","crop":{"name":"Settings categories"}}]""").single().crop)
         assertEquals(UiCrop.Highlights, UiSteps.parse("""[{"action":"screenshot","save":"a","highlight":[{"text":"x","row":"Editor"}],"crop":"highlights"}]""").single().crop)
+        assertEquals(UiCrop.Popups, UiSteps.parse("""[{"action":"screenshot","save":"a","crop":"popups"}]""").single().crop)
     }
 
     @Test

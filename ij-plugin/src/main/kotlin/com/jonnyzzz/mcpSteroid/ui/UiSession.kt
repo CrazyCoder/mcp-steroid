@@ -562,8 +562,11 @@ class UiSession(
             UiAction.PERF -> ideSteps.perf(step)
             UiAction.TOOLWINDOW -> ideSteps.toolWindow(step, undo)
             UiAction.WINDOW -> windowStep(step)
-            UiAction.MENU -> step.mode?.let { menu.setMode(it, withContext(edtAny) { projectFrame() }, undo) }
-                ?: menu.step(step.path, actionComponent(), step.timeoutMs, undo = undo)
+            UiAction.MENU -> when {
+                step.mode != null -> menu.setMode(step.mode!!, withContext(edtAny) { projectFrame() }, undo)
+                step.show -> menu.show(step.path!!, withContext(edtAny) { projectFrame() }, input, step.timeoutMs)
+                else -> menu.step(step.path, actionComponent(), step.timeoutMs, undo = undo)
+            }
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
             UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
         }
@@ -978,7 +981,7 @@ class UiSession(
         val file = step.out?.let { UiCapturePaths.resolve(it, scenarioDir) }
             ?: (artifacts ?: throw UiStepFailure("screenshot has no folder to save to in this call")).resolve("screenshots").resolve(step.save!! + ".png")
         val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
-        val window = withContext(edtAny) { node?.let { windowOf(it.component) } ?: scopeWindows().firstOrNull() }
+        val window = withContext(edtAny) { (node?.let { windowOf(it.component) } ?: scopeWindows().firstOrNull())?.let(UiCapture::pictured) }
             ?: throw UiStepFailure("no window is showing")
         val highlights = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
         val cropControl = (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
@@ -993,6 +996,8 @@ class UiSession(
                 UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCapture.withMarks(painted, it, marks) }
                     ?: throw UiStepFailure("crop \"page\" needs a Settings page, and ${describeWindow(window)} shows none")
                 UiCrop.Highlights -> UiCapture.markArea(painted, marks)
+                UiCrop.Popups -> UiCapture.popupArea(window)?.let { UiCapture.withMarks(painted, it, marks) }
+                    ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
                 is UiCrop.Control -> {
                     val c = cropControl!!.component
                     if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")

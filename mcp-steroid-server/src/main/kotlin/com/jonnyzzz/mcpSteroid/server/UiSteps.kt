@@ -92,13 +92,17 @@ data class UiHighlight(
     val label: String? = null,
 )
 
-/** What a screenshot shows of its window: the Settings page, the area of its highlights, or one control. */
+/** What a screenshot shows of its window: the Settings page, the area of its highlights, the open popups, or one control. */
 sealed interface UiCrop {
     object Page : UiCrop {
         override fun toString() = "page"
     }
     object Highlights : UiCrop {
         override fun toString() = "highlights"
+    }
+    /** The menus and popups open above the window, such as a main menu a menu step with show opened. */
+    object Popups : UiCrop {
+        override fun toString() = "popups"
     }
     data class Control(val target: UiTarget) : UiCrop
 }
@@ -504,12 +508,13 @@ object UiSteps {
     private fun parseCrop(e: JsonElement): UiCrop = when {
         e is JsonPrimitive && e.isString && e.content == "page" -> UiCrop.Page
         e is JsonPrimitive && e.isString && e.content == "highlights" -> UiCrop.Highlights
+        e is JsonPrimitive && e.isString && e.content == "popups" -> UiCrop.Popups
         e is JsonObject -> {
             val unknown = e.keys - TARGET_FIELDS
             require(unknown.isEmpty()) { "crop takes a locator: ${TARGET_FIELDS.sorted().joinToString()}" }
             UiCrop.Control(locator(e) ?: throw IllegalArgumentException("crop needs a locator: ref, name, text, class or xpath"))
         }
-        else -> throw IllegalArgumentException("crop is \"page\", \"highlights\" or a locator object")
+        else -> throw IllegalArgumentException("crop is \"page\", \"highlights\", \"popups\" or a locator object")
     }
 
     private fun validate(step: UiStep) {
