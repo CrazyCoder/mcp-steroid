@@ -720,7 +720,14 @@ class UiSession(
      * of layout. Empty when every control shows whole.
      */
     private suspend fun layoutProblems(target: UiTarget?): List<String> {
-        val scope = target?.let { resolve(it, 0, requireEnabled = false) }
+        val scope = target?.let {
+            when (val m = matchForExpect(it)) {
+                is UiMatch.One -> m.node
+                is UiMatch.Many -> throw UiStepFailure("${m.matches.size} controls match; add nth, a class or a ref: " + m.matches.take(10).joinToString("; ") { n -> describe(n) })
+                is UiMatch.None -> throw UiStepFailure("the target matches nothing" +
+                    if (m.candidates.isEmpty()) "" else "; nearest: " + m.candidates.joinToString("; ") { n -> describe(n) })
+            }
+        }
         return withContext(edtAny) {
             val refOf = { node: UiNode -> registry.refFor(node.component) }
             if (scope != null) {

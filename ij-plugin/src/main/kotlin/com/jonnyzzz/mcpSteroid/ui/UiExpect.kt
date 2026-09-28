@@ -60,6 +60,9 @@ internal class UiExpect(
         // An error or a notification arrives some time after what caused it: let the IDE settle before a check that
         // none arrived, which would otherwise pass at once.
         if (step.negate && (step.error != null || step.notification != null || step.log != null)) UiSettle.settle(quietMs = NEGATIVE_QUIET_MS, maxMs = step.timeoutMs)
+        // A panel just shown lays out its toolbars a moment later, and a check made before that passes on a half-built
+        // layout: let the windows settle first.
+        if (step.layout) UiSettle.settle(quietMs = LAYOUT_QUIET_MS, maxMs = minOf(step.timeoutMs, LAYOUT_SETTLE_MS))
         val not = if (step.negate) "not " else ""
         var last: Check
         while (true) {
@@ -72,8 +75,14 @@ internal class UiExpect(
     }
 
     private suspend fun check(step: UiStep): Check = when {
-        step.layout -> layout(step.target).let { problems ->
-            Check(problems.isEmpty(), "every control ${step.target?.let { "under $it " }.orEmpty()}showing whole", problems.joinToString("\n").ifEmpty { "every control shows whole" })
+        step.layout -> {
+            val wanted = "every control ${step.target?.let { "under $it " }.orEmpty()}showing whole"
+            // A target that is not showing yet, such as a dialog still opening, is retried like any other expect's.
+            try {
+                layout(step.target).let { problems -> Check(problems.isEmpty(), wanted, problems.joinToString("\n").ifEmpty { "every control shows whole" }) }
+            } catch (e: UiStepFailure) {
+                Check(false, wanted, e.message ?: "its target is not showing")
+            }
         }
         step.target != null -> control(step, step.target!!)
         step.title != null -> window(step.title!!, step.state)
@@ -321,6 +330,8 @@ internal class UiExpect(
     private companion object {
         const val POLL_MS = 100L
         const val NEGATIVE_QUIET_MS = 1_000L
+        const val LAYOUT_QUIET_MS = 300L
+        const val LAYOUT_SETTLE_MS = 1_500L
         const val GC_EVERY_MS = 2_000L
 
         /** When a heap_after_gc check last ran a full GC, in this process. */

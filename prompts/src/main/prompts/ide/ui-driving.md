@@ -115,8 +115,8 @@ has one. Make room, then act:
   which shows its content. A target or `title` picks the window; without one, the topmost.
 
 A window stays on its screen and above its minimum size; the step reports the size it had, the size it
-got and the screen's usable area. `{"action":"expect","layout":true}` checks that nothing in the topmost
-window is `[outside]` or `[clipped]`, and with a target, nothing under it.
+got and the screen's usable area. `{"action":"expect","layout":true}` checks that the topmost window has
+no `layout:` line, and with a target, that nothing under it is `[outside]` or `[clipped]`.
 
 ## Find the code and plugin behind a control
 

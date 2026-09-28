@@ -112,8 +112,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           on "line", or "caret":"line:column"; "editor":"path or name" with "is" visible, focused or hidden;
           "banner":"text" above an open editor; "notification":"text", "error":"text" ("" or true for any) and
           "log":"text" (an idea.log line), shown or logged since the call started; "memory" with "below":
-          heap_after_gc (MB, after a full GC), heap (MB), threads or gc_signals; "layout":true, that no control
-          in the topmost window, or under a target, is [outside] or [clipped]. "soft" reports a failure
+          heap_after_gc (MB, after a full GC), heap (MB), threads or gc_signals; "layout":true, that the topmost
+          window has no "layout:" line, or that no control under a target is [outside] or [clipped]. "soft" reports a failure
           and goes on; "bug" marks the check whose failure means the reported bug is present
         - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
           or name, or switches the open Settings window to it

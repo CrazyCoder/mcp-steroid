@@ -14,6 +14,7 @@ import kotlinx.coroutines.withContext
 import java.awt.Frame
 import java.awt.Rectangle
 import java.awt.Window
+import javax.swing.SwingUtilities
 
 /**
  * Sizes a tool window or a window as a person drags its edge: to a size in logical pixels, or to "fit", the size that
@@ -22,6 +23,12 @@ import java.awt.Window
 object UiResize {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
+    /** Pixels a stretched tool window may fall short of the size it asked for, from the splitter's rounding. */
+    private const val SHORT_PX = 2
+    private const val FIT_ATTEMPTS = 3
+    private const val SETTLE_QUIET_MS = 300L
+    private const val SETTLE_MAX_MS = 1_500L
+
     /**
      * Sets [view]'s width, for a side tool window, or height, for a top or bottom one. The other one comes from the IDE
      * window, and the step says so. A floating or windowed tool window is sized as its own window.
@@ -29,7 +36,7 @@ object UiResize {
     suspend fun toolWindow(view: UiLayout.ToolWindowView, width: String?, height: String?): String {
         val type = withContext(edtAny) { view.window.type }
         if (type == ToolWindowType.FLOATING || type == ToolWindowType.WINDOWED) {
-            val window = withContext(edtAny) { javax.swing.SwingUtilities.getWindowAncestor(view.window.component) }
+            val window = withContext(edtAny) { SwingUtilities.getWindowAncestor(view.window.component) }
                 ?: throw UiStepFailure("the ${view.id} tool window is $type but shows in no window of its own")
             return window(window, width, height, maximize = null)
         }
@@ -39,11 +46,21 @@ object UiResize {
             throw UiStepFailure("the ${view.id} tool window is docked at the ${if (view.axis == "width") "side" else "top or bottom"}, " +
                 "so its ${if (view.axis == "width") "height" else "width"} comes from the IDE window; set its ${view.axis}")
         }
-        val (before, target) = withContext(edtAny) {
-            val before = view.size
-            val target = if (wanted == UiSteps.FIT) view.fit() else wanted.toInt()
-            if (view.axis == "width") view.window.stretchWidth(target - before) else view.window.stretchHeight(target - before)
-            before to target
+        // A tool window just shown fills its header toolbar a moment later, in a JetBrains Client especially, and the
+        // header's minimum grows with it: fit measures once that settles, and again after each stretch.
+        UiSettle.settle(quietMs = SETTLE_QUIET_MS, maxMs = SETTLE_MAX_MS)
+        val before = withContext(edtAny) { view.size }
+        var target = before
+        for (attempt in 1..FIT_ATTEMPTS) {
+            val done = withContext(edtAny) {
+                target = if (wanted == UiSteps.FIT) view.fit() else wanted.toInt()
+                val now = view.size
+                if (attempt > 1 && now >= target - SHORT_PX) return@withContext true
+                if (view.axis == "width") view.window.stretchWidth(target - now) else view.window.stretchHeight(target - now)
+                wanted != UiSteps.FIT
+            }
+            if (done) break
+            UiSettle.settle(quietMs = SETTLE_QUIET_MS, maxMs = SETTLE_MAX_MS)
         }
         UiSettle.barrier()
         return withContext(edtAny) {
@@ -51,7 +68,7 @@ object UiResize {
             buildString {
                 append("the ${view.id} tool window's ${view.axis} is now $now px, was $before px")
                 if (wanted == UiSteps.FIT) append("; fit is $target px: its header needs ${view.needs} px")
-                if (now < target - 2) append("; it asked for $target px, and the IDE window leaves no more room")
+                if (now < target - SHORT_PX) append("; it asked for $target px, and the IDE window leaves no more room")
                 if (other != null) append("; its ${if (view.axis == "width") "height" else "width"} comes from the IDE window, so the one given is ignored")
             }
         }
