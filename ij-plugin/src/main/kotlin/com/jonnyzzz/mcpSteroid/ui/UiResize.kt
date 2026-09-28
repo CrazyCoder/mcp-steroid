@@ -4,7 +4,15 @@ package com.jonnyzzz.mcpSteroid.ui
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.application.asContextElement
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.util.DimensionService
+import com.intellij.openapi.util.WindowStateService
 import com.intellij.openapi.wm.IdeFrame
+import com.intellij.util.ui.UIUtil
+import java.awt.Dimension
+import javax.swing.JComponent
+import javax.swing.RootPaneContainer
 import com.intellij.openapi.wm.ToolWindowType
 import com.intellij.ui.ScreenUtil
 import com.jonnyzzz.mcpSteroid.server.UiSteps
@@ -136,6 +144,45 @@ object UiResize {
     }
 
     /** One side of a window: [wanted] pixels, "fit" (at least the preferred size, never smaller than now), or unchanged. */
+    /**
+     * The key under which the IDE saves [window]'s size for its next opening, or null when it saves none: a dialog's
+     * [DimensionService] key, or the [WindowStateService] key of a non-modal window such as the separate or floating
+     * Settings window. EDT.
+     */
+    fun savedSizeKey(window: Window): String? {
+        val inside = (window as? RootPaneContainer)?.rootPane?.let { UIUtil.findComponentsOfType(it, JComponent::class.java).lastOrNull() }
+        inside?.let { DialogWrapper.findInstance(it) }?.dimensionKey?.let { return it }
+        // The non-modal window is an inner class of NonModalWindowWrapper, internal API, which keeps the key.
+        return runCatching {
+            val outer = generateSequence<Class<*>>(window.javaClass) { it.superclass }
+                .firstNotNullOfOrNull { c -> c.declaredFields.firstOrNull { it.name == "this$0" } }
+                ?.apply { isAccessible = true }?.get(window) ?: return null
+            generateSequence<Class<*>>(outer.javaClass) { it.superclass }
+                .firstNotNullOfOrNull { c -> c.declaredFields.firstOrNull { it.name == "dimensionKey" } }
+                ?.apply { isAccessible = true }?.get(outer) as? String
+        }.getOrNull()
+    }
+
+    /**
+     * Gives the window saved under [key] the size [width] x [height]: the showing one, which saves it again when it
+     * closes, or else the saved size the next opening uses, in each store that holds the key. One key can be in both:
+     * the Settings window and dialogs built on Settings, such as Project Structure, share `SettingsEditor`. EDT.
+     */
+    fun restoreSavedSize(key: String, width: Int, height: Int, project: Project): String {
+        val size = Dimension(width, height)
+        Window.getWindows().firstOrNull { it.isShowing && savedSizeKey(it) == key }?.let { w ->
+            w.size = size
+            return "${describe(w)} is back to ${w.width}x${w.height}"
+        }
+        val states = WindowStateService.getInstance(project)
+        val dimensions = DimensionService.getInstance()
+        val inStates = states.getSize(key) != null
+        val inDimensions = dimensions.getSize(key, project) != null
+        if (inStates) states.putSize(key, size)
+        if (inDimensions) dimensions.setSize(key, size, project)
+        return if (inStates || inDimensions) "the saved size of $key is back to ${width}x${height}" else "no size is saved under $key; nothing to put back"
+    }
+
     internal fun size(wanted: String?, current: Int, preferred: Int, minimum: Int, screen: Int): Int {
         val asked = when (wanted) {
             null -> current

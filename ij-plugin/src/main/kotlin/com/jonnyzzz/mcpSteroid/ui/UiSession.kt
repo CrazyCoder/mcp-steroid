@@ -876,6 +876,7 @@ class UiSession(
      * dialog when it shows, else the project frame.
      */
     private suspend fun windowStep(step: UiStep): String {
+        step.dimension?.let { key -> return withContext(edtAny) { UiResize.restoreSavedSize(key, step.width!!.toInt(), step.height!!.toInt(), project) } }
         val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
         val window = withContext(edtAny) {
             when {
@@ -886,8 +887,16 @@ class UiSession(
                 else -> scopeWindows().firstOrNull()
             }
         } ?: throw UiStepFailure("no window is showing")
-        // The IDE window keeps its size after the run; a dialog closes, and a popup with it.
-        withContext(edtAny) { if (window is IdeFrame && window is Frame) undo(listOf(frameSize(window))) }
+        // The IDE window keeps its size after the run. A dialog or the Settings window closes, but the IDE saves its size
+        // for the next opening, which the restore puts back.
+        withContext(edtAny) {
+            when {
+                window is IdeFrame && window is Frame -> undo(listOf(frameSize(window)))
+                else -> UiResize.savedSizeKey(window)?.let { key ->
+                    undo(listOf(UiRestore.step("window", "dimension" to key, "width" to window.width, "height" to window.height)))
+                }
+            }
+        }
         return UiResize.window(window, step.width, step.height, step.maximize)
     }
 
