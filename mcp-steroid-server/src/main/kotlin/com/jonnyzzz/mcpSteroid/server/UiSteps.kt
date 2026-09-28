@@ -93,7 +93,7 @@ data class UiHighlight(
     val breadcrumb: Boolean = false,
     val row: String? = null,
     val index: Int? = null,
-    /** Text drawn beside the highlight's number. */
+    /** Text drawn beside the highlight. */
     val label: String? = null,
     /** Lines of code, `"20-27"` or `"20"`, 1-based, in the editor of [file] or the selected one. */
     val lines: String? = null,

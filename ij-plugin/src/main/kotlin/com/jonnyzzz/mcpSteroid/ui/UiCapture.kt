@@ -57,7 +57,7 @@ object UiCapture {
     }
 
     /**
-     * A highlight: its number, its screen bounds, and the text drawn beside its number. A [pointer] mark is a point, the
+     * A highlight: its number, its screen bounds, and the text drawn beside it. A [pointer] mark is a point, the
      * top left corner of [bounds], drawn as a mouse pointer: where a click goes. A mark not [numbered] has no badge,
      * for a picture of one area, or of areas with no order to follow; its label sits beside the outline.
      */
