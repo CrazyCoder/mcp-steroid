@@ -7,14 +7,17 @@ import com.jonnyzzz.mcpSteroid.mcp.ContentItem
 import com.jonnyzzz.mcpSteroid.mcp.McpSession
 import com.jonnyzzz.mcpSteroid.mcp.McpTool
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallContext
+import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.mcp.successTextResult
 import com.jonnyzzz.mcpSteroid.server.BackendRef
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
 import com.jonnyzzz.mcpSteroid.server.NoOpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.ToolOutputContract
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -88,6 +91,24 @@ class RoutedToolTest {
         assertEquals(0, local.calls)
         assertEquals(listOf("steroid_execute_code"), bridge.forwarded)
         assertEquals(listOf("from backend"), seen)
+    }
+
+    @Test
+    fun `with output json an error thrown before the tool answers is an envelope, and without it the error propagates`() = runBlocking {
+        val failing = object : McpTool {
+            override val name = "steroid_execute_code"
+            override val description = "fails"
+            override val inputSchema = buildJsonObject { put("type", "object") }
+            override suspend fun call(context: ToolCallContext): ToolCallResult = throw ToolCallErrorException("Project not found: \"nope\"")
+        }
+        val json = ToolCallContext(ToolCallParams(name = failing.name, arguments = buildJsonObject { put("output", "json") }), McpSession(), NoOpProgressReporter)
+        val result = RoutedTool(failing, { SplitRole.MONOLITH }, { null }).call(json)
+        val envelope = ToolOutputContract.envelopeOf(result)!!
+        assertTrue(result.isError)
+        assertEquals("false", envelope["ok"]!!.jsonPrimitive.content)
+        assertTrue(envelope["text"]!!.jsonPrimitive.content.contains("Project not found"))
+        val thrown = runCatching { RoutedTool(failing, { SplitRole.MONOLITH }, { null }).call(context(failing.name)) }.exceptionOrNull()
+        assertTrue("text mode leaves the error to the registry", thrown is ToolCallErrorException)
     }
 
     @Test
