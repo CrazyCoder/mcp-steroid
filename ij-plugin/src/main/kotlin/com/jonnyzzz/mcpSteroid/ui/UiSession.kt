@@ -1180,7 +1180,8 @@ class UiSession(
             // What the picture shows cut, each with the step that fixes it, so a bad picture is known without reading it.
             // What the crop names, before its margin and the badges it grew by: those show the edge of what lies around
             // it, whose cuts are not the picture's.
-            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window)).map { "\ncut: " + it.line.removePrefix("layout: ") }
+            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window, marks.map { it.bounds }))
+                .map { "\ncut: " + it.line.removePrefix("layout: ") }
             Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
                 what.joinToString("") { "; $it" } + cut.joinToString(""))
         }
@@ -1246,8 +1247,13 @@ class UiSession(
         return done
     }
 
-    /** The screen area a screenshot's crop names before it is painted: a control, a tool window, the Settings page, or the window. EDT. */
-    private suspend fun pictureScope(step: UiStep, window: Window): Rectangle = when (val crop = step.crop) {
+    /**
+     * The screen area a screenshot's crop names, without its margin and badges: a control, a tool window, the Settings
+     * page, the open popups, the highlights at [marks], or the window. EDT.
+     */
+    private suspend fun pictureScope(step: UiStep, window: Window, marks: List<Rectangle> = emptyList()): Rectangle = when (val crop = step.crop) {
+        UiCrop.Popups -> UiCapture.popupArea(window)
+        UiCrop.Highlights -> marks.takeIf { it.isNotEmpty() }?.let(UiCapture::union)
         is UiCrop.Control -> match(crop.target).let { m -> (m as? UiMatch.One)?.node?.component?.takeIf { it.isShowing }?.let { onScreen(it, Rectangle(0, 0, it.width, it.height)) } }
         is UiCrop.ToolWindow -> UiLayout.toolWindows(project).firstOrNull { it.id.equals(crop.id, ignoreCase = true) }?.window?.decorator
             ?.takeIf { it.isShowing }?.let { onScreen(it, Rectangle(0, 0, it.width, it.height)) }
