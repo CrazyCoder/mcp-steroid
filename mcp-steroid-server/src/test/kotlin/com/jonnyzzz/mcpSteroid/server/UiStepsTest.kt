@@ -46,6 +46,8 @@ class UiStepsTest {
         assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[{"label":"x"}]}]"""), "locator")
         assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[{"name":"a","shadow":1}]}]"""), "shadow")
         assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[]}]"""), "highlight")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":[{"name":"t","row":"a","index":1}]}]"""), "row or index")
+        assertMentions(fails("""[{"action":"screenshot","save":"a","highlight":["page"]}]"""), "breadcrumb")
         assertMentions(fails("""[{"action":"screenshot","save":"a","margin":500}]"""), "margin")
         assertMentions(fails("""[{"action":"click","name":"a","highlight":["breadcrumb"]}]"""), "screenshot")
         assertMentions(fails("""[{"action":"scroll","name":"a","align":"bottom"}]"""), "top")

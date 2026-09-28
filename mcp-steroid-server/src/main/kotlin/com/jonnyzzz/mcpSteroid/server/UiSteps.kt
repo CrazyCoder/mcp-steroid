@@ -226,7 +226,10 @@ data class UiStep(
     val delete: Boolean = false,
     /** On a screenshot step: the picture's file name in the execution folder, without folder or extension. */
     val save: String? = null,
-    /** On a screenshot step: the picture's path, a `.png`; relative to the scenario file's folder in a scenario. */
+    /**
+     * On a screenshot step: the picture's path, a PNG, or a JPEG for a `.jpg` path; relative to the scenario file's
+     * folder in a scenario.
+     */
     val out: String? = null,
     /** On a screenshot step: the controls to outline, numbered in this order. */
     val highlight: List<UiHighlight>? = null,
