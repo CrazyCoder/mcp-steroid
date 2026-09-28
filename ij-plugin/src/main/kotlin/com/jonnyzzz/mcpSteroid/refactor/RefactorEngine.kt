@@ -35,6 +35,7 @@ import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.PsiNameIdentifierOwner
 import com.intellij.psi.PsiNamedElement
+import com.intellij.psi.PsiPlainTextFile
 import com.intellij.psi.PsiReference
 import com.intellij.psi.codeStyle.CodeStyleManager
 import com.intellij.psi.impl.source.resolve.reference.impl.PsiMultiReference
@@ -48,6 +49,7 @@ import com.intellij.refactoring.safeDelete.SafeDeleteProcessor
 import com.intellij.refactoring.safeDelete.SafeDeleteProcessorDelegate
 import com.intellij.refactoring.safeDelete.usageInfo.SafeDeleteReferenceUsageInfo
 import com.intellij.usageView.UsageInfo
+import com.jonnyzzz.mcpSteroid.execution.vfsRefreshService
 import com.jonnyzzz.mcpSteroid.inspection.BatchInspection
 import com.jonnyzzz.mcpSteroid.inspection.UnknownInspectionsException
 import com.jonnyzzz.mcpSteroid.server.RefactorOp
@@ -74,7 +76,25 @@ class RefactorEngine(private val project: Project) {
     /** Which occurrence of the target's symbol was taken, when some were skipped. */
     private var symbolNote: String? = null
 
-    suspend fun run(params: RefactorParams): String = op(params).let { text -> symbolNote?.let { "$it\n$text" } ?: text }
+    suspend fun run(params: RefactorParams): String {
+        syncWithDisk()
+        return op(params).let { text -> symbolNote?.let { "$it\n$text" } ?: text }
+    }
+
+    /**
+     * Makes the code model match the disk before a target resolves: saves the open documents, then waits for the VFS
+     * to read what changed on disk, such as a file another tool wrote. Without it, the IDE answers from the files as
+     * it last saw them: usages at old lines, or none in a file it has not reread.
+     */
+    private suspend fun syncWithDisk() {
+        withContext(Dispatchers.EDT) {
+            PsiDocumentManager.getInstance(project).commitAllDocuments()
+            // A document with unsaved edits and a changed file on disk would stop the refresh with a dialog.
+            FileDocumentManager.getInstance().saveAllDocuments()
+        }
+        // Off the EDT: a recursive refresh awaited there freezes the UI (#318).
+        project.vfsRefreshService.awaitRefresh()
+    }
 
     private suspend fun op(params: RefactorParams): String = when (params.op) {
         RefactorOp.USAGES -> usages(named(target(params)))
@@ -235,7 +255,8 @@ class RefactorEngine(private val project: Project) {
         lineAt(ref.element, ref.element.textRange.startOffset + ref.rangeInElement.startOffset)
     }.distinct().sorted()
 
-    private suspend fun usageLines(element: PsiElement): List<UsageLine> = smartReadAction(project) { lines(references(element)) }
+    /** The lines of code that use [element], leaving out comments and documents that name it. */
+    private suspend fun usageLines(element: PsiElement): List<UsageLine> = smartReadAction(project) { lines(references(element).filterNot(::inText)) }
 
     /**
      * The declarations of [element]'s name that a reference to it gives their value, so code reaches [element]
@@ -262,14 +283,29 @@ class RefactorEngine(private val project: Project) {
         return refs.mapNotNull { it.resolve() as? PsiNamedElement }.filter { it != element && it.name == name }.distinct()
     }
 
-    /** The usages of the element, then those that reach it through an alias, and the declarations its name refers to. */
+    /**
+     * Whether [ref] names its target in prose rather than in code: in a comment, or in a document such as a Markdown
+     * code span. Read action.
+     */
+    private fun inText(ref: PsiReference): Boolean {
+        val element = ref.element
+        if (PsiTreeUtil.getParentOfType(element, PsiComment::class.java, false) != null) return true
+        val file = element.containingFile ?: return false
+        return file is PsiPlainTextFile || file.language.id in TEXT_LANGUAGES
+    }
+
+    /**
+     * The usages of the element in code, then its mentions in comments and documents, those that reach it through an
+     * alias, and the declarations its name refers to.
+     */
     private suspend fun usages(named: Named): String {
-        val (lines, aliases, aliased) = smartReadAction(project) {
-            val refs = references(named.element)
-            Triple(lines(refs), aliases(named.element, refs).map { it to describe(it) }, aliased(named.element).map { describe(it) })
+        val (lines, mentions, aliases, aliased) = smartReadAction(project) {
+            val (text, code) = references(named.element).partition(::inText)
+            UsagesPlan(lines(code), lines(text) - lines(code).toSet(), aliases(named.element, code).map { it to describe(it) }, aliased(named.element).map { describe(it) })
         }
         return buildString {
             append(named.description).append(listing("used on", lines))
+            if (mentions.isNotEmpty()) append("\nnamed in comments and documents").append(listing("on", mentions).removePrefix(":"))
             for ((alias, description) in aliases) {
                 val through = usageLines(alias) - lines.toSet()
                 if (through.isNotEmpty()) append("\nthrough $description, which names it").append(listing("used on", through))
@@ -358,6 +394,10 @@ class RefactorEngine(private val project: Project) {
             }
         }
     }
+
+    private data class UsagesPlan(
+        val lines: List<UsageLine>, val mentions: List<UsageLine>, val aliases: List<Pair<PsiNamedElement, String>>, val aliased: List<String>,
+    )
 
     private class RenamePlan(
         val conflicts: List<String>, val changed: List<UsageLine>, val untouched: List<UsageLine>, val sameName: List<String>,
@@ -564,6 +604,8 @@ class RefactorEngine(private val project: Project) {
 
     private companion object {
         const val MAX_LINES = 30
+        /** Languages of documents whose references to code are prose: a mention, not a use. */
+        val TEXT_LANGUAGES = setOf("Markdown", "AsciiDoc", "ReST", "TEXT")
         const val MAX_FIXES = 50
         val INSPECTION_TIMEOUT = 60.seconds
         val SCOPE_TIMEOUT = 300.seconds

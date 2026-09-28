@@ -43,13 +43,15 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
         inspection's quick fix), intention, optimize_imports, reformat, usages (read-only), or inspect
         (read-only, Code | Inspect Code over a file, a directory or the project). It resolves
         the target through the IDE's code model, so every reference is updated, in any language the IDE
-        understands.
+        understands. Each call first saves the IDE's open documents and rereads files changed on disk, so
+        edits made outside the IDE count.
 
         The target is "file" (absolute or relative to the project) with one of "symbol" (a whole-word name
         outside comments, "nth" for a later occurrence) or "line" and "column" (1-based).
 
         By default it is a dry run that changes nothing: it returns the element and its usages as
-        path:line: text (for rename, the lines it would change and the references it leaves alone), the
+        path:line: text (usages lists the lines of comments and documents that name it, such as a
+        Markdown code span, apart from the code; for rename, the lines it would change and the references it leaves alone), the
         problems and their fixes for fix, the intentions available for intention, or the lines
         optimize_imports and reformat would add and remove. A declaration of the same name that takes the
         target as its value, such as a JavaScript export { name }, is an alias: usages lists its users too,
