@@ -134,6 +134,10 @@ data class UiStep(
     val editors: Boolean = false,
     /** On a get step: this side's memory, as the status bar's memory indicator shows it, and the GC's load. */
     val memory: Boolean = false,
+    /** On an expect step: the memory figure it checks, one of [UiSteps.MEMORY_METRICS], against [below]. */
+    val memoryMetric: String? = null,
+    /** On an expect of memory: the figure must be under this, in MB for sizes. */
+    val below: Long? = null,
     val page: String? = null,
     val registry: String? = null,
     val advanced: String? = null,
@@ -185,9 +189,14 @@ object UiSteps {
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
-        "editor", "editors", "log", "memory",
+        "editor", "editors", "log", "memory", "below",
     )
     val SIDES = setOf("frontend", "backend")
+    /**
+     * The figures an expect of memory checks: the heap in use right after a full GC, which the check runs first, and
+     * the heap in use now, both in MB; the thread count; and the overloaded-GC signals of the last 15 minutes.
+     */
+    val MEMORY_METRICS = setOf("heap_after_gc", "heap", "threads", "gc_signals")
     /** The levels a set of a log category takes; default puts the category back to the IDE's configuration. */
     val LOG_LEVELS = setOf("trace", "debug", "all", "default")
     private val EDITOR_STATES = setOf(UiExpectState.VISIBLE, UiExpectState.FOCUSED, UiExpectState.HIDDEN)
@@ -297,7 +306,10 @@ object UiSteps {
             editor = obj.string("editor"),
             log = obj.string("log"),
             editors = obj.boolean("editors") ?: false,
-            memory = obj.boolean("memory") ?: false,
+            // true on a get; the name of a figure on an expect.
+            memory = (obj["memory"] as? JsonPrimitive)?.takeIf { !it.isString }?.let { obj.boolean("memory") } ?: false,
+            memoryMetric = (obj["memory"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
+            below = obj.long("below"),
             error = (obj["error"] as? JsonPrimitive)?.takeIf { !it.isString && it.booleanOrNull == true }?.let { "" } ?: obj.string("error"),
             page = obj.string("page"),
             registry = obj.string("registry"),
@@ -363,7 +375,7 @@ object UiSteps {
             )
             require(config.isEmpty()) { "${config.joinToString()} go(es) with get and set, not $action" }
             require(!step.editors) { "editors goes with get, not $action" }
-            require(!step.memory) { "memory goes with get, not $action" }
+            if (step.action != UiAction.EXPECT) require(!step.memory && step.memoryMetric == null) { "memory goes with get and expect, not $action" }
             if (step.action != UiAction.EXPECT) require(step.log == null) { "log goes with expect, get and set, not $action" }
         }
         when (step.action) {
@@ -389,6 +401,7 @@ object UiSteps {
                 "settings needs a page: its id, its name as the Settings tree shows it, or a path such as \"Editor > General\""
             }
             UiAction.GET, UiAction.SET -> {
+                require(step.memoryMetric == null) { "get takes \"memory\":true; a figure such as \"heap_after_gc\" goes with expect" }
                 val kinds = listOfNotNull(
                     step.registry, step.advanced, step.option, step.inspection, step.component, step.log,
                     step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors }, "memory".takeIf { step.memory },
@@ -431,15 +444,17 @@ object UiSteps {
      * notification or an IDE error. Each subject takes its own checks.
      */
     private fun validateExpect(step: UiStep) {
+        require(!step.memory) { "expect takes a memory figure: one of ${MEMORY_METRICS.joinToString()}" }
         val subjects = listOfNotNull(
             step.target?.let { "a target" }, step.title?.let { "title" }, step.file?.let { "file" },
             step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
-            step.editor?.let { "editor" }, step.log?.let { "log" },
+            step.editor?.let { "editor" }, step.log?.let { "log" }, step.memoryMetric?.let { "memory" },
         )
         require(subjects.size == 1) {
-            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, editor, notification, banner, error or log"
+            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, editor, notification, banner, error, log or memory"
             else "expect checks one subject, not ${subjects.joinToString(" and ")}"
         }
+        if (step.memoryMetric == null) require(step.below == null) { "below goes with memory" }
         require(listOfNotNull(step.value, step.contains, step.matches).size <= 1) { "pass one of value, contains or matches" }
         step.matches?.let {
             try {
@@ -477,6 +492,11 @@ object UiSteps {
                 require(!(textCheck && step.caret != null)) { "check the text or the caret, not both" }
                 step.caret?.let { require(CARET.matches(it)) { "caret is line:column, both 1-based, such as \"3:14\"" } }
                 step.line?.let { require(it >= 1) { "line is 1-based, was $it" } }
+            }
+            step.memoryMetric != null -> {
+                require(step.memoryMetric in MEMORY_METRICS) { "memory is one of ${MEMORY_METRICS.joinToString()}, was ${step.memoryMetric}" }
+                require(step.below != null && step.below >= 0) { "expect on memory needs below: a limit, in MB for heap_after_gc and heap" }
+                require(step.state == null && !textCheck && step.caret == null && step.line == null) { "a memory figure takes below only" }
             }
             step.editor != null -> {
                 require(step.state == null || step.state in EDITOR_STATES) { "an editor is visible, focused or hidden" }

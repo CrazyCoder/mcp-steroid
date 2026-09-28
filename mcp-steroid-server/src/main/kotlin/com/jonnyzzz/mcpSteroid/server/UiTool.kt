@@ -104,7 +104,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           "title" (a window) with "is" visible or hidden; "file" with "value", "contains" or "matches", optionally
           on "line", or "caret":"line:column"; "editor":"path or name" with "is" visible, focused or hidden;
           "banner":"text" above an open editor; "notification":"text", "error":"text" ("" or true for any) and
-          "log":"text" (an idea.log line), shown or logged since the call started. "soft" reports a failure
+          "log":"text" (an idea.log line), shown or logged since the call started; "memory" with "below":
+          heap_after_gc (MB, after a full GC), heap (MB), threads or gc_signals. "soft" reports a failure
           and goes on; "bug" marks the check whose failure means the reported bug is present
         - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
           or name, or switches the open Settings window to it

@@ -74,6 +74,7 @@
     {"action": "expect", "error": "", "not": true},
     {"action": "get", "editors": true},
     {"action": "get", "memory": true},
+    {"action": "expect", "memory": "heap_after_gc", "below": 4096},
     {"action": "get", "file": "src/Split.java"},
     {"action": "get", "log": "#com.jetbrains.rdserver.fileEditors"},
     {"action": "set", "log": "#com.jetbrains.rdserver.fileEditors", "value": "trace"},

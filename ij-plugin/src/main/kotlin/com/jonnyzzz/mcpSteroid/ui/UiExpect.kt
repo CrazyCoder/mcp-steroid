@@ -16,6 +16,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
 import com.jonnyzzz.mcpSteroid.freeze.IdeBanners
 import com.jonnyzzz.mcpSteroid.freeze.IdeErrors
+import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
 import com.jonnyzzz.mcpSteroid.server.UiExpectState
 import com.jonnyzzz.mcpSteroid.server.UiStep
 import com.jonnyzzz.mcpSteroid.server.UiTarget
@@ -27,6 +28,7 @@ import java.awt.Component
 import java.awt.Dialog
 import java.awt.KeyboardFocusManager
 import java.awt.Window
+import java.lang.management.ManagementFactory
 import java.util.Collections
 import javax.swing.AbstractButton
 import javax.swing.JTree
@@ -75,7 +77,32 @@ internal class UiExpect(
         step.banner != null -> banner(step.banner!!)
         step.editor != null -> editor(step.editor!!, step.state)
         step.log != null -> log(step.log!!)
+        step.memoryMetric != null -> memory(step.memoryMetric!!, step.below!!)
         else -> error(step.error!!)
+    }
+
+    /**
+     * A memory figure of this side under [below], in MB for the heap. heap_after_gc runs a full GC first, as a click on
+     * the memory indicator does, so the figure is what the heap holds live rather than what the last GC left; the GC
+     * runs at most once per [GC_EVERY_MS], since a failing check polls.
+     */
+    private suspend fun memory(metric: String, below: Long): Check {
+        val heapMb = { ManagementFactory.getMemoryMXBean().heapMemoryUsage.used / (1024 * 1024) }
+        val (label, value, unit) = when (metric) {
+            "heap_after_gc" -> {
+                val now = System.currentTimeMillis()
+                if (now - lastGcMs >= GC_EVERY_MS) {
+                    @Suppress("ExplicitGarbageCollectionCall") // The check measures the live heap, which only a full GC shows.
+                    withContext(Dispatchers.IO) { System.gc() }
+                    lastGcMs = System.currentTimeMillis()
+                }
+                Triple("the heap in use after a full GC", heapMb(), " MB")
+            }
+            "heap" -> Triple("the heap in use", heapMb(), " MB")
+            "threads" -> Triple("the thread count", ManagementFactory.getThreadMXBean().threadCount.toLong(), "")
+            else -> Triple("overloaded-GC signals in the last 15 min", (IdeMemory.getInstanceOrNull()?.recentSignals() ?: 0).toLong(), "")
+        }
+        return Check(value < below, "$label under $below$unit", "$label is $value$unit")
     }
 
     /** An editor of a file that this side shows: visible, focused, or with is=hidden, none showing. */
@@ -288,6 +315,11 @@ internal class UiExpect(
     private companion object {
         const val POLL_MS = 100L
         const val NEGATIVE_QUIET_MS = 1_000L
+        const val GC_EVERY_MS = 2_000L
+
+        /** When a heap_after_gc check last ran a full GC, in this process. */
+        @Volatile
+        var lastGcMs = 0L
     }
 }
 

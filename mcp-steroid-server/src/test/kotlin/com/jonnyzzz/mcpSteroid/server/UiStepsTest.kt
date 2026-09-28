@@ -2,6 +2,7 @@
 package com.jonnyzzz.mcpSteroid.server
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -226,6 +227,22 @@ class UiStepsTest {
         assertTrue(fails("""[{"action":"click","name":"OK","editors":true}]""").contains("editors goes with get"))
         assertTrue(fails("""[{"action":"click","name":"OK","log":"x"}]""").contains("log goes with expect, get and set"))
         assertTrue(fails("""[{"action":"click","name":"OK","editor":"a.md"}]""").contains("go(es) with expect"))
+    }
+
+    @Test
+    fun `memory is a flag on get and a named figure with a limit on expect`() {
+        assertTrue(UiSteps.parse("""[{"action":"get","memory":true}]""").single().memory)
+        val check = UiSteps.parse("""[{"action":"expect","memory":"heap_after_gc","below":800}]""").single()
+        assertEquals("heap_after_gc", check.memoryMetric)
+        assertEquals(800L, check.below)
+        assertFalse(check.memory)
+        assertTrue(fails("""[{"action":"expect","memory":"heap_after_gc"}]""").contains("needs below"))
+        assertTrue(fails("""[{"action":"expect","memory":"permgen","below":1}]""").contains("heap_after_gc, heap, threads, gc_signals"))
+        assertTrue(fails("""[{"action":"expect","memory":true}]""").contains("expect takes a memory figure"))
+        assertTrue(fails("""[{"action":"get","memory":"heap"}]""").contains("goes with expect"))
+        assertTrue(fails("""[{"action":"expect","memory":"heap","below":1,"contains":"x"}]""").contains("below only"))
+        assertTrue(fails("""[{"action":"expect","log":"x","below":1}]""").contains("below goes with memory"))
+        assertTrue(fails("""[{"action":"click","name":"OK","memory":true}]""").contains("memory goes with get and expect"))
     }
 
     @Test

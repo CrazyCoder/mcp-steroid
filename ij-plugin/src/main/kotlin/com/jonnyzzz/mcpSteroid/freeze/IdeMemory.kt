@@ -90,10 +90,10 @@ class IdeMemory : Disposable {
     }
 
     /** The memory now, with the GC's share of the time since the previous call, as a get of memory reports it. */
-    fun report(nowMs: Long = System.currentTimeMillis()): String {
-        val recent = episode?.signals.orEmpty().count { nowMs - it < WINDOW_MS }
-        return renderSnapshot(snapshot(nowMs), recent)
-    }
+    fun report(nowMs: Long = System.currentTimeMillis()): String = renderSnapshot(snapshot(nowMs), recentSignals(nowMs))
+
+    /** The throttled overloaded-GC signals of the last [WINDOW_MS]. */
+    fun recentSignals(nowMs: Long = System.currentTimeMillis()): Int = episode?.signals.orEmpty().count { nowMs - it < WINDOW_MS }
 
     /**
      * The memory now. With [sampleGc], the GC share covers the time since the previous such snapshot, or since the IDE
