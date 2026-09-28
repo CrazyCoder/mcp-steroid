@@ -118,6 +118,51 @@ class UiCaptureTest {
     }
 
     @Test
+    fun `outlines of stacked rows split the gap between them instead of crossing`() {
+        val rows = listOf(Rectangle(100, 100, 200, 30), Rectangle(100, 130, 180, 30), Rectangle(100, 160, 190, 30))
+        val outlines = UiCapture.outlines(rows)
+        for (i in 0 until outlines.size - 1) {
+            val gap = outlines[i + 1].y - (outlines[i].y + outlines[i].height)
+            assertTrue("gap between outline $i and ${i + 1} is $gap", gap >= 5)
+        }
+        // A free edge keeps its padding.
+        assertEquals(97, outlines[0].y)
+        assertEquals(193, outlines[2].y + outlines[2].height)
+    }
+
+    @Test
+    fun `rows a few pixels apart get a clear gap between their outlines`() {
+        // The Appearance page: "Show line numbers:", "Show method separators", "Show indent guides", in screen pixels.
+        val rows = listOf(Rectangle(1175, 708, 147, 25), Rectangle(1175, 740, 182, 25), Rectangle(1175, 769, 148, 25))
+        val outlines = UiCapture.outlines(rows)
+        for (i in 0 until outlines.size - 1) {
+            val gap = outlines[i + 1].y - (outlines[i].y + outlines[i].height)
+            assertTrue("gap between outline $i and ${i + 1} is $gap", gap >= 5)
+        }
+    }
+
+    @Test
+    fun `rows whose bounds overlap a little still get separate outlines`() {
+        // Kotlin UI DSL controls reach a few pixels past what they paint, into the next row.
+        val (a, b) = UiCapture.outlines(listOf(Rectangle(100, 100, 200, 34), Rectangle(100, 130, 200, 34)))
+        assertTrue("gap ${b.y - (a.y + a.height)}", b.y - (a.y + a.height) >= 5)
+    }
+
+    @Test
+    fun `a mark mostly inside another keeps its padding`() {
+        val (outer, inner) = UiCapture.outlines(listOf(Rectangle(100, 100, 300, 200), Rectangle(120, 120, 50, 20)))
+        assertEquals(Rectangle(97, 97, 306, 206), outer)
+        assertEquals(Rectangle(117, 117, 56, 26), inner)
+    }
+
+    @Test
+    fun `outlines side by side split the gap too, and lone ones keep their padding`() {
+        val (a, b) = UiCapture.outlines(listOf(Rectangle(100, 100, 50, 20), Rectangle(152, 100, 50, 20)))
+        assertTrue(b.x - (a.x + a.width) >= 5)
+        assertEquals(listOf(Rectangle(97, 97, 56, 26)), UiCapture.outlines(listOf(Rectangle(100, 100, 50, 20))))
+    }
+
+    @Test
     fun `identical pictures differ in no pixel, and each changed pixel counts`() {
         val a = BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB)
         val b = BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB)

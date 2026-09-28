@@ -19,6 +19,7 @@ import java.nio.file.Path
 import javax.swing.JMenu
 import javax.swing.MenuSelectionManager
 import javax.swing.SwingUtilities
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -171,7 +172,7 @@ object UiCapture {
             g.scale(canvas.scale, canvas.scale)
             g.translate(-canvas.origin.x, -canvas.origin.y)
             for ((mark, parts) in layout(canvas, marks, g)) {
-                val b = outlined(mark.bounds)
+                val b = parts.outline
                 val outline = RoundRectangle2D.Float(b.x.toFloat(), b.y.toFloat(), b.width.toFloat(), b.height.toFloat(), ARC, ARC)
                 g.stroke = BasicStroke(OUTLINE_WIDTH + 2f)
                 g.color = EDGE
@@ -208,7 +209,7 @@ object UiCapture {
     fun markArea(canvas: Canvas, marks: List<Mark>): Rectangle {
         val g = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics()
         try {
-            return union(layout(canvas, marks, g).flatMap { (mark, parts) -> listOfNotNull(outlined(mark.bounds), parts.badge, parts.label) })
+            return union(layout(canvas, marks, g).flatMap { (_, parts) -> listOfNotNull(parts.outline, parts.badge, parts.label) })
         } finally {
             g.dispose()
         }
@@ -228,7 +229,7 @@ object UiCapture {
         return count
     }
 
-    private class Parts(val badge: Rectangle, val label: Rectangle?)
+    private class Parts(val outline: Rectangle, val badge: Rectangle, val label: Rectangle?)
 
     /**
      * Where each mark's badge and label go, badges placed in order so that none covers another. A label goes right of
@@ -238,8 +239,9 @@ object UiCapture {
         val placed = mutableListOf<Rectangle>()
         val labelMetrics = g.getFontMetrics(LABEL_FONT)
         val within = canvas.bounds
-        return marks.map { mark ->
-            val outline = outlined(mark.bounds)
+        val outlines = outlines(marks.map { it.bounds })
+        return marks.mapIndexed { i, mark ->
+            val outline = outlines[i]
             val badge = badgeBounds(outline, BADGE, within, placed)
             placed += badge
             val label = mark.label?.let {
@@ -248,16 +250,68 @@ object UiCapture {
                 val x = if (besideBadge + width <= within.x + within.width) besideBadge else badge.x - GAP - width
                 Rectangle(x, badge.y, width, badge.height).also { box -> placed += box }
             }
-            mark to Parts(badge, label)
+            mark to Parts(outline, badge, label)
         }
     }
 
     /** The area an outline runs around: [b] grown by [PAD], so the control's own edge and text stay visible. */
     private fun outlined(b: Rectangle) = Rectangle(b.x - PAD, b.y - PAD, b.width + 2 * PAD, b.height + 2 * PAD)
 
+    /**
+     * The outline of each mark: grown by [PAD], except where two neighbours, such as checkboxes on stacked rows, would
+     * touch or cross. There both pull back from the middle of the space between the two controls, which leaves a clear
+     * gap between the outlines. That holds for controls whose bounds overlap a little, as Kotlin UI DSL controls reach
+     * past what they paint into the next row; a mark mostly inside another keeps its padding.
+     */
+    fun outlines(marks: List<Rectangle>): List<Rectangle> {
+        // Outlines closer than the clear gap meet on screen, since each line is drawn centred on its edge with a white
+        // edge around it: they count as touching.
+        val padded = marks.map { outlined(it).apply { grow(HALF_GAP, HALF_GAP) } }
+        val out = marks.map(::outlined)
+        for (i in marks.indices) for (j in marks.indices) {
+            if (i == j || !padded[i].intersects(padded[j]) || nested(marks[i], marks[j])) continue
+            val a = marks[i]
+            val b = marks[j]
+            val o = out[i]
+            // Neighbours along the axis on which their centres lie further apart, relative to their sizes.
+            val dy = abs(a.centerY - b.centerY) / ((a.height + b.height) / 2.0)
+            val dx = abs(a.centerX - b.centerX) / ((a.width + b.width) / 2.0)
+            // Only a's edge that faces b moves here; the pass with i and j swapped moves b's.
+            if (dy >= dx) {
+                if (a.centerY < b.centerY) {
+                    val bottom = minOf(o.y + o.height, (a.y + a.height + b.y) / 2 - HALF_GAP)
+                    o.height = maxOf(1, bottom - o.y)
+                } else {
+                    val top = maxOf(o.y, (b.y + b.height + a.y + 1) / 2 + HALF_GAP)
+                    o.height = maxOf(1, o.y + o.height - top)
+                    o.y = top
+                }
+            } else {
+                if (a.centerX < b.centerX) {
+                    val right = minOf(o.x + o.width, (a.x + a.width + b.x) / 2 - HALF_GAP)
+                    o.width = maxOf(1, right - o.x)
+                } else {
+                    val left = maxOf(o.x, (b.x + b.width + a.x + 1) / 2 + HALF_GAP)
+                    o.width = maxOf(1, o.x + o.width - left)
+                    o.x = left
+                }
+            }
+        }
+        return out
+    }
+
+    /** Whether the overlap of [a] and [b] covers at least half of the smaller one: one lies mostly inside the other. */
+    private fun nested(a: Rectangle, b: Rectangle): Boolean {
+        val overlap = a.intersection(b).takeUnless { it.isEmpty } ?: return false
+        val smaller = minOf(a.width.toLong() * a.height, b.width.toLong() * b.height)
+        return overlap.width.toLong() * overlap.height * 2 >= smaller
+    }
+
     @Suppress("UseJBColor")
     private val OUTLINE = Color(0xE5, 0x2B, 0x50)
     private const val PAD = 3
+    /** Half the clear space left between the outlines of two neighbouring marks. */
+    private const val HALF_GAP = 3
 
     @Suppress("UseJBColor")
     private val EDGE = Color(255, 255, 255, 220)
