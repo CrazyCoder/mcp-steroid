@@ -32,6 +32,17 @@ object CodeLocation {
         return base?.let { VfsUtilCore.getRelativePath(file, it) } ?: file.path
     }
 
+    /**
+     * Where a click in an editor goes: at [line] and [column], or just past the end of the [nth] occurrence of [symbol].
+     * A menu opens at the click, so a click past the end of a word leaves the word showing beside the menu, and the
+     * IDE still takes the word at the caret as the one to act on.
+     */
+    fun clickOffset(text: String, line: Int? = null, column: Int? = null, symbol: String? = null, nth: Int = 0): Int {
+        line?.let { return caretAt(text, it, column ?: 1).first }
+        val wanted = symbol ?: throw IllegalArgumentException("a click in an editor takes a line or a symbol")
+        return pick(symbolStarts(text, wanted), nth, "symbol \"$wanted\"") + wanted.length
+    }
+
     fun resolve(text: String, line: Int? = null, column: Int? = null, symbol: String? = null, snippet: String? = null, nth: Int = 0): IntRange {
         line?.let { return caretAt(text, it, column ?: 1) }
         symbol?.let { wanted ->

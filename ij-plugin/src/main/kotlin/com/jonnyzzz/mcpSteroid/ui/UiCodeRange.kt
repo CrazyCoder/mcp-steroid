@@ -66,11 +66,28 @@ object UiCodeRange {
         return Rectangle(from.x, from.y, maxOf(1, to.x - from.x), editor.lineHeight)
     }
 
-    /** Where a click at the caret lands: just right of it, halfway down its line. */
-    fun caretPoint(editor: Editor): Point {
-        val p = editor.visualPositionToXY(editor.caretModel.visualPosition)
-        return Point(p.x + CARET_NUDGE, p.y + editor.lineHeight / 2)
+    /**
+     * The text of [lines], 0-based, of [editor]'s document: for each line with text, the box from its first character
+     * that is not whitespace to its end, on its first visual line. A picture's badges keep off it.
+     */
+    fun textSpans(editor: Editor, lines: IntRange): List<Rectangle> {
+        val doc = editor.document
+        return lines.filter { it in 0 until doc.lineCount }.mapNotNull { line ->
+            val start = doc.getLineStartOffset(line)
+            val end = doc.getLineEndOffset(line)
+            val first = (start until end).firstOrNull { !doc.charsSequence[it].isWhitespace() } ?: return@mapNotNull null
+            val from = editor.offsetToXY(first)
+            Rectangle(from.x, from.y, maxOf(1, editor.offsetToXY(end).x - from.x), editor.lineHeight)
+        }
     }
+
+    /** Where a click at the caret lands: just right of it, halfway down its line. */
+    fun caretPoint(editor: Editor): Point = nudged(editor, editor.visualPositionToXY(editor.caretModel.visualPosition))
+
+    /** Where a click at [offset] lands, as [caretPoint] places it, whatever the caret shows yet. */
+    fun offsetPoint(editor: Editor, offset: Int): Point = nudged(editor, editor.offsetToXY(offset))
+
+    private fun nudged(editor: Editor, p: Point) = Point(p.x + CARET_NUDGE, p.y + editor.lineHeight / 2)
 
     /**
      * Scrolls [editor] so that [area] shows in the middle of its view, unless it shows whole already. An area taller

@@ -595,17 +595,26 @@ class UiSession(
 
     /**
      * Where a click without an offset lands on an editor: at its caret, as a person's right click on the code a goto
-     * found opens the context menu there, or at the step's line and column or symbol, where the caret moves first.
+     * found opens the context menu there, or at the step's line and column, or just past the end of its symbol: the
+     * menu then opens beside the word rather than over it.
      * Null for any other control, which is clicked in its middle. EDT.
      */
     private fun editorClickPoint(c: Component, step: UiStep): Point? {
         val editor = (c as? EditorComponentImpl)?.editor ?: return null
-        if (step.line != null || step.symbol != null) {
-            val range = CodeLocation.resolve(editor.document.text, step.line, step.column, step.symbol, null, 0)
-            editor.caretModel.moveToOffset(range.first)
-            editor.scrollingModel.scrollToCaret(com.intellij.openapi.editor.ScrollType.MAKE_VISIBLE)
+        if (step.line == null && step.symbol == null) return UiCodeRange.caretPoint(editor)
+        val offset = CodeLocation.clickOffset(editor.document.text, step.line, step.column, step.symbol, step.nth)
+        // The click moves the caret, as a person's does. A caret moved first makes the editor open its menu at the
+        // caret, a few pixels off the click. The scroll runs at once: an animated one would still move the code after
+        // the click point is taken.
+        val point = UiCodeRange.offsetPoint(editor, offset)
+        if (editor.scrollingModel.visibleArea.contains(point)) return point
+        editor.scrollingModel.disableAnimation()
+        try {
+            editor.scrollingModel.scrollTo(editor.offsetToLogicalPosition(offset), com.intellij.openapi.editor.ScrollType.MAKE_VISIBLE)
+        } finally {
+            editor.scrollingModel.enableAnimation()
         }
-        return UiCodeRange.caretPoint(editor)
+        return UiCodeRange.offsetPoint(editor, offset)
     }
 
     /**
@@ -1130,9 +1139,10 @@ class UiSession(
         UiSettle.settle()
         val (canvas, facts, line) = withContext(edtAny) {
             if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
-            // Numbers give steps an order: several highlights are numbered, a single one is only outlined, unless asked.
-            val numbered = step.numbers ?: (highlights.size > 1)
-            val marks = highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label, h.pointer, numbered) }
+            // Numbers give steps an order: several steps are numbered, a single one is only outlined, unless asked. A
+            // click point on the outline of what was clicked is part of that step.
+            val marks = UiCapture.steps(highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label, h.pointer) }, step.numbers)
+            val numbered = marks.any { it.numbered }
             val obstacles = if (marks.isEmpty()) emptyList() else textObstacles(window, highlights)
             // A picture of code shows the code, not where the caret happens to be.
             val codeEditors = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct()
@@ -1142,20 +1152,20 @@ class UiSession(
             } finally {
                 showCarets.forEach { it() }
             }
+            // Code cut to its lines keeps their line numbers: the crop reaches left to the editor's gutter.
+            fun withGutter(area: Rectangle) = codeEditors.fold(area) { a, editor ->
+                val gutter = (editor as? com.intellij.openapi.editor.ex.EditorEx)?.gutterComponentEx?.takeIf { it.isShowing }
+                val x = gutter?.locationOnScreen?.x
+                if (x == null || x >= a.x) a else Rectangle(x, a.y, a.x + a.width - x, a.height)
+            }
             val area = when (val crop = step.crop) {
                 null -> null
                 UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCapture.withMarks(painted, it, marks, obstacles) }
                     ?: throw UiStepFailure("crop \"page\" needs a Settings page, and ${describeWindow(window)} shows none")
-                // Code cut to its lines keeps their line numbers: the crop reaches left to the editor's gutter.
-                UiCrop.Highlights -> codeEditors.fold(UiCapture.markArea(painted, marks, obstacles)) { a, editor ->
-                    val gutter = (editor as? com.intellij.openapi.editor.ex.EditorEx)?.gutterComponentEx?.takeIf { it.isShowing }
-                    val x = gutter?.locationOnScreen?.x
-                    if (x == null || x >= a.x) a else Rectangle(x, a.y, a.x + a.width - x, a.height)
-                }
+                UiCrop.Highlights -> withGutter(UiCapture.markArea(painted, marks, obstacles))
                 UiCrop.Popups -> UiCapture.popupArea(window)?.let { area ->
-                    // The point a menu was opened from belongs with it.
-                    val points = marks.filter { it.pointer }.map { Rectangle(it.bounds.x, it.bounds.y, 1, 1) }
-                    UiCapture.withMarks(painted, UiCapture.union(listOf(area) + points), marks, obstacles)
+                    // What a menu was opened from belongs with it: the click point, and the code it clicked.
+                    withGutter(UiCapture.union(listOf(area) + if (marks.isEmpty()) emptyList() else listOf(UiCapture.markArea(painted, marks, obstacles))))
                 } ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
                 is UiCrop.ToolWindow -> {
                     val views = UiLayout.toolWindows(project)
@@ -1176,8 +1186,12 @@ class UiSession(
             val canvas = area?.let { UiCapture.crop(painted, UiCapture.cropArea(it, step.margin ?: UiSteps.DEFAULT_MARGIN, painted.bounds)) } ?: painted
             val facts = UiPictureFacts.of(window)
             val what = listOfNotNull(
-                highlights.takeIf { it.isNotEmpty() }?.withIndex()?.joinToString(", ", prefix = if (numbered) "highlights: " else "highlights, outlined without numbers: ") { (i, h) ->
-                    if (numbered) "${i + 1} ${h.what}" else h.what
+                highlights.takeIf { it.isNotEmpty() }?.zip(marks)?.joinToString(", ", prefix = if (numbered) "highlights: " else "highlights, outlined without numbers: ") { (h, m) ->
+                    when {
+                        m.joined -> "${h.what}, a bare pointer on the outline it clicked"
+                        numbered -> "${m.number} ${h.what}"
+                        else -> h.what
+                    }
                 },
                 step.crop?.let { "crop ${if (it is UiCrop.Control) it.target.toString() else it.toString()}" },
                 "the caret is hidden in the picture".takeIf { codeEditors.isNotEmpty() },
@@ -1258,7 +1272,7 @@ class UiSession(
      * page, the open popups, the highlights at [marks], or the window. EDT.
      */
     private suspend fun pictureScope(step: UiStep, window: Window, marks: List<Rectangle> = emptyList()): Rectangle = when (val crop = step.crop) {
-        UiCrop.Popups -> UiCapture.popupArea(window)
+        UiCrop.Popups -> UiCapture.popupArea(window)?.let { UiCapture.union(listOf(it) + marks) }
         UiCrop.Highlights -> marks.takeIf { it.isNotEmpty() }?.let(UiCapture::union)
         is UiCrop.Control -> match(crop.target).let { m -> (m as? UiMatch.One)?.node?.component?.takeIf { it.isShowing }?.let { onScreen(it, Rectangle(0, 0, it.width, it.height)) } }
         is UiCrop.ToolWindow -> UiLayout.toolWindows(project).firstOrNull { it.id.equals(crop.id, ignoreCase = true) }?.window?.decorator
@@ -1419,11 +1433,17 @@ class UiSession(
      * The screen bounds of the text other controls in [window] and its popups show, such as neighbouring tabs, which a
      * badge or label should not cover. The highlighted controls and what holds them are left out; text inside a
      * highlight's outline is its own, which the layout leaves out, while the other tabs of a highlighted tab row are
-     * obstacles. EDT.
+     * obstacles, and so are the lines of code in view around a code highlight. EDT.
      */
     private fun textObstacles(window: Window, highlights: List<Located>): List<Rectangle> {
         val marked = highlights.mapNotNull { it.component }
-        return (listOf(window) + UiCapture.popupsOf(window)).asSequence()
+        // The code around a code highlight is what the picture is about: its lines in view are obstacles too.
+        val code = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct().flatMap { editor ->
+            val view = editor.scrollingModel.visibleArea
+            val lines = editor.xyToLogicalPosition(view.location).line..editor.xyToLogicalPosition(java.awt.Point(view.x, view.y + view.height)).line
+            UiCodeRange.textSpans(editor, lines).map { onScreen(editor.contentComponent, it) }
+        }
+        return code + (listOf(window) + UiCapture.popupsOf(window)).asSequence()
             .flatMap { UIUtil.uiTraverser(it).asSequence() }
             .filter { c ->
                 c.isShowing && c.width > 0 && c.height > 0 && showsText(c) && marked.none { m -> SwingUtilities.isDescendingFrom(m, c) }

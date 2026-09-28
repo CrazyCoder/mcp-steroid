@@ -341,19 +341,23 @@ cover what the JetBrains Client draws: the controls of a host Settings page live
 |---|---|
 | `{"lines":"20-27","file":"src/a.ts"}` | Those lines as the editor paints them, wrapped lines and folds included; `file` is optional for the selected editor. `"crop":"highlights"` cuts to them and keeps the line numbers; the caret is hidden while the picture paints |
 | `{"symbol":"parse","nth":1}` | A name in the editor, its first occurrence unless `nth` counts on |
-| `{"click":true,"label":"right-click"}` | The point of the call's last click, drawn as a mouse pointer |
+| `{"click":true}` | The point of the call's last click, drawn as a mouse pointer. On the outline of what it clicked, such as a `symbol` highlight, it is part of that step, without a number or label of its own |
 | `{"inspection":"NullableProblems"}` | The inspection's row on the Settings Inspections page, its groups expanded |
 | `{"console":"App","contains":"Exception"}` | The last line of a run's console that holds the text, in a console built on an editor or on a terminal |
 
-A `click` on an editor lands at its caret, or at `line` and `column` or a `symbol`, so a picture of a context
-menu is one call:
+A `click` on an editor lands at its caret, at `line` and `column`, or just past the end of a `symbol`, where
+the menu a right click opens leaves the word showing beside it. A picture of a context menu is one call, the
+word as step 1 with the pointer on it and the menu item as step 2:
 
 ```
 [{"action":"goto","file":"src/format.ts","symbol":"parseThreadUrl"},
- {"action":"click","class":"EditorComponentImpl","button":"right"},
- {"action":"screenshot","out":"C:/pics/refactor-menu.png","highlight":[{"click":true,"label":"right-click"},{"text":"Refactor"}],"crop":"popups"},
+ {"action":"click","class":"EditorComponentImpl","button":"right","symbol":"parseThreadUrl"},
+ {"action":"screenshot","out":"C:/pics/refactor-menu.png","highlight":[{"symbol":"parseThreadUrl"},{"click":true},{"text":"Refactor"}],"crop":"popups"},
  {"action":"press","keys":"ESCAPE"}]
 ```
+
+`"crop":"popups"` keeps the open menus and every highlight, and reaches left to the line numbers of code, so
+the clicked word shows beside its menu. Badges and labels keep off the lines of code in view.
 
 `{"action":"select","inspection":"NullableProblems"}` selects that row on the Inspections page.
 

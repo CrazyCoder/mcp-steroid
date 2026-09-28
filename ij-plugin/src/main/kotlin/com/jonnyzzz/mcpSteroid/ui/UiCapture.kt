@@ -59,9 +59,29 @@ object UiCapture {
     /**
      * A highlight: its number, its screen bounds, and the text drawn beside it. A [pointer] mark is a point, the
      * top left corner of [bounds], drawn as a mouse pointer: where a click goes. A mark not [numbered] has no badge,
-     * for a picture of one area, or of areas with no order to follow; its label sits beside the outline.
+     * for a picture of one area, or of areas with no order to follow; its label sits beside the outline. A [joined]
+     * pointer is part of the step whose outline it touches, and has neither badge nor label.
      */
-    data class Mark(val number: Int, val bounds: Rectangle, val label: String?, val pointer: Boolean = false, val numbered: Boolean = true)
+    data class Mark(
+        val number: Int, val bounds: Rectangle, val label: String?, val pointer: Boolean = false, val numbered: Boolean = true,
+        val joined: Boolean = false,
+    )
+
+    /**
+     * [marks] as the steps of a picture. A click point on or at the edge of another mark's outline, such as the word a
+     * right click went to, belongs to that mark's step: it is drawn as a bare pointer, without a badge or a label. The
+     * other marks are numbered 1, 2, 3 when [numbered] says so, or by default when there are several.
+     */
+    fun steps(marks: List<Mark>, numbered: Boolean?): List<Mark> {
+        val boxes = marks.filterNot { it.pointer }.map { outlined(it.bounds).apply { grow(JOIN, JOIN) } }
+        val joined = marks.map { m -> m.pointer && boxes.any { it.contains(m.bounds.location) } }
+        val count = joined.count { !it }
+        val number = numbered ?: (count > 1)
+        var next = 0
+        return marks.mapIndexed { i, m ->
+            if (joined[i]) m.copy(label = null, numbered = false, joined = true) else m.copy(number = ++next, numbered = number)
+        }
+    }
 
     /** A picture of the screen [area] at [scale], filled with [background], for windows to paint into. */
     fun blankCanvas(area: Rectangle, scale: Double, background: Color): Canvas {
@@ -300,9 +320,9 @@ object UiCapture {
         val placed = mutableListOf<Rectangle>()
         val labelMetrics = g.getFontMetrics(LABEL_FONT)
         val within = canvas.bounds
-        val boxes = outlines(marks.map { if (it.pointer) Rectangle(it.bounds.x, it.bounds.y, POINTER_W, POINTER_H) else it.bounds })
+        val boxes = outlineBoxes(marks)
         return marks.mapIndexed { i, mark ->
-            val outline = if (mark.pointer) Rectangle(mark.bounds.x, mark.bounds.y, POINTER_W, POINTER_H) else boxes[i]
+            val outline = boxes[i]
             // A control's own text lies inside its outline and is no obstacle to its own badge.
             val others = obstacles.filterNot { outline.contains(it) }
             fun free(r: Rectangle) = within.contains(r) && placed.none { it.intersects(r) } && others.none { it.intersects(r) }
@@ -356,6 +376,15 @@ object UiCapture {
             label?.let { placed += it }
             mark to Parts(outline, badge, label)
         }
+    }
+
+    /**
+     * The box each mark is drawn in: a pointer's arrow, or an outline as [outlines] spaces them. A pointer is no
+     * neighbour of an outline: at the end of a clicked word, it would pull the word's outline in over its last letter.
+     */
+    fun outlineBoxes(marks: List<Mark>): List<Rectangle> {
+        val boxes = outlines(marks.filterNot { it.pointer }.map { it.bounds }).iterator()
+        return marks.map { m -> if (m.pointer) Rectangle(m.bounds.x, m.bounds.y, POINTER_W, POINTER_H) else boxes.next() }
     }
 
     /** The area an outline runs around: [b] grown by [PAD], so the control's own edge and text stay visible. */
@@ -431,6 +460,8 @@ object UiCapture {
     /** The size of a pointer mark, as a mouse pointer shows at the IDE's scale. */
     private const val POINTER_W = 12
     private const val POINTER_H = 19
+    /** How far past an outline a click point still belongs to it: the pointer's tip sits just past a clicked word. */
+    private const val JOIN = 4
     /** What a spot past the picture's edge counts as covering: more than any spot inside it can. */
     private const val OFF_PICTURE = Long.MAX_VALUE / 16
     private val BADGE_FONT = Font(Font.SANS_SERIF, Font.BOLD, 11)

@@ -13,6 +13,13 @@ class CodeLocationTest {
     private fun fails(block: () -> Unit): String = assertThrows(UiStepFailure::class.java) { block() }.message!!
 
     @Test
+    fun `a click at a symbol lands past its end, at a line and column exactly there`() {
+        assertEquals(text.indexOf("UiState {") + "UiState".length, CodeLocation.clickOffset(text, symbol = "UiState"))
+        assertEquals(text.indexOf("UiState.A") + "UiState".length, CodeLocation.clickOffset(text, symbol = "UiState", nth = 1))
+        assertEquals(text.indexOf("enum") + 5, CodeLocation.clickOffset(text, line = 2, column = 6))
+    }
+
+    @Test
     fun `line and column give a caret`() {
         assertEquals(caret(text.indexOf("enum") + 5), CodeLocation.resolve(text, line = 2, column = 6))
     }

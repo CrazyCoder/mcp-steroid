@@ -69,7 +69,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}:
           with "row", "index" or a row ref, presses that row or tab, such as a double click to open a row; a
           tabbed pane matched by name or text presses the tab of that title. An editor is pressed at its caret,
-          or at "line" and "column" or a "symbol", so a right click opens the context menu there. A partly cut
+          at "line" and "column", or just past the end of a "symbol", so a right click opens the context menu
+          beside the word. A partly cut
           control is pressed where it shows; one past an edge fails with the step that makes room for it
         - {"action":"hover", target, optional "row" or "index"}
         - {"action":"type", "text":"...", optional target}: types into the target, or the control that has
@@ -168,8 +169,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           with the menus and popups open above it. "highlight":["breadcrumb",{"name":"Show line numbers",
           "label":"..."}] outlines controls (rows with "row"), numbered when there are several ("numbers":true
           or false chooses), and takes {"lines":"20-27"} or {"symbol":"name"} of code, {"click":true} (the
-          point of the last click, as a pointer), {"inspection":"ShortName"} and {"console":"App","contains":"text"}; "crop" is "page" (the Settings page), "highlights", "popups",
-          {"toolwindow":"Run"} or a locator. The report ends with a "cut:" line per content the picture shows cut,
+          point of the last click, as a pointer, part of the step whose outline it touches),
+          {"inspection":"ShortName"} and {"console":"App","contains":"text"}; "crop" is "page" (the Settings
+          page), "highlights", "popups" (the open menus and every highlight), {"toolwindow":"Run"} or a locator. The report ends with a "cut:" line per content the picture shows cut,
           with the step that fixes it; "fit":true runs those steps first. With the call's "restore": true, one
           call opens a setting, captures it and puts the IDE back: a picture to show a user where an option is
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In

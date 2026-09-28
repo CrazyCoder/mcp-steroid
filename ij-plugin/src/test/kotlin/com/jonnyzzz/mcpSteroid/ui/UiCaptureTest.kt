@@ -129,6 +129,35 @@ class UiCaptureTest {
     }
 
     @Test
+    fun `a click point on another outline joins that step, and the steps are numbered without it`() {
+        val word = UiCapture.Mark(1, Rectangle(300, 200, 90, 18), null)
+        val point = UiCapture.Mark(2, Rectangle(392, 208, 1, 1), "right-click", pointer = true)
+        val item = UiCapture.Mark(3, Rectangle(400, 400, 200, 24), null)
+        val steps = UiCapture.steps(listOf(word, point, item), numbered = null)
+        assertEquals(listOf(1, 2), steps.filter { it.numbered }.map { it.number })
+        val joined = steps[1]
+        assertTrue("the point is drawn as a bare pointer", joined.joined && !joined.numbered && joined.label == null)
+        // A point away from every outline stays a step of its own, with its label.
+        val alone = UiCapture.steps(listOf(word, point.copy(bounds = Rectangle(600, 300, 1, 1)), item), numbered = null)
+        assertEquals(listOf(1, 2, 3), alone.map { it.number })
+        assertEquals("right-click", alone[1].label)
+        assertTrue(alone.none { it.joined })
+        // Two steps, the word with its point and the item: numbered by default, and not when asked.
+        assertTrue(UiCapture.steps(listOf(word, point, item), numbered = false).none { it.numbered })
+        // The word with its point alone is one step: outlined, not numbered.
+        assertTrue(UiCapture.steps(listOf(word, point), numbered = null).none { it.numbered })
+    }
+
+    @Test
+    fun `a pointer at a word's end leaves the word's outline its padding`() {
+        val word = Rectangle(300, 200, 98, 19)
+        val pointer = UiCapture.Mark(2, Rectangle(word.x + word.width + 2, 209, 1, 1), null, pointer = true)
+        val boxes = UiCapture.outlineBoxes(listOf(UiCapture.Mark(1, word, null), pointer))
+        assertEquals("the word keeps the outline it has alone", UiCapture.outlines(listOf(word)).single(), boxes[0])
+        assertEquals(Rectangle(pointer.bounds.x, pointer.bounds.y, 12, 19), boxes[1])
+    }
+
+    @Test
     fun `a pointer mark draws an arrow at the point, not a box`() {
         val c = UiCapture.highlight(canvas(400, 300), listOf(UiCapture.Mark(1, Rectangle(200, 100, 1, 1), null, pointer = true)))
         // The tip is at (200, 100) on screen, (100, 50) in the picture: the arrow's body runs down and right of it.
