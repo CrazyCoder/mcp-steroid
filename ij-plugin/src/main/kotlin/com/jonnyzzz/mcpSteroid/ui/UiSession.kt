@@ -450,9 +450,17 @@ class UiSession(
         UiAction.WAIT -> waitStep(step)
         UiAction.SNAPSHOT -> snapshotStep(step)
         UiAction.INSPECT -> inspectStep(step)
-        // Checked once the windows settled: an in-place refactoring shows its name lookup before its template is up.
-        UiAction.RUN -> withEffects { actStep(step) }.let {
-            if (inplaceActive()) "$it; started an in-place template: type the value, then press ENTER" else it
+        // Checked once the windows settled: an in-place refactoring shows its name lookup before its template is up. A
+        // template that was up before the step, such as a rename whose options popup an ESCAPE closed, is not the step's.
+        UiAction.RUN -> {
+            val before = inplaceActive()
+            withEffects { actStep(step) }.let {
+                when {
+                    !inplaceActive() -> it
+                    before -> "$it; an in-place template is still active in the editor: press ESCAPE to end it"
+                    else -> "$it; started an in-place template: type the value, then press ENTER"
+                }
+            }
         }
         UiAction.GET -> when {
             step.editors -> editorsReport(step)

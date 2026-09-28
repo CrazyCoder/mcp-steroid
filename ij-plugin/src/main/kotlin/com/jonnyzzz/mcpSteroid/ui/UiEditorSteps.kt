@@ -73,7 +73,10 @@ internal class UiEditorSteps(private val project: Project) {
         val ran = CompletableDeferred<Boolean>()
         val before = UiSettle.showingWindows()
         ApplicationManager.getApplication().invokeLater({
-            manager.tryToExecute(action, null, component, PLACE, true)
+            // Not "now": that path makes up a key event for an action run without one, and on macOS an action the
+            // application menu also offers, such as ShowSettings, disables itself for a key event
+            // (ActionPlaces.isMacSystemMenuAction), since the menu handles the shortcut.
+            manager.tryToExecute(action, null, component, PLACE, false)
                 .doWhenDone { ran.complete(true) }
                 .doWhenRejected(Runnable { ran.complete(false) })
         }, ModalityState.stateForComponent(component))
