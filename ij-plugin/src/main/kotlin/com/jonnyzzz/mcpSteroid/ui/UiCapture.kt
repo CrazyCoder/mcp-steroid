@@ -135,21 +135,27 @@ object UiCapture {
     }
 
     /**
-     * Where the number badge of a mark at [mark] goes, a square of [size]: at its top left corner, outside it, else at
-     * its top right corner, else inside its top left corner; kept inside [within] and moved right past [placed] badges.
+     * Where the number badge of a mark at [mark] goes, a square of [size]: just left of it, centred on it for a mark of
+     * ordinary height, level with its top for a tall one such as a list, so the badge points at the mark without
+     * covering what lies above it. With no room on the left, an ordinary mark's badge goes right of it the same way,
+     * and a tall mark's inside its top left corner: right of a tall mark, such as a list at a window's edge, lies the
+     * next panel's content. It stays inside [within] and moves further out past [placed] badges and labels.
      */
     fun badgeBounds(mark: Rectangle, size: Int, within: Rectangle, placed: List<Rectangle>): Rectangle {
-        val spots = listOf(
-            Rectangle(mark.x - size, mark.y - size, size, size),
-            Rectangle(mark.x + mark.width, mark.y - size, size, size),
-            Rectangle(mark.x, mark.y, size, size),
-        )
-        val spot = Rectangle(spots.firstOrNull { within.contains(it) } ?: spots.last())
-        spot.x = spot.x.coerceIn(within.x, maxOf(within.x, within.x + within.width - size))
+        val tall = mark.height >= TALL * size
+        val y = if (tall) mark.y else mark.y + (mark.height - size) / 2
+        val left = Rectangle(mark.x - GAP - size, y, size, size)
+        val right = Rectangle(mark.x + mark.width + GAP, y, size, size)
+        val inside = Rectangle(mark.x + GAP, y, size, size)
+        val spots = if (tall) listOf(left) else listOf(left, right)
+        val spot = Rectangle(spots.firstOrNull { within.contains(it) } ?: inside)
         spot.y = spot.y.coerceIn(within.y, maxOf(within.y, within.y + within.height - size))
+        val step = if (spot.x < mark.x) -1 else 1
         repeat(MAX_SHIFTS) {
             val hit = placed.firstOrNull { it.intersects(spot) } ?: return spot
-            spot.x = hit.x + hit.width + 2
+            val next = if (step < 0) hit.x - GAP - size else hit.x + hit.width + GAP
+            if (next < within.x || next + size > within.x + within.width) return spot
+            spot.x = next
         }
         return spot
     }
@@ -224,17 +230,23 @@ object UiCapture {
 
     private class Parts(val badge: Rectangle, val label: Rectangle?)
 
-    /** Where each mark's badge and label go, badges placed in order so that none covers another. */
+    /**
+     * Where each mark's badge and label go, badges placed in order so that none covers another. A label goes right of
+     * its mark on the badge's line, "(1) [control] label", or left of the badge when the picture has no room there.
+     */
     private fun layout(canvas: Canvas, marks: List<Mark>, g: Graphics2D): List<Pair<Mark, Parts>> {
         val placed = mutableListOf<Rectangle>()
         val labelMetrics = g.getFontMetrics(LABEL_FONT)
+        val within = canvas.bounds
         return marks.map { mark ->
-            val badge = badgeBounds(outlined(mark.bounds), BADGE, canvas.bounds, placed)
+            val outline = outlined(mark.bounds)
+            val badge = badgeBounds(outline, BADGE, within, placed)
             placed += badge
             val label = mark.label?.let {
-                val box = Rectangle(badge.x + badge.width + 3, badge.y, labelMetrics.stringWidth(it) + 2 * LABEL_PAD, badge.height)
-                placed += box
-                box
+                val width = labelMetrics.stringWidth(it) + 2 * LABEL_PAD
+                val besideBadge = if (badge.x < outline.x) outline.x + outline.width + GAP else badge.x + badge.width + GAP
+                val x = if (besideBadge + width <= within.x + within.width) besideBadge else badge.x - GAP - width
+                Rectangle(x, badge.y, width, badge.height).also { box -> placed += box }
             }
             mark to Parts(badge, label)
         }
@@ -254,6 +266,10 @@ object UiCapture {
     private const val BADGE = 18
     private const val LABEL_PAD = 5
     private const val MAX_SHIFTS = 8
+    /** The space between an outline and its badge or label. */
+    private const val GAP = 4
+    /** A mark this many badges high or taller is tall: its badge goes level with its top instead of its middle. */
+    private const val TALL = 3
     private val BADGE_FONT = Font(Font.SANS_SERIF, Font.BOLD, 11)
     private val LABEL_FONT = Font(Font.SANS_SERIF, Font.BOLD, 12)
 }

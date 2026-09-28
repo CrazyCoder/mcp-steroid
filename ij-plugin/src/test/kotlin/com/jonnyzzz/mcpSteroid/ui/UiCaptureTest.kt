@@ -43,14 +43,41 @@ class UiCaptureTest {
     }
 
     @Test
-    fun `a badge sits at the top left outside its mark, and moves past placed badges`() {
+    fun `a badge sits left of a normal-height mark, centred on it`() {
         val within = Rectangle(0, 0, 500, 500)
+        assertEquals(Rectangle(78, 101, 18, 18), UiCapture.badgeBounds(Rectangle(100, 100, 80, 20), 18, within, emptyList()))
+    }
+
+    @Test
+    fun `a badge sits left of a tall mark, level with its top`() {
+        val within = Rectangle(0, 0, 500, 500)
+        assertEquals(Rectangle(78, 100, 18, 18), UiCapture.badgeBounds(Rectangle(100, 100, 200, 300), 18, within, emptyList()))
+    }
+
+    @Test
+    fun `a tall mark at the left edge gets its badge inside its top corner, not over its neighbour`() {
+        val within = Rectangle(0, 0, 500, 500)
+        assertEquals(Rectangle(6, 2, 18, 18), UiCapture.badgeBounds(Rectangle(2, 2, 150, 400), 18, within, emptyList()))
+    }
+
+    @Test
+    fun `a badge goes right of a mark at the left edge, and moves past placed badges`() {
+        val within = Rectangle(0, 0, 500, 500)
+        assertEquals(Rectangle(86, 3, 18, 18), UiCapture.badgeBounds(Rectangle(2, 2, 80, 20), 18, within, emptyList()))
         val first = UiCapture.badgeBounds(Rectangle(100, 100, 80, 20), 18, within, emptyList())
-        assertEquals(Rectangle(82, 82, 18, 18), first)
         val second = UiCapture.badgeBounds(Rectangle(100, 100, 80, 20), 18, within, listOf(first))
         assertFalse(second.intersects(first))
-        val atEdge = UiCapture.badgeBounds(Rectangle(2, 2, 80, 20), 18, within, emptyList())
-        assertTrue(within.contains(atEdge))
+        assertTrue(within.contains(second))
+    }
+
+    @Test
+    fun `a label goes right of its mark, on its badge's line`() {
+        val c = canvas(800, 600)
+        val mark = Rectangle(300, 200, 100, 20)
+        val area = UiCapture.markArea(c, listOf(UiCapture.Mark(1, mark, "Turn this on")))
+        // The badge on the left and the label on the right widen the area on both sides, on the mark's own line.
+        assertTrue(area.x < mark.x && area.x + area.width > mark.x + mark.width + 20)
+        assertTrue(area.y >= mark.y - 4 && area.y + area.height <= mark.y + mark.height + 4)
     }
 
     @Test
