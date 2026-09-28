@@ -820,10 +820,10 @@ class UiSession(
         // A menu closes in place and may leave its window showing. Any other window must go, or open another, such as
         // a confirmation: a window that ignores the request would otherwise read as closed.
         if (way != UiWindows.CloseWay.CLOSE_MENU) {
+            suspend fun stillOpen() = withContext(edtAny) { window.isShowing } && UiSettle.showingWindows().none { it !in windowsBefore }
             val started = TimeSource.Monotonic.markNow()
-            while (withContext(edtAny) { window.isShowing } && UiSettle.showingWindows().none { it !in windowsBefore } &&
-                started.elapsedNow().inWholeMilliseconds < CLOSE_WAIT_MS) delay(POLL_MS)
-            if (withContext(edtAny) { window.isShowing } && UiSettle.showingWindows().none { it !in windowsBefore }) {
+            while (stillOpen() && started.elapsedNow().inWholeMilliseconds < CLOSE_WAIT_MS) delay(POLL_MS)
+            if (stillOpen()) {
                 throw UiStepFailure("$closed, and window \"${withContext(edtAny) { windowTitle(window) }}\" is still open; click its Cancel or Close button")
             }
         }

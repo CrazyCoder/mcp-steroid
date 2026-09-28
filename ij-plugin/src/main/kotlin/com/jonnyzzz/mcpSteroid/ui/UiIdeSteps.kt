@@ -116,16 +116,17 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
 
     /**
      * Selects [page] in an open modal Settings dialog through the editor's own [Settings], and returns the selection
-     * callback. Null when no modal Settings dialog shows, or the page has no id to find it by. EDT.
+     * callback; null when no modal Settings dialog shows. A page that dialog cannot find fails: opening Settings again
+     * would stack a second modal dialog. EDT.
      */
     private fun selectInModal(page: SettingsPage): ActionCallback? {
-        val id = page.id ?: return null
         val editor = Window.getWindows().asSequence()
             .filter { (it as? Dialog)?.isModal == true }
             .firstNotNullOfOrNull(::settingsEditor) ?: return null
-        val settings = Settings.KEY.getData(DataManager.getInstance().getDataContext(editor)) ?: return null
-        val configurable = settings.find(id) ?: return null
-        return settings.select(configurable)
+        val configurable = page.id?.let { id -> Settings.KEY.getData(DataManager.getInstance().getDataContext(editor))?.let { it to it.find(id) } }
+        val (settings, found) = configurable?.takeIf { it.second != null }
+            ?: throw UiStepFailure("the open Settings dialog cannot switch to $page; close it, then open that page")
+        return settings.select(found)
     }
 
     /**
