@@ -27,6 +27,35 @@ class UiStepsTest {
     }
 
     @Test
+    fun `a toolwindow or window step takes a size in pixels or fit, and a window step maximize`() {
+        val tw = UiSteps.parse("""[{"action":"toolwindow","id":"Project","width":"fit"}]""").single()
+        assertEquals("fit", tw.width)
+        val window = UiSteps.parse("""[{"action":"window","width":1600,"height":"1100"}]""").single()
+        assertEquals(UiAction.WINDOW, window.action)
+        assertEquals("1600" to "1100", window.width to window.height)
+        assertEquals(false, UiSteps.parse("""[{"action":"window","maximize":false}]""").single().maximize)
+        assertNull(UiSteps.parse("""[{"action":"window"}]""").single().maximize)
+        assertTrue(fails("""[{"action":"window","width":"wide"}]""").contains("width is \"fit\" or a size in logical pixels"))
+        assertTrue(fails("""[{"action":"window","height":10}]""").contains("height is \"fit\" or a size"))
+        assertTrue(fails("""[{"action":"click","name":"OK","width":"fit"}]""").contains("width goes with toolwindow and window"))
+        assertTrue(fails("""[{"action":"window","maximize":true,"width":900}]""").contains("drop width and height"))
+        assertTrue(fails("""[{"action":"toolwindow","id":"Project","maximize":true}]""").contains("maximize goes with window"))
+        assertTrue(fails("""[{"action":"toolwindow","id":"Project","hide":true,"width":300}]""").contains("hide a tool window or size it"))
+    }
+
+    @Test
+    fun `an expect of layout takes a target as its scope and nothing else`() {
+        val whole = UiSteps.parse("""[{"action":"expect","layout":true}]""").single()
+        assertTrue(whole.layout)
+        assertNull(whole.target)
+        val scoped = UiSteps.parse("""[{"action":"expect","layout":true,"name":"Project Tool Window"}]""").single()
+        assertEquals(UiTarget(name = "Project Tool Window"), scoped.target)
+        assertTrue(fails("""[{"action":"expect","layout":true,"title":"Settings"}]""").contains("not layout and title"))
+        assertTrue(fails("""[{"action":"expect","layout":true,"name":"x","is":"visible"}]""").contains("layout takes a target as its scope"))
+        assertTrue(fails("""[{"action":"click","name":"OK","layout":true}]""").contains("layout goes with expect"))
+    }
+
+    @Test
     fun `inspect takes a target and an optional row`() {
         val step = UiSteps.parse("""[{"action":"inspect","ref":"e4","row":"Editor"}]""").single()
         assertEquals(UiAction.INSPECT, step.action)

@@ -40,6 +40,12 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
         tree depth, and [expanded], [collapsed] or [selected]. Row #9 under [ref=e91] is the row ref e91#9,
         which the row steps below take as their "ref". A ref stays valid while its control is showing.
 
+        The snapshot also shows what a person notices at a glance: [outside] on a control that lies past the
+        edge of its panel or window, which no click reaches; [clipped] on one that is partly cut; [truncated]
+        on a label whose text is cut to its width; a line above a tree's or list's rows when they are wider
+        than its view. Each window ends with a "layout:" line per tool window or window that cuts controls,
+        or a tool window narrower than its header, with the step that makes room.
+
         Pass window_id (from steroid_list_windows) to snapshot one window. To see the controls,
         steroid_take_screenshot with marks=true labels each one on the image with the ref used here, and
         each row and tab in view with its row ref, so what is spotted in the picture is targeted by ref,
@@ -61,7 +67,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
 
         - {"action":"click", target, "button":"left|right|middle", "count":1|2, "modifiers":"ctrl+shift"}:
           with "row", "index" or a row ref, presses that row or tab, such as a double click to open a row; a
-          tabbed pane matched by name or text presses the tab of that title
+          tabbed pane matched by name or text presses the tab of that title. A partly cut control is pressed
+          where it shows; one past an edge fails with the step that makes room for it
         - {"action":"hover", target, optional "row" or "index"}
         - {"action":"type", "text":"...", optional target}: types into the target, or the control that has
           the focus in the topmost window
@@ -105,11 +112,19 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           on "line", or "caret":"line:column"; "editor":"path or name" with "is" visible, focused or hidden;
           "banner":"text" above an open editor; "notification":"text", "error":"text" ("" or true for any) and
           "log":"text" (an idea.log line), shown or logged since the call started; "memory" with "below":
-          heap_after_gc (MB, after a full GC), heap (MB), threads or gc_signals. "soft" reports a failure
+          heap_after_gc (MB, after a full GC), heap (MB), threads or gc_signals; "layout":true, that no control
+          in the topmost window, or under a target, is [outside] or [clipped]. "soft" reports a failure
           and goes on; "bug" marks the check whose failure means the reported bug is present
         - {"action":"settings", "page":"Code Folding"}: opens Settings at a page by id, path ("Editor > General")
           or name, or switches the open Settings window to it
-        - {"action":"toolwindow", "id":"Project", optional "tab":"...", or "hide":true}
+        - {"action":"toolwindow", "id":"Project", optional "tab":"...", "width" or "height", or "hide":true}:
+          shows the tool window; "width" (a side one) or "height" (a bottom one) sizes it in logical pixels,
+          or "fit": the size that shows its header and its content, within 40% of the IDE window
+        - {"action":"window", optional target or "title", "width", "height", or "maximize":true|false}: sizes
+          the window that holds the target, the one whose title contains "title", or the topmost one, in
+          logical pixels or "fit" (its preferred size); "maximize" true fills the screen and false restores.
+          Alone, it fills the screen with the IDE window and fits any other window to its content. It stays on
+          its screen and above its minimum size, and reports the size before and the screen's
         - {"action":"get"|"set", one of "registry":"key", "advanced":"id", "option":"name", "inspection":"ShortName",
           "component":"StateName" with "field", and "value" for set}: reads or changes a setting without a dialog.
           "option" is an on/off option as Search Everywhere lists it (get with part of the name lists matches);

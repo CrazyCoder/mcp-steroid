@@ -43,8 +43,29 @@ data class KeyReport(val recipient: Component)
  * followed by a barrier task. When a dispatch opens a modal dialog, the dialog's event loop runs the barrier, so
  * the call returns while the dialog is up instead of waiting for it to close.
  */
-class UiInput {
+class UiInput(
+    /** Why no pointer reaches a control past the edge of its panel or window, and what makes room for it. */
+    private val unreachable: (Component) -> String = { "it lies past the edge of its panel or window" },
+) {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
+
+    /**
+     * Where the pointer goes to reach [local] in [target], after the target was scrolled into view: [local] itself when
+     * it shows, else the middle of the part of [area], or of the target, that shows, as a person clicks the visible part
+     * of a half-hidden button. An [exact] point, a step's offset, is not moved. Fails when none of it shows. EDT.
+     */
+    private fun reachable(target: Component, local: Point, area: Rectangle?, exact: Boolean): Point {
+        val shown = UiLayout.visiblePart(target, throughViewports = true)
+        val reach = area?.let { shown.intersection(it) } ?: shown
+        val what = UiComponentFacts.simpleClassName(target) + (UiComponentFacts.name(target)?.let { " \"${it.take(60)}\"" } ?: "")
+        return when {
+            reach.isEmpty -> throw UiStepFailure("no pointer reaches $what: ${unreachable(target)}")
+            reach.contains(local) -> local
+            exact -> throw UiStepFailure("the offset ${local.x},${local.y} is outside the part of $what that shows, " +
+                "${reach.x},${reach.y} ${reach.width}x${reach.height}; ${unreachable(target)}")
+            else -> Point(reach.centerX.toInt(), reach.centerY.toInt())
+        }
+    }
 
     /**
      * Clicks [target] at [offset], else at the centre of [area], a part of it such as a row, else at its centre. The
@@ -58,7 +79,7 @@ class UiInput {
                 ?: throw IllegalStateException("the target is not in a window")
             activate(window)
             val local = offset ?: area?.let { Point(it.centerX.toInt(), it.centerY.toInt()) } ?: Point(target.width / 2, target.height / 2)
-            Aim(window, SwingUtilities.convertPoint(target, local, window))
+            Aim(window, SwingUtilities.convertPoint(target, reachable(target, local, area, offset != null), window))
         }
         val recorder = PressRecorder(aim.window)
         val action = (target as? AbstractButton)?.let { ActionRecorder(it) }
@@ -102,7 +123,7 @@ class UiInput {
             require(target.isShowing) { "the target is not showing" }
             val window = SwingUtilities.getWindowAncestor(target) ?: throw IllegalStateException("the target is not in a window")
             val local = area?.let { Point(it.centerX.toInt(), it.centerY.toInt()) } ?: Point(target.width / 2, target.height / 2)
-            val point = SwingUtilities.convertPoint(target, local, window)
+            val point = SwingUtilities.convertPoint(target, reachable(target, local, area, exact = false), window)
             for (x in listOf(point.x - 1, point.x)) {
                 later {
                     IdeEventQueue.getInstance().dispatchEvent(

@@ -81,7 +81,16 @@
     {"action": "expect", "editor": "src/Split.java"},
     {"action": "expect", "editor": "Split.java", "is": "focused"},
     {"action": "expect", "editor": "docs/headings.md", "is": "hidden"},
-    {"action": "expect", "log": "Opening remote editor for file=page.xml", "side": "backend"}
+    {"action": "expect", "log": "Opening remote editor for file=page.xml", "side": "backend"},
+    {"action": "toolwindow", "id": "Project", "width": "fit"},
+    {"action": "toolwindow", "id": "Problems View", "height": 300},
+    {"action": "window", "width": 1800, "height": 1200},
+    {"action": "window", "title": "Settings", "width": "fit"},
+    {"action": "window", "maximize": true},
+    {"action": "window", "maximize": false},
+    {"action": "window"},
+    {"action": "expect", "layout": true},
+    {"action": "expect", "layout": true, "name": "Project Tool Window"}
   ],
   "cleanup": [
     {"action": "close"},

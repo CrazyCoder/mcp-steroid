@@ -125,6 +125,7 @@ soft. Each expect has one subject:
 | `error` | An IDE error logged since the call started whose summary contains this; `""` or `true` matches any | `{"action":"expect","error":"","not":true}` |
 | `editor` | An editor of a project file, by path or name, that this side shows: `is` visible (default), focused, or hidden for none. It checks what the user sees, where `file` checks the text | `{"action":"expect","editor":"src/A.kt","is":"focused"}` |
 | `log` | A line of this side's `idea.log`, written since the run started, that contains this, not counting MCP Steroid's own lines. It checks the mechanism behind a symptom, such as an editor opening | `{"action":"expect","log":"Opening remote editor for file=A.kt","side":"backend"}` |
+| `layout` | That no control in the topmost window, or under a target, is `[outside]` or `[clipped]`: past the edge of its panel or window, or partly cut. It checks a report of a hidden button or a cut-off dialog, and makes sure a later step can reach its control | `{"action":"expect","layout":true,"name":"Project Tool Window"}` |
 | `memory` + `below` | A memory figure of this side under a limit: `heap_after_gc`, the heap in MB right after a full GC, which the check runs first unless the IDE disables explicit GC, as its report then says; `heap`, the heap in use in MB; `threads`; or `gc_signals`, the overloaded-GC signals of the last 15 minutes. It checks a memory leak fix or a thread leak | `{"action":"expect","memory":"heap_after_gc","below":1500}` |
 
 A check that fails says what it wanted and what it found, and for a target that matched nothing, the
@@ -167,7 +168,11 @@ Other setup steps:
   their paths. An open Settings window switches to the page. The recording keeps the page id, which does not
   change with the UI language.
 - `{"action":"toolwindow","id":"Problems View","tab":"Project Errors"}` shows and activates a tool window and
-  selects a tab; `"hide":true` hides it. An unknown id lists the ids.
+  selects a tab; `"hide":true` hides it. An unknown id lists the ids. `"width"` or `"height"` sizes it, in
+  logical pixels or `"fit"`.
+- `{"action":"window","width":1800,"height":1200}` sizes the topmost window, or the one a target or `title`
+  names; `"maximize":true` fills the screen and `false` restores it. The report gives the size it had, which
+  a cleanup step restores.
 - `{"action":"write","file":"src/Sample.kt","text":"..."}` creates or replaces a project file, with its
   folders, through the IDE's documents, so the editor and the index see it at once. A path outside the
   project folder is refused.
@@ -185,8 +190,9 @@ settle first. Read the saved file to review it, or keep it next to the scenario 
 `save` is required: name each picture after the state it shows, so a replay's pictures line up with the
 earlier ones.
 
-Use pictures for what text cannot check: layout, icons, colors, clipping, a theme. For anything a snapshot
-shows, an `expect` is the stronger check, because it fails on its own.
+Use pictures for what text cannot check: icons, colors, a theme, how a layout looks. For anything a snapshot
+shows, an `expect` is the stronger check, because it fails on its own, and cut or hidden controls are one of
+those: `{"action":"expect","layout":true}`.
 
 ## Editor steps from the Performance Testing plugin
 
@@ -235,6 +241,9 @@ These follow the practices of Playwright and other UI test tools:
   Keep to one bug check per reported problem.
 - **Set up by value, not by clicks.** A `set` step pins a setting the bug depends on whatever the machine had.
   Clicks are for the part of the report that is about the UI.
+- **Pin the window size.** A `window` step with a width and a height at the start, and a `toolwindow` step
+  with a width for a tool window the steps use, give every machine the same layout: a scenario recorded on
+  a large screen otherwise meets cut controls on a small one, and its pictures do not line up.
 - **Leave the IDE as you found it.** Restore every `set` in `cleanup`, and close what the steps opened.
 - **Keep the intent current.** When a step changes during a repair, its intent is what it must still achieve.
   Update `ide` to the build the repair was made on.

@@ -104,7 +104,7 @@ class UiSession(
     private val startedMs: Long = System.currentTimeMillis(),
 ) {
     private val registry = service<UiRefs>().registry
-    private val input = UiInput()
+    private val input = UiInput { UiLayout.unreachable(it, project) }
     private val editorSteps = UiEditorSteps(project)
     private val ideSteps = UiIdeSteps(project, taskId)
     private val config = UiConfig(project)
@@ -137,7 +137,7 @@ class UiSession(
         val runStarted = TimeSource.Monotonic.markNow()
         val disposable = Disposer.newDisposable("steroid_ui session")
         val notifications = UiNotificationLog(project, disposable)
-        val expect = UiExpect(project, startedMs, notifications, ::matchForExpect, ::describe)
+        val expect = UiExpect(project, startedMs, notifications, ::matchForExpect, ::describe, ::layoutProblems)
         try {
             for ((i, step) in steps.withIndex()) {
                 val index = firstIndex + i
@@ -263,7 +263,8 @@ class UiSession(
      * evidence of the bug.
      */
     private fun showsNoWindow(step: UiStep): Boolean =
-        step.action in NO_WINDOW_ACTIONS || step.bug != null || step.action == UiAction.EXPECT && step.target == null && step.title == null
+        step.action in NO_WINDOW_ACTIONS || step.bug != null ||
+            step.action == UiAction.EXPECT && step.target == null && step.title == null && !step.layout
 
     /** [source], the step as written, with what this run found for its refs, row indexes and names. */
     private fun portable(step: UiStep, source: JsonObject): JsonObject =
@@ -317,10 +318,10 @@ class UiSession(
         val shown = if (topOnly) windows.take(1) else windows
         val text = shown.joinToString("\n\n") { window ->
             val model = UiModel.build(window)
-            val text = UiSnapshotFormatter.format(header(window, model), model.root, { registry.refFor(it.component) },
-                budget.coerceAtLeast(1), withBounds)
+            val refOf = { node: UiNode -> registry.refFor(node.component) }
+            val text = UiSnapshotFormatter.format(header(window, model), model.root, refOf, budget.coerceAtLeast(1), withBounds)
             budget -= text.listedCount
-            text.text
+            text.text + UiLayout.summary(window, model.root, refOf, project).joinToString("") { "\n$it" }
         }
         val others = windows.drop(shown.size)
         if (others.isEmpty()) text else text + "\n\nalso showing: " + others.joinToString("; ") { describeWindow(it) }
@@ -419,6 +420,7 @@ class UiSession(
             UiAction.RUN -> editorSteps.run(step, actionComponent(), ::inplaceActive)
             UiAction.PERF -> ideSteps.perf(step)
             UiAction.TOOLWINDOW -> ideSteps.toolWindow(step)
+            UiAction.WINDOW -> windowStep(step)
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
             UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
         }
@@ -693,6 +695,47 @@ class UiSession(
         }
         UiSettle.barrier()
         return closed
+    }
+
+    /**
+     * Sizes the window that holds the target, the one whose title contains "title", or the topmost window: the Settings
+     * dialog when it shows, else the project frame.
+     */
+    private suspend fun windowStep(step: UiStep): String {
+        val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
+        val window = withContext(edtAny) {
+            when {
+                node != null -> node.component as? Window ?: SwingUtilities.getWindowAncestor(node.component)
+                step.title != null -> Window.getWindows().firstOrNull { it.isShowing && windowTitle(it)?.contains(step.title!!) == true }
+                    ?: throw UiStepFailure("no window titled \"${step.title}\"; showing: " +
+                        Window.getWindows().filter { it.isShowing }.mapNotNull(::windowTitle).joinToString { "\"$it\"" })
+                else -> scopeWindows().firstOrNull()
+            }
+        } ?: throw UiStepFailure("no window is showing")
+        return UiResize.window(window, step.width, step.height, step.maximize)
+    }
+
+    /**
+     * The layout lines of the topmost window, or only the controls under [target] that lie past an edge, for an expect
+     * of layout. Empty when every control shows whole.
+     */
+    private suspend fun layoutProblems(target: UiTarget?): List<String> {
+        val scope = target?.let { resolve(it, 0, requireEnabled = false) }
+        return withContext(edtAny) {
+            val refOf = { node: UiNode -> registry.refFor(node.component) }
+            if (scope != null) {
+                val window = scope.component as? Window ?: SwingUtilities.getWindowAncestor(scope.component)
+                val model = UiModel.build(window ?: scope.component)
+                val under = model.root.walk().firstOrNull { it.component === scope.component } ?: model.root
+                val cut = under.walk().filter { it.listed && (it.clip == UiClip.OUTSIDE || it.clip == UiClip.CLIPPED) }.toList()
+                if (cut.isEmpty()) emptyList()
+                else listOf(cut.joinToString("; ", prefix = "${cut.size} control(s) lie past an edge: ") { "${describe(it)} [${it.clip!!.label}]" } +
+                    "; " + UiLayout.unreachable(cut.first().component, project))
+            } else {
+                // The window in front, as a person checks it: the others may lie under it.
+                scopeWindows().take(1).flatMap { window -> UiModel.build(window).let { UiLayout.summary(window, it.root, refOf, project) } }
+            }
+        }
     }
 
     private suspend fun waitStep(step: UiStep): String {

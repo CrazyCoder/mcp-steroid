@@ -22,6 +22,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtil
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.wm.ex.ToolWindowEx
 import com.intellij.util.ui.UIUtil
 import com.jonnyzzz.mcpSteroid.execution.ExecutionManager
 import com.jonnyzzz.mcpSteroid.mcp.ContentItem
@@ -148,7 +149,13 @@ internal class UiIdeSteps(private val project: Project, private val taskId: Stri
         val wanted = step.id!!
         val started = TimeSource.Monotonic.markNow()
         while (withContext(edtAny) { toolWindowId(wanted) } == null && started.elapsedNow().inWholeMilliseconds < step.timeoutMs) delay(POLL_MS)
-        return showToolWindow(step, wanted)
+        val shown = showToolWindow(step, wanted)
+        if (step.width == null && step.height == null) return shown
+        val view = withContext(edtAny) {
+            val id = toolWindowId(wanted)!!
+            UiLayout.ToolWindowView(id, ToolWindowManager.getInstance(project).getToolWindow(id) as ToolWindowEx)
+        }
+        return shown + "; " + UiResize.toolWindow(view, step.width, step.height)
     }
 
     private fun toolWindowId(wanted: String): String? {

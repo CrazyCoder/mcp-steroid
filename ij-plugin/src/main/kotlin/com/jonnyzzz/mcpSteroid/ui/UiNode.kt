@@ -22,6 +22,10 @@ data class UiNode(
     val action: String? = null,
     /** Where a scroll pane keeps it out of view, or null when it is in view. */
     val offscreen: UiOffscreen? = null,
+    /** How much of it its panels and window cut, or null when it shows whole. */
+    val clip: UiClip? = null,
+    /** For a list, tree or table wider than its scroll pane shows: how much, as its rows are cut at the right. */
+    val rowsCut: String? = null,
 ) {
     /** Listed in a snapshot: it shows something, or an agent can act on it. */
     val listed: Boolean get() = interactive || !name.isNullOrBlank() || text.isNotEmpty() || !tooltip.isNullOrBlank()

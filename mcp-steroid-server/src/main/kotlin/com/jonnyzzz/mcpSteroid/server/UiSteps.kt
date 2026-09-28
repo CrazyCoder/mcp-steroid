@@ -31,6 +31,7 @@ enum class UiAction(val wire: String) {
     GET("get"),
     SET("set"),
     TOOLWINDOW("toolwindow"),
+    WINDOW("window"),
     WRITE("write"),
     PERF("perf"),
     CODE("code"),
@@ -153,6 +154,14 @@ data class UiStep(
     val tab: String? = null,
     /** On a toolwindow step: hide the tool window instead of showing it. */
     val hide: Boolean = false,
+    /** On a toolwindow or window step: the width in logical pixels, or "fit". */
+    val width: String? = null,
+    /** On a toolwindow or window step: the height in logical pixels, or "fit". */
+    val height: String? = null,
+    /** On a window step: true fills the screen, false gives the window back its size before. */
+    val maximize: Boolean? = null,
+    /** On an expect step: no control in the window, or under the target, lies past an edge. */
+    val layout: Boolean = false,
     /** On a screenshot step: the picture's file name, without folder or extension. Required there. */
     val save: String? = null,
     /**
@@ -189,7 +198,7 @@ object UiSteps {
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
-        "editor", "editors", "log", "memory", "below",
+        "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout",
     )
     val SIDES = setOf("frontend", "backend")
     /**
@@ -201,6 +210,9 @@ object UiSteps {
     val LOG_LEVELS = setOf("trace", "debug", "all", "default")
     private val EDITOR_STATES = setOf(UiExpectState.VISIBLE, UiExpectState.FOCUSED, UiExpectState.HIDDEN)
     private val SAVE_NAME = Regex("[A-Za-z0-9._-]{1,80}")
+    const val FIT = "fit"
+    /** The sizes a toolwindow or window step takes, in logical pixels. */
+    val SIZES = 50..20_000
     internal val BUTTONS = setOf("left", "right", "middle")
     /** Actions whose "text" is what they enter, look for in the editor or write, not a target. */
     private val TEXT_IS_INPUT = setOf(UiAction.TYPE, UiAction.FILL, UiAction.GOTO, UiAction.WRITE)
@@ -320,6 +332,10 @@ object UiSteps {
             field = obj.string("field"),
             tab = obj.string("tab"),
             hide = obj.boolean("hide") ?: false,
+            width = obj.string("width"),
+            height = obj.string("height"),
+            maximize = obj.boolean("maximize"),
+            layout = obj.boolean("layout") ?: false,
             save = obj.string("save"),
             side = obj.string("side"),
             command = obj.string("command"),
@@ -364,6 +380,18 @@ object UiSteps {
         if (step.modal != null) require(step.action == UiAction.CODE) { "modal goes with code, not $action" }
         step.side?.let { require(it in SIDES) { "unknown side '$it'; use frontend or backend" } }
         if (step.tab != null || step.hide) require(step.action == UiAction.TOOLWINDOW) { "tab and hide go with toolwindow, not $action" }
+        for ((field, size) in listOf("width" to step.width, "height" to step.height)) {
+            if (size == null) continue
+            require(step.action == UiAction.TOOLWINDOW || step.action == UiAction.WINDOW) { "$field goes with toolwindow and window, not $action" }
+            require(size == FIT || size.toIntOrNull()?.let { it in SIZES } == true) {
+                "$field is \"fit\" or a size in logical pixels from ${SIZES.first} to ${SIZES.last}, was $size"
+            }
+        }
+        if (step.maximize != null) {
+            require(step.action == UiAction.WINDOW) { "maximize goes with window, not $action" }
+            require(step.width == null && step.height == null) { "maximize fills the screen; drop width and height" }
+        }
+        if (step.layout) require(step.action == UiAction.EXPECT) { "layout goes with expect, not $action" }
         step.save?.let {
             require(step.action == UiAction.SCREENSHOT) { "save goes with screenshot, not $action" }
             require(SAVE_NAME.matches(it) && !it.startsWith(".")) { "save is a plain file name of letters, digits, '.', '_' and '-', such as \"settings-appearance\"" }
@@ -423,6 +451,7 @@ object UiSteps {
             UiAction.TOOLWINDOW -> {
                 require(!step.id.isNullOrBlank()) { "toolwindow needs the tool window's id, such as \"Project\" or \"Problems View\"" }
                 require(!(step.hide && step.tab != null)) { "hide a tool window or select its tab, not both" }
+                require(!(step.hide && (step.width != null || step.height != null))) { "hide a tool window or size it, not both" }
             }
             UiAction.WRITE -> {
                 require(!step.file.isNullOrBlank()) { "write needs a file" }
@@ -445,13 +474,14 @@ object UiSteps {
      */
     private fun validateExpect(step: UiStep) {
         require(!step.memory) { "expect takes a memory figure: one of ${MEMORY_METRICS.joinToString()}" }
+        // A layout check takes a target as its scope, not as a second subject.
         val subjects = listOfNotNull(
-            step.target?.let { "a target" }, step.title?.let { "title" }, step.file?.let { "file" },
+            step.target?.takeIf { !step.layout }?.let { "a target" }, "layout".takeIf { step.layout }, step.title?.let { "title" }, step.file?.let { "file" },
             step.notification?.let { "notification" }, step.banner?.let { "banner" }, step.error?.let { "error" },
             step.editor?.let { "editor" }, step.log?.let { "log" }, step.memoryMetric?.let { "memory" },
         )
         require(subjects.size == 1) {
-            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, editor, notification, banner, error, log or memory"
+            if (subjects.isEmpty()) "expect needs one subject: a target, title, file, editor, notification, banner, error, log, memory or layout"
             else "expect checks one subject, not ${subjects.joinToString(" and ")}"
         }
         if (step.memoryMetric == null) require(step.below == null) { "below goes with memory" }
@@ -466,6 +496,9 @@ object UiSteps {
         require(!(step.soft && step.bug != null)) { "a bug check stops the run when it fails, so it cannot be soft" }
         val textCheck = step.value != null || step.contains != null || step.matches != null
         when {
+            step.layout -> require(step.state == null && !textCheck && step.caret == null && step.line == null && step.row == null && step.index == null) {
+                "layout takes a target as its scope, and nothing else"
+            }
             step.target != null -> {
                 require(step.caret == null && step.line == null) { "caret and line go with a file" }
                 val rowNamed = step.row != null || step.index != null

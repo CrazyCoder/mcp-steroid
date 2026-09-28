@@ -46,6 +46,8 @@ internal class UiExpect(
     private val notifications: UiNotificationLog,
     private val match: suspend (UiTarget) -> UiMatch,
     private val describe: (UiNode) -> String,
+    /** The controls that lie past an edge, in the windows in scope or under a target, as layout lines. */
+    private val layout: suspend (UiTarget?) -> List<String>,
 ) {
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
     private val editors = UiEditors(project)
@@ -70,6 +72,9 @@ internal class UiExpect(
     }
 
     private suspend fun check(step: UiStep): Check = when {
+        step.layout -> layout(step.target).let { problems ->
+            Check(problems.isEmpty(), "every control ${step.target?.let { "under $it " }.orEmpty()}showing whole", problems.joinToString("\n").ifEmpty { "every control shows whole" })
+        }
         step.target != null -> control(step, step.target!!)
         step.title != null -> window(step.title!!, step.state)
         step.file != null -> file(step)

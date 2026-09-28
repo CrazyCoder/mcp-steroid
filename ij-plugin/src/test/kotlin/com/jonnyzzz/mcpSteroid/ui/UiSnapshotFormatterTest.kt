@@ -23,7 +23,24 @@ class UiSnapshotFormatterTest {
         label: String? = null,
         action: String? = null,
         offscreen: UiOffscreen? = null,
-    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids, rows, label, action, offscreen)
+        clip: UiClip? = null,
+        rowsCut: String? = null,
+    ) = UiNode(dummy, cls, name, text, null, value, states, interactive, kids, rows, label, action, offscreen, clip, rowsCut)
+
+    @Test
+    fun `a cut control carries its mark after its states, and a tree too wide for its view says so above its rows`() {
+        val tree = node("JPanel", kids = listOf(
+            node("ActionButton", name = "Select Opened File", interactive = true, action = "SelectInProjectView", clip = UiClip.OUTSIDE),
+            node("JLabel", name = "4 spaces", states = setOf(UiState.DISABLED), clip = UiClip.TRUNCATED),
+            node("JTree", name = "Project structure tree", interactive = true, rowsCut = "rows need 452 px and the view shows 84 px, so they are cut at the right",
+                rows = UiRowsView(listOf(UiRow(0, "mcp", 0, true, false, emptyList())), 1)),
+        ))
+        var n = 0
+        val out = UiSnapshotFormatter.format(header, tree, { "e${++n}" }, maxNodes = 400, withBounds = false).text
+        assertTrue(out, out.contains("- ActionButton \"Select Opened File\" [ref=e1] action=SelectInProjectView [outside]\n"))
+        assertTrue(out, out.contains("- JLabel \"4 spaces\" [ref=e2] [disabled] [truncated]\n"))
+        assertTrue(out, out.contains("- JTree \"Project structure tree\" [ref=e3]\n  rows need 452 px and the view shows 84 px, so they are cut at the right\n  #0 mcp"))
+    }
 
     @Test
     fun `a long run of controls out of view is counted, a short one is listed`() {

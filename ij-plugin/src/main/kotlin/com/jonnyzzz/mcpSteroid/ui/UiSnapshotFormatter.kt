@@ -16,8 +16,9 @@ data class UiSnapshotText(val text: String, val listedCount: Int, val cut: Int)
  * The snapshot text: a header per window, then one line per listed component, indented by depth. An
  * unlisted component with one child adds no line, so wrapper panels do not deepen the tree, and a leaf that
  * only repeats its parent's name (a tab's title, a separator's label) adds none either. A list, tree or table
- * lists its rows in view under its line, one per row, by index. The controls of a long scroll pane's content that
- * are scrolled out of view are counted on one line. Call on the EDT when [format] is asked for bounds.
+ * lists its rows in view under its line, one per row, by index, after a line that says so when they are wider than
+ * its view. A control that its panels cut is marked [outside], [clipped] or [truncated] (see [UiClip]). The controls
+ * of a long scroll pane's content that are scrolled out of view are counted on one line. Call on the EDT when [format] is asked for bounds.
  */
 object UiSnapshotFormatter {
     private const val MAX_TEXT = 80
@@ -52,6 +53,7 @@ object UiSnapshotFormatter {
             }
             listed++
             out.append('\n').append("  ".repeat(depth)).append("- ").append(line(node, refOf, withBounds))
+            node.rowsCut?.let { out.append('\n').append("  ".repeat(depth + 1)).append(it) }
             node.rows?.let { rows(out, it, depth + 1) }
             val hidden = node.children.filter { it.offscreen != null }
             val hiddenListed = hidden.sumOf { kid -> kid.walk().count { it.listed } }
@@ -106,6 +108,7 @@ object UiSnapshotFormatter {
         if (node.listed) append(" [ref=").append(refOf(node)).append(']')
         node.action?.let { append(" action=").append(it) }
         node.states.sortedBy { it.ordinal }.forEach { append(" [").append(it.label).append(']') }
+        node.clip?.let { append(" [").append(it.label).append(']') }
         node.value?.let { append(" value=\"").append(cut(it, MAX_TEXT)).append('"') }
         // The rows are listed under the line, so the painted text would only repeat them.
         val texts = if (node.rows != null) emptyList() else node.text.filter { it != node.name && it != node.value }

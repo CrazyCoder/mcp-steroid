@@ -85,6 +85,39 @@ coordinates with `steroid_input` for a control that has a ref: a ref needs no Hi
 still finds the control after a resize or scroll, and the step reports what it caused. Keep coordinates
 for what has no ref: a web view (JCEF), a canvas, a drag.
 
+## Notice and fix a cramped layout
+
+A tool window dragged narrow or a small dialog hides controls from a person and from steps alike. The
+snapshot marks them:
+
+- `[outside]`: the control lies past the edge of its panel or window, so no click reaches it. A Project
+  view narrower than its header puts its toolbar buttons there.
+- `[clipped]`: part of the control is cut. A click presses the part that shows.
+- `[truncated]`: a label or button shows its text cut to its width.
+- `rows need 452 px and the view shows 84 px, so they are cut at the right`, above a tree's or list's rows.
+
+Each window ends with a `layout:` line for each tool window narrower than its header or cutting controls,
+and for the other cut controls, with the step that makes room:
+
+```
+layout: the Project tool window is 90 px wide and its header needs 258 px: 4 controls are cut (3 past an edge, 1 clipped: e39, e40, e41, e42); {"action":"toolwindow","id":"Project","width":"fit"} makes room
+```
+
+A click on an `[outside]` control fails with the same step, and with a `run` step for its action when it
+has one. Make room, then act:
+
+- `{"action":"toolwindow","id":"Project","width":"fit"}` widens a side tool window to show its header
+  and its content, within 40% of the IDE window; a number sets the width in logical pixels, and a bottom
+  tool window takes `height`.
+- `{"action":"window","maximize":true}` fills the screen with the IDE window, and `"maximize":false`
+  restores it. `{"action":"window","width":1800,"height":1200}` sets a size.
+- `{"action":"window"}` on a dialog or a separate window such as Settings grows it to its preferred size,
+  which shows its content. A target or `title` picks the window; without one, the topmost.
+
+A window stays on its screen and above its minimum size; the step reports the size it had, the size it
+got and the screen's usable area. `{"action":"expect","layout":true}` checks that nothing in the topmost
+window is `[outside]` or `[clipped]`, and with a target, nothing under it.
+
 ## Find the code and plugin behind a control
 
 An `inspect` step tells where a control comes from, as the IDE's UI Inspector (Ctrl+Alt+Click in internal
