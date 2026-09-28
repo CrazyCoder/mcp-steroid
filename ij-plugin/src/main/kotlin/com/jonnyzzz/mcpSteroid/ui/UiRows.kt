@@ -289,6 +289,8 @@ object UiRows {
         // A checkbox cell shows no text, only its state.
         if (shown is AbstractButton && shown.text.isNullOrBlank()) return if (shown.isSelected) "[x]" else "[ ]"
         if (shown is JLabel && shown.text.isNullOrBlank() && shown.icon != null) return null
+        // An editor-based cell shows its text, empty or not; its value is a code fragment whose toString names a file.
+        if (shown is EditorTextField) return UiComponentFacts.clean(shown.text)
         return shown?.let(::text) ?: table.getValueAt(row, column)?.toString().orEmpty()
     }
 
