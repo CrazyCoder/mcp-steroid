@@ -134,6 +134,15 @@ object UiRows {
         }
     }
 
+    /**
+     * How a step's report names row [index] of [c], found by [wanted]: by its path when [wanted] is a tree path, as the
+     * row's own text can repeat its group's, such as the Inspections tree's "Nullability problems"; by its text otherwise.
+     */
+    fun named(c: Component, rows: List<String>, index: Int, wanted: String?): String {
+        val tree = treeOf(c)
+        return if (tree != null && wanted != null && PATH_SEPARATOR in wanted) treePath(tree, index) else rows[index]
+    }
+
     /** Selects row [index] of [c] as a user's selection does, without clicking it, and scrolls it into view. */
     fun select(c: Component, index: Int) {
         when (c) {

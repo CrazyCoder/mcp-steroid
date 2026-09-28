@@ -68,6 +68,17 @@ class UiRowsTest {
     }
 
     @Test
+    fun `a row asked for by its path is named by its path, and by its text otherwise`() = onEdt {
+        val table = inspectionsLike()
+        UiRows.treeOf(table)!!.apply { expandRow(0); expandRow(1) }
+        val rows = UiRows.rows(table)!!
+        val index = UiRows.find(table, rows, "Java > Probable bugs > Nullability problems")
+        assertEquals("Java > Probable bugs > Nullability problems", UiRows.named(table, rows, index, "Java > Probable bugs > Nullability problems"))
+        assertEquals("Nullability problems", UiRows.named(table, rows, index, "Nullability"))
+        assertEquals("Nullability problems", UiRows.named(table, rows, index, null))
+    }
+
+    @Test
     fun `a cell that paints only an icon is left out of the row`() = onEdt {
         val model = javax.swing.table.DefaultTableModel(arrayOf(arrayOf<Any>("Lossy encoding", com.intellij.util.ui.EmptyIcon.ICON_16, "x")), arrayOf("n", "i", "v"))
         val table = JTable(model)

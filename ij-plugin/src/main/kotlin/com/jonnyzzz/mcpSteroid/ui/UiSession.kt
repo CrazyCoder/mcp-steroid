@@ -681,10 +681,8 @@ class UiSession(
      * a list that acts on a click, such as Find Action's results, and a combo box would need its popup opened.
      */
     private suspend fun selectStep(given: UiStep): String {
-        // A JetBrains Client knows neither the backend's inspections nor its Inspections page: the backend selects.
-        given.inspection?.let { name ->
-            if (withContext(edtAny) { localInspection(name) } == null) backendInspectionSelect(name)?.let { return it }
-        }
+        // A JetBrains Client's Inspections page is the backend's, whose profile names the rows: the backend selects.
+        given.inspection?.let { name -> backendInspectionSelect(name)?.let { return it } }
         val step = given.inspection?.let { given.copy(target = UiTarget(cls = INSPECTIONS_TREE), row = inspectionPath(it), inspection = null) } ?: given
         val found = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
         // An open combo box popup's list shows the combo box's items: selecting in the list alone would not pick one.
@@ -721,7 +719,7 @@ class UiSession(
             val index = step.index ?: withContext(edtAny) { UiRows.find(c, rows, wanted!!) }
             if (index in rows.indices) {
                 if (step.index != null && current === step) withContext(edtAny) { UiPortable.stableRow(c, rows, index) }?.let { portableRow = it }
-                return RowPick(index, rows[index], emptyList())
+                return RowPick(index, withContext(edtAny) { UiRows.named(c, rows, index, wanted) }, emptyList())
             }
             // A tree table's rows are its tree's, so the tree's row found is the table's row too.
             val tree = withContext(edtAny) { UiRows.treeOf(c) }
@@ -1341,15 +1339,15 @@ class UiSession(
 
     /**
      * The row path of inspection [shortName] in the Inspections tree: its groups, then its display name. A JetBrains
-     * Client's profile lacks the backend's inspections, and its Inspections page is the backend's: the backend selects
-     * the row there, and its report names the path.
+     * Client's Inspections page is the backend's, and the Client's own profile may lack the inspection or name its
+     * groups otherwise: the backend selects the row there, and its report names the path.
      */
     private suspend fun inspectionPath(shortName: String): String {
-        val local = withContext(edtAny) { localInspection(shortName) }
-        if (local != null) return local
-        val report = backendInspectionSelect(shortName)
+        backendInspectionSelect(shortName)?.let { report ->
+            return SELECTED_PATH.find(report)?.groupValues?.get(1) ?: throw UiStepFailure("the backend selected the inspection but named no row: $report")
+        }
+        return withContext(edtAny) { localInspection(shortName) }
             ?: throw UiStepFailure("no inspection has the short name \"$shortName\"; a get of an inspection lists short names as it finds them")
-        return SELECTED_PATH.find(report)?.groupValues?.get(1) ?: throw UiStepFailure("the backend selected the inspection but named no row: $report")
     }
 
     /** The row path of inspection [shortName] from this side's profile, or null when it has none. EDT. */
