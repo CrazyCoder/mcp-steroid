@@ -138,7 +138,7 @@ internal class UiCodeChanges(private val project: Project, parent: Disposable) {
         }
     }
 
-    /** The files the step changed so far, and the restores that put each back as the session found it. */
+    /** The files the step changed so far. */
     suspend fun stepChanges(): List<FileChange> = changes(synchronized(this) { step.toMap() })
 
     /** The files the run changed since its checkpoint. */

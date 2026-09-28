@@ -356,14 +356,15 @@ client sends a step to the Remote Development backend when:
 - the step says `"side": "backend"`, as a step on a window the backend draws needs: a host Settings page's
   controls, the Commit tool window, a refactoring dialog; or
 - the step needs the project itself, which only the backend holds, and names no side: `write`, `code`,
-  `goto`, an `expect` on a `file` or a `banner`, `get` or `set` of an `inspection`, and `get` of a `file`. The file `goto` opens on the backend
+  `goto`, an `expect` on a `file`, a `banner` or a `console`, `get` or `set` of an `inspection`, and `get` of a
+  `file`, the `builds` or a `console`. The file `goto` opens on the backend
   shows in the client's editor, which then has the focus, so a `run` after it acts on that file. The
   `goto` fails when the client shows no editor of the file.
 
 Everything else runs in the client: its windows, Settings dialog, tool windows and pictures. A step on the
 backend reports `on the backend:`, and the verdict covers both sides. A relative scenario path resolves against
 the backend's project folder. A client snapshot says so on a window whose controls the backend draws, such
-as a Rename dialog: its steps need `"side": "backend"`. Three things differ by side:
+as a Rename dialog: its steps need `"side": "backend"`. These things differ by side:
 
 - `get` and `set` of an `option`, `registry` or `advanced` setting reach the side the step runs on, and both
   sides keep their own values. Turning line numbers off in the client leaves the backend's Settings page
@@ -377,6 +378,9 @@ as a Rename dialog: its steps need `"side": "backend"`. Three things differ by s
   from a navigation until its tab is clicked.
 - A backend endpoint refuses a step with `"side": "frontend"`, because it cannot reach the client.
 - A restore runs on the side its step ran on: the backend reports the restores of a step the client sent it.
+- The steps' code changes are not tracked, so there is no `code changes:` summary and no `changed` or `diff`
+  check: the client holds no project files, and the backend runs each step it is sent as a call of its own.
+  Check a file's text with an `expect` on `file`.
 
 See [Split Mode](mcp-steroid://skill/split-mode) for what each side draws.
 

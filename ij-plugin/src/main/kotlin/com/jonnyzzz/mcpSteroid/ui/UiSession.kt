@@ -194,7 +194,7 @@ class UiSession(
         val notifications = UiNotificationLog(project, disposable)
         val tracker = codeChanges()
         val expect = UiExpect(project, startedMs, notifications, ::matchForExpect, ::describe, ::layoutProblems) {
-            tracker?.runChanges() ?: throw UiStepFailure("this side holds no project files; check changes with \"side\":\"backend\"")
+            tracker?.runChanges() ?: throw UiStepFailure(NO_CHANGES)
         }
         try {
             for ((i, step) in steps.withIndex()) {
@@ -327,15 +327,16 @@ class UiSession(
     /**
      * Whether a JetBrains Client sends [step] to the backend: its `side` when it names one, else the steps that need the
      * project itself, which only the backend holds: files, the editor at a file, editor banners, scripts, the
-     * inspection profile, builds and run consoles.
+     * inspection profile, builds and run consoles. The code changes stay: the backend runs each step it is sent as a
+     * call of its own, which knows none of the changes before it.
      */
     private fun runsOnBackend(step: UiStep): Boolean = when (step.side) {
         "backend" -> true
         "frontend" -> false
         else -> step.action in BACKEND_HOME ||
-            step.action == UiAction.EXPECT && (step.file != null || step.banner != null || step.console != null || step.changed != null || step.diff != null) ||
+            step.action == UiAction.EXPECT && (step.file != null && step.diff == null || step.banner != null || step.console != null) ||
             (step.action == UiAction.GET || step.action == UiAction.SET) && step.inspection != null ||
-            step.action == UiAction.GET && (step.file != null || step.builds || step.changes || step.console != null)
+            step.action == UiAction.GET && (step.file != null || step.builds || step.console != null)
     }
 
     /**
@@ -442,7 +443,7 @@ class UiSession(
             step.memory -> IdeMemory.getInstanceOrNull()?.report() ?: throw UiStepFailure("the IDE application is not available")
             step.builds -> IdeBuilds.getInstanceOrNull()?.recent(BUILDS_LISTED)?.let(IdeBuilds::renderRecent) ?: throw UiStepFailure("the IDE application is not available")
             step.changes -> codeChanges()?.runChanges()?.let { if (it.isEmpty()) "the run changed no project file" else UiCodeChanges.render(it, maxLines = Int.MAX_VALUE) }
-                ?: throw UiStepFailure("this side holds no project files; get the changes with \"side\":\"backend\"")
+                ?: throw UiStepFailure(NO_CHANGES)
             step.console != null -> IdeRuns.getInstanceOrNull()?.report(project.name, step.console!!, step.lines ?: UiSteps.DEFAULT_CONSOLE_LINES)
                 ?: throw UiStepFailure("the IDE application is not available")
             step.file != null -> editors.facts(step.file!!)
@@ -1307,6 +1308,8 @@ class UiSession(
         private const val BUILDS_LISTED = 10
         private const val SUBMENU_WAIT_MS = 2_000L
         private const val CLOSE_WAIT_MS = 3_000L
+        private const val NO_CHANGES = "in Split Mode the steps' code changes are not tracked: the JetBrains Client holds no project files, " +
+            "and the backend runs each step it is sent as a call of its own; check a file's text with {\"action\":\"expect\",\"file\":\"...\",\"contains\":\"...\"}"
         private const val ON_BACKEND = "on the backend: "
         private const val LUX_PREFIX = "Lux"
         private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")

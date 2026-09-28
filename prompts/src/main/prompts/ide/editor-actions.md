@@ -84,7 +84,8 @@ changed src/main/java/demo/App.java (+5 -1)
 
 `{"action":"get","changes":true}` gives the whole diff when the summary is cut. The diff covers the edits the IDE
 makes: refactorings, generators, typing, and files created, deleted or moved. It leaves out build output, `.idea`,
-and changes made outside the IDE. In Split Mode the backend tracks them; a JetBrains Client alone reports none.
+and changes made outside the IDE. In Split Mode the steps' changes are not tracked: check a file's text with an
+`expect` on `file` instead.
 
 To take a change back, run `$Undo`: the report names the command it undoes, such as `"Undo Typing"`. With the caret
 away from the change, the first Undo only brings the caret back to it, and the report says so; run it again to undo.

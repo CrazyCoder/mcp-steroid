@@ -156,8 +156,8 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           the topmost one, to the execution folder, for a visual review
         Any step takes "intent": what it is for, which its report echoes and a repair of the step follows. In
         Split Mode any step takes "side":"backend" to run on the Remote Development backend from a JetBrains
-        Client call; write, code, goto, file, banner, changed, diff and console expects, inspection settings,
-        and gets of files, builds, consoles and changes go there by default.
+        Client call; write, code, goto, file, banner and console expects, inspection settings, and gets of
+        files, builds and consoles go there by default. Split Mode does not track the steps' code changes.
 
         Example: [{"action":"select","name":"Settings categories","row":"Editor"},
                   {"action":"check","name":"Show line numbers"},{"action":"click","name":"OK"}]
