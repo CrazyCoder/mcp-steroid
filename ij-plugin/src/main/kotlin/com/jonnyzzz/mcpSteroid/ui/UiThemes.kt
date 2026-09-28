@@ -13,7 +13,9 @@ import com.jonnyzzz.mcpSteroid.server.UiSteps
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.awt.Dialog
 import java.awt.Window
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.TimeSource
 
 /**
@@ -67,7 +69,7 @@ object UiThemes {
         if (wanted.equals(UiSteps.THEME_SYNC, ignoreCase = true)) {
             if (syncing) return UiConfig.Outcome("the theme follows the OS already ($beforeName)")
             if (!withContext(edtAny) { laf.autodetectSupported }) throw UiStepFailure("this OS gives the IDE no light or dark mode to follow")
-            withContext(edtAny) {
+            withContext(writeSafe()) {
                 laf.autodetect = true
                 laf.updateUI()
             }
@@ -81,7 +83,7 @@ object UiThemes {
         }
         if (info.isRestartRequired()) throw UiStepFailure("${info.name} needs an IDE restart, which a step does not do")
         if (info.id == beforeId && !syncing) return UiConfig.Outcome("the theme is ${info.name} already")
-        withContext(edtAny) {
+        withContext(writeSafe()) {
             // A theme set while following the OS would be switched back at the OS's next change.
             if (syncing) laf.autodetect = false
             QuickChangeLookAndFeel.switchLafAndUpdateUI(laf, info, false)
@@ -103,6 +105,18 @@ object UiThemes {
         }
         withContext(edtAny) { Window.getWindows().filter { it.isShowing }.forEach { it.repaint() } }
         UiSettle.settle(quietMs = QUIET_MS, maxMs = left().coerceAtLeast(QUIET_MS))
+    }
+
+    /**
+     * The EDT context a theme switch runs in: the modality of the topmost modal dialog, or none. A switch also switches
+     * the editor color scheme, a model change, which the platform refuses in the "any" modality the other steps read in.
+     */
+    private suspend fun writeSafe(): CoroutineContext {
+        val modality = withContext(edtAny) {
+            Window.getWindows().lastOrNull { it.isShowing && it is Dialog && it.isModal }?.let(ModalityState::stateForComponent)
+                ?: ModalityState.nonModal()
+        }
+        return Dispatchers.EDT + modality.asContextElement()
     }
 
     /** The name of the plugin that installed [info], or null for a theme the IDE bundles. */
