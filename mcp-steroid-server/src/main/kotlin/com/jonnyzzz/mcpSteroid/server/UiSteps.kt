@@ -369,9 +369,9 @@ object UiSteps {
             below = obj.long("below"),
             builds = obj.boolean("builds") ?: false,
             notifications = obj.boolean("notifications") ?: false,
-            // true for every open file, "" as well; a path for one file.
+            // true for every open file, which the step holds as ""; a path for one file.
             problems = (obj["problems"] as? JsonPrimitive)?.let { p ->
-                if (p.isString) p.content
+                if (p.isString) p.content.ifBlank { throw IllegalArgumentException("problems is true, for every open file, or a file's path") }
                 else if (p.booleanOrNull == true) ""
                 else throw IllegalArgumentException("problems is true, for every open file, or a file's path")
             },

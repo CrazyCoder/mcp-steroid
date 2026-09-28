@@ -309,6 +309,7 @@ class UiStepsTest {
         val file = UiSteps.parse("""[{"action":"get","problems":"src/a.ts","severity":"warning"}]""").single()
         assertEquals("src/a.ts" to "warning", file.problems to file.severity)
         assertTrue(fails("""[{"action":"get","problems":false}]""").contains("problems is true, for every open file, or a file's path"))
+        assertTrue(fails("""[{"action":"get","problems":" "}]""").contains("problems is true, for every open file, or a file's path"))
         assertTrue(fails("""[{"action":"get","problems":true,"severity":"fatal"}]""").contains("severity is one of error, warning, weak_warning, info"))
         assertTrue(fails("""[{"action":"get","builds":true,"severity":"warning"}]""").contains("severity goes with a get of problems"))
         assertTrue(fails("""[{"action":"get","problems":true,"notifications":true}]""").contains("exactly one of"))

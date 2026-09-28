@@ -248,7 +248,9 @@ window opened. A set reports the value before and after, and a scenario's replay
 - `{"action":"get","problems":"src/A.kt"}` lists the errors the editor highlights in an open file as
   `path:line:column: SEVERITY text`, and `"problems":true` in every open file. `"severity":"warning"`,
   `"weak_warning"` or `"info"` adds the lower levels. The problems are what the editor's analysis found the last
-  time it ran; a closed file has none, so the step says to open it. In Split Mode it runs on the backend. An
+  time it ran. The editor analyzes a file while its tab shows, so the step waits up to its timeout for those
+  files and names any file not analyzed to the end, such as a tab behind another. A closed file has no
+  problems, so the step says to open it. In Split Mode it runs on the backend. An
   `EDITOR ERRORS` notice in front of a tool result counts the errors per open file when one is new, with the
   first of each.
 - `{"action":"get","notifications":true}` lists the notifications the IDE showed, the newest first, with their
