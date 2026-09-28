@@ -98,6 +98,18 @@ class UiCaptureTest {
     }
 
     @Test
+    fun `a mark without a number is outlined with no badge, and its label sits beside the outline`() {
+        val mark = Rectangle(200, 100, 80, 20)
+        val c = UiCapture.highlight(canvas(400, 300), listOf(UiCapture.Mark(1, mark, null, numbered = false)))
+        // Where a numbered mark's badge goes, left of the outline and level with its middle: nothing is drawn.
+        assertEquals(Color.WHITE.rgb, c.image.getRGB(200 - 100 - 13, 110 - 50))
+        val numbered = UiCapture.markArea(canvas(400, 300), listOf(UiCapture.Mark(1, mark, "Turn this on")))
+        val bare = UiCapture.markArea(canvas(400, 300), listOf(UiCapture.Mark(1, mark, "Turn this on", numbered = false)))
+        assertTrue("no badge left of the outline: $bare", bare.x > numbered.x)
+        assertTrue("the label still widens the area: $bare", bare.x + bare.width > mark.x + mark.width + 20)
+    }
+
+    @Test
     fun `a pointer mark draws an arrow at the point, not a box`() {
         val c = UiCapture.highlight(canvas(400, 300), listOf(UiCapture.Mark(1, Rectangle(200, 100, 1, 1), null, pointer = true)))
         // The tip is at (200, 100) on screen, (100, 50) in the picture: the arrow's body runs down and right of it.

@@ -190,6 +190,7 @@
           {"type": "object", "additionalProperties": false, "required": ["toolwindow"], "properties": {"toolwindow": {"type": "string", "minLength": 1}}}
         ]},
         "fit": {"type": "boolean", "description": "On a screenshot: make room for content the picture would show cut, and put the sizes back afterwards."},
+        "numbers": {"type": "boolean", "description": "On a screenshot: number the highlights, or outline them only; without it, several are numbered and a single one is not."},
         "proportion": {"type": "number", "minimum": 0, "maximum": 1, "description": "On a splitter: the first pane's share, 0.05 to 0.95; a restore by key takes any saved share."},
         "size": {"anyOf": [{"const": "fit"}, {"type": "integer", "minimum": 0, "maximum": 20000}], "description": "On a splitter: the pane's size in logical pixels, or fit."},
         "key": {"type": "string", "minLength": 1, "description": "On a splitter restore: the key a JBSplitter saves its proportion under."},

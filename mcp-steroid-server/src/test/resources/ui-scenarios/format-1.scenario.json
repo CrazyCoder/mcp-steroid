@@ -95,6 +95,7 @@
     {"action": "click", "class": "EditorComponentImpl", "button": "right", "symbol": "parse"},
     {"action": "screenshot", "out": "pictures/code.png", "highlight": [{"lines": "20-27", "file": "src/a.ts"}, {"symbol": "parse", "nth": 1}, {"click": true, "label": "right-click"}], "crop": "highlights"},
     {"action": "screenshot", "out": "pictures/inspection.png", "highlight": [{"inspection": "NullableProblems"}], "fit": true},
+    {"action": "screenshot", "out": "pictures/outlined.png", "highlight": ["breadcrumb", {"name": "Show line numbers"}], "numbers": false},
     {"action": "screenshot", "out": "pictures/run.png", "highlight": [{"console": "App", "contains": "error"}], "crop": {"toolwindow": "Run"}},
     {"action": "fill", "class": "TreeTable", "row": "Hard wrap at:", "text": "90"},
     {"action": "expect", "class": "TreeTable", "row": "Hard wrap at:", "value": "90"},

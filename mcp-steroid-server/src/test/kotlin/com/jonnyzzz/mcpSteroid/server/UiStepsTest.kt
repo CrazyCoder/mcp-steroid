@@ -91,6 +91,14 @@ class UiStepsTest {
     }
 
     @Test
+    fun `numbers are optional on a screenshot`() {
+        assertEquals(false, UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"name":"a"}],"numbers":false}]""").single().numbers)
+        assertNull(UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","highlight":[{"name":"a"}]}]""").single().numbers)
+        assertMentions(fails("""[{"action":"screenshot","out":"C:/a.png","numbers":true}]"""), "highlight")
+        assertMentions(fails("""[{"action":"click","name":"a","numbers":false}]"""), "screenshot")
+    }
+
+    @Test
     fun `a screenshot crops to a tool window and fits`() {
         val s = UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","crop":{"toolwindow":"Run"},"fit":true}]""").single()
         assertEquals(UiCrop.ToolWindow("Run"), s.crop)

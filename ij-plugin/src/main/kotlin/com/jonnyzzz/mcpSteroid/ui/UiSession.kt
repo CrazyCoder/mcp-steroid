@@ -1109,7 +1109,7 @@ class UiSession(
 
     /**
      * Saves a picture of the window that holds the target, or of the topmost window, with the popups open above it:
-     * to `out`, or as `<save>.png` in the call's execution folder. The highlights are outlined and numbered, each
+     * to `out`, or as `<save>.png` in the call's execution folder. The highlights are outlined, numbered when there are several, each
      * scrolled into the middle of its view first when it is out of view, and the crop cuts the picture to the
      * Settings page, the highlights or a control. `<name>.json` beside it records what makes two pictures of the same
      * state differ: the window's size, the scale, the theme, the editor font, the IDE build and the crop. A picture
@@ -1132,7 +1132,9 @@ class UiSession(
         UiSettle.settle()
         val (canvas, facts, line) = withContext(edtAny) {
             if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
-            val marks = highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label, h.pointer) }
+            // Numbers give steps an order: several highlights are numbered, a single one is only outlined, unless asked.
+            val numbered = step.numbers ?: (highlights.size > 1)
+            val marks = highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label, h.pointer, numbered) }
             val obstacles = if (marks.isEmpty()) emptyList() else textObstacles(window, highlights)
             // A picture of code shows the code, not where the caret happens to be.
             val codeEditors = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct()
@@ -1176,7 +1178,9 @@ class UiSession(
             val canvas = area?.let { UiCapture.crop(painted, UiCapture.cropArea(it, step.margin ?: UiSteps.DEFAULT_MARGIN, painted.bounds)) } ?: painted
             val facts = UiPictureFacts.of(window)
             val what = listOfNotNull(
-                highlights.takeIf { it.isNotEmpty() }?.withIndex()?.joinToString(", ", prefix = "highlights: ") { (i, h) -> "${i + 1} ${h.what}" },
+                highlights.takeIf { it.isNotEmpty() }?.withIndex()?.joinToString(", ", prefix = if (numbered) "highlights: " else "highlights, outlined without numbers: ") { (i, h) ->
+                    if (numbered) "${i + 1} ${h.what}" else h.what
+                },
                 step.crop?.let { "crop ${if (it is UiCrop.Control) it.target.toString() else it.toString()}" },
                 "the caret is hidden in the picture".takeIf { codeEditors.isNotEmpty() },
                 made.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = "made room: "),

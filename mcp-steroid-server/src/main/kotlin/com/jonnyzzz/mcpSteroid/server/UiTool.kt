@@ -164,9 +164,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           target is the splitter, or a control in the pane to size ("fit" gives it room for its content). A
           snapshot lists each splitter with its ref and state, such as "horizontal 0.25"
         - {"action":"screenshot", optional target, "save":"name" or "out":"C:/pics/a.png", optional "highlight",
-          "crop", "margin", "fit"}: saves a picture of the target's window, or of the topmost one, with the menus
+          "crop", "margin", "fit", "numbers"}: saves a picture of the target's window, or of the topmost one, with the menus
           and popups open above it. "highlight":["breadcrumb",{"name":"Show line numbers","label":"..."}] outlines
-          and numbers controls (rows with "row"), and takes {"lines":"20-27"} or {"symbol":"name"} of code,
+          controls (rows with "row"), numbered when there are several, "numbers":true|false to choose, and takes {"lines":"20-27"} or {"symbol":"name"} of code,
           {"click":true} (the point of the last click, as a pointer), {"inspection":"ShortName"} and
           {"console":"App","contains":"text"}; "crop" is "page" (the Settings page), "highlights", "popups",
           {"toolwindow":"Run"} or a locator. The report ends with a "cut:" line per content the picture shows cut,

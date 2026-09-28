@@ -279,6 +279,11 @@ data class UiStep(
     /** On a screenshot step: make room for content the picture would show cut, and put the sizes back afterwards. */
     val fit: Boolean = false,
     /**
+     * On a screenshot step: number the highlights 1, 2, 3, as steps to follow in order, or outline them only; without
+     * it, several highlights are numbered and a single one is not.
+     */
+    val numbers: Boolean? = null,
+    /**
      * Split Mode: `backend` runs the step on the Remote Development backend, where the project, its files and the
      * windows the backend draws are; the call's own side otherwise. Ignored in a regular IDE.
      */
@@ -318,7 +323,7 @@ object UiSteps {
         "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
         "builds", "changes", "console", "lines", "changed", "diff", "golden", "notifications", "problems", "severity",
         "out", "highlight", "crop", "margin", "align", "show", "theme", "themes", "dimension",
-        "proportion", "size", "key", "fit",
+        "proportion", "size", "key", "fit", "numbers",
     )
     private val HIGHLIGHT_FIELDS = TARGET_FIELDS + setOf("row", "index", "label", "lines", "symbol", "file", "click", "inspection", "console", "contains")
     /** The share of its first pane a splitter step sets: a pane never shrinks to nothing. */
@@ -540,6 +545,7 @@ object UiSteps {
             size = obj.string("size"),
             key = obj.string("key"),
             fit = obj.boolean("fit") ?: false,
+            numbers = obj.boolean("numbers"),
             side = obj.string("side"),
             command = obj.string("command"),
             code = obj.string("code"),
@@ -630,6 +636,10 @@ object UiSteps {
             require(step.action == UiAction.SPLITTER) { "proportion, size and key go with splitter, not $action" }
         }
         if (step.fit) require(step.action == UiAction.SCREENSHOT) { "fit goes with screenshot, not $action" }
+        if (step.numbers != null) {
+            require(step.action == UiAction.SCREENSHOT) { "numbers goes with screenshot, not $action" }
+            require(!step.highlight.isNullOrEmpty()) { "numbers numbers the highlights: add highlight, or leave numbers out" }
+        }
         if (step.action == UiAction.SPLITTER) {
             require(step.proportion != null || step.size != null) { "splitter needs a proportion or size: the first pane's share, or the pane's size in pixels or \"fit\"" }
             require(step.proportion == null || step.size == null) { "splitter takes a proportion or a size, not both" }

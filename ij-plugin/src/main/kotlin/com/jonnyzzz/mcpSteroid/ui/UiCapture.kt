@@ -46,7 +46,7 @@ object UiCapturePaths {
 
 /**
  * The pictures of a screenshot step: a window painted with the popups open above it, cropped to a part of it, with
- * the controls that matter outlined and numbered. Everything is in screen coordinates in logical pixels; a [Canvas]
+ * the controls that matter outlined, and numbered when they are steps. Everything is in screen coordinates in logical pixels; a [Canvas]
  * maps them to its image's pixels by its scale.
  */
 object UiCapture {
@@ -58,9 +58,10 @@ object UiCapture {
 
     /**
      * A highlight: its number, its screen bounds, and the text drawn beside its number. A [pointer] mark is a point, the
-     * top left corner of [bounds], drawn as a mouse pointer: where a click goes.
+     * top left corner of [bounds], drawn as a mouse pointer: where a click goes. A mark not [numbered] has no badge,
+     * for a picture of one area, or of areas with no order to follow; its label sits beside the outline.
      */
-    data class Mark(val number: Int, val bounds: Rectangle, val label: String?, val pointer: Boolean = false)
+    data class Mark(val number: Int, val bounds: Rectangle, val label: String?, val pointer: Boolean = false, val numbered: Boolean = true)
 
     /** A picture of the screen [area] at [scale], filled with [background], for windows to paint into. */
     fun blankCanvas(area: Rectangle, scale: Double, background: Color): Canvas {
@@ -224,16 +225,17 @@ object UiCapture {
                     g.color = OUTLINE
                     g.draw(outline)
                 }
-                val badge = parts.badge
-                g.color = EDGE
-                g.fill(Ellipse2D.Float(badge.x - 1f, badge.y - 1f, badge.width + 2f, badge.height + 2f))
-                g.color = OUTLINE
-                g.fill(Ellipse2D.Float(badge.x.toFloat(), badge.y.toFloat(), badge.width.toFloat(), badge.height.toFloat()))
-                g.color = Color.WHITE
-                g.font = BADGE_FONT
-                val text = mark.number.toString()
-                val m = g.fontMetrics
-                g.drawString(text, badge.x + (badge.width - m.stringWidth(text)) / 2f, badge.y + (badge.height - m.height) / 2f + m.ascent)
+                parts.badge?.let { badge ->
+                    g.color = EDGE
+                    g.fill(Ellipse2D.Float(badge.x - 1f, badge.y - 1f, badge.width + 2f, badge.height + 2f))
+                    g.color = OUTLINE
+                    g.fill(Ellipse2D.Float(badge.x.toFloat(), badge.y.toFloat(), badge.width.toFloat(), badge.height.toFloat()))
+                    g.color = Color.WHITE
+                    g.font = BADGE_FONT
+                    val text = mark.number.toString()
+                    val m = g.fontMetrics
+                    g.drawString(text, badge.x + (badge.width - m.stringWidth(text)) / 2f, badge.y + (badge.height - m.height) / 2f + m.ascent)
+                }
                 parts.label?.let { box ->
                     g.color = OUTLINE
                     g.fill(RoundRectangle2D.Float(box.x.toFloat(), box.y.toFloat(), box.width.toFloat(), box.height.toFloat(), ARC, ARC))
@@ -285,7 +287,7 @@ object UiCapture {
         return count
     }
 
-    private class Parts(val outline: Rectangle, val badge: Rectangle, val label: Rectangle?)
+    private class Parts(val outline: Rectangle, val badge: Rectangle?, val label: Rectangle?)
 
     /**
      * Where each mark's badge and label go, badges placed in order so that none covers another. A label goes right of
@@ -308,6 +310,23 @@ object UiCapture {
                 val besideBadge = if (badge.x < outline.x) outline.x + outline.width + GAP else badge.x + badge.width + GAP
                 val x = if (besideBadge + width <= within.x + within.width) besideBadge else badge.x - GAP - width
                 return Rectangle(x, badge.y, width, badge.height)
+            }
+            if (!mark.numbered) {
+                // No badge: the label alone goes right of the outline, level with its middle or the top of a tall one,
+                // else left of it, below it or above it, where it covers no other text.
+                val label = mark.label?.let { text ->
+                    val width = labelMetrics.stringWidth(text) + 2 * LABEL_PAD
+                    val y = if (outline.height >= TALL * BADGE) outline.y else outline.y + (outline.height - BADGE) / 2
+                    val spots = listOf(
+                        Rectangle(outline.x + outline.width + GAP, y, width, BADGE),
+                        Rectangle(outline.x - GAP - width, y, width, BADGE),
+                        Rectangle(outline.x, outline.y + outline.height + GAP, width, BADGE),
+                        Rectangle(outline.x, outline.y - GAP - BADGE, width, BADGE),
+                    )
+                    spots.firstOrNull(::free) ?: spots.firstOrNull { within.contains(it) } ?: spots.first()
+                }
+                label?.let { placed += it }
+                return@mapIndexed mark to Parts(outline, null, label)
             }
             var badge = if (mark.pointer) {
                 Rectangle(outline.x + outline.width + GAP, outline.y + (outline.height - BADGE) / 2, BADGE, BADGE).takeIf(::free)

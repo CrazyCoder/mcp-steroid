@@ -308,16 +308,18 @@ window's size, the screen's scale and the IDE's zoom, the theme, the editor font
 |---|---|---|
 | `save` | `"appearance-page"` | The picture's name in the execution folder. Name each picture after the state it shows |
 | `out` | `"C:/docs/img/appearance.png"` | The picture's path instead: absolute in a call with `steps`, relative to the scenario file's folder in a replay. PNG, the default for a path without an extension, or JPEG for `.jpg`. The folders are made |
-| `highlight` | `["breadcrumb", {"name":"Show line numbers","label":"Turn this on"}]` | Outlines each control and numbers it 1, 2, 3 in this order. An item takes any locator, plus `row` or `index` for a row of a list, tree, table or tab row, and `label`, text drawn beside it. `"breadcrumb"` is the path above the Settings page. The kinds for code, clicks, inspections and consoles are below |
+| `highlight` | `["breadcrumb", {"name":"Show line numbers","label":"Turn this on"}]` | Outlines each control, numbered 1, 2, 3 in this order when there are several (see `numbers`). An item takes any locator, plus `row` or `index` for a row of a list, tree, table or tab row, and `label`, text drawn beside it. `"breadcrumb"` is the path above the Settings page. The kinds for code, clicks, inspections and consoles are below |
 | `crop` | `"page"`, `"highlights"`, `"popups"`, `{"toolwindow":"Run"}`, `{"name":"Settings categories"}` | Cuts the picture to the Settings page with its breadcrumb, to the highlights, to the open menus, to a tool window by its id, or to a control's visible part. The whole window without it |
 | `margin` | `8` | The padding around a crop, 16 px without it |
 | `fit` | `true` | Runs the steps the `cut:` lines name before the picture, and puts the sizes back with the restore |
+| `numbers` | `false` | Numbers the highlights 1, 2, 3 as steps to follow, or with `false` outlines them only, for areas with no order. Without it, several highlights are numbered and a single one is only outlined |
 
 A highlight out of view is scrolled to the middle of its view first; a control larger than its view, such as a
 tree, is outlined as far as it shows. A highlight that is not showing, such as one on another tab, fails the
 step rather than outlining the wrong place. The badge with the number sits just left of its outline, and a
 label right of it on the same line; where they would cover the text of another control, such as the next tab
-of a tab row, they go below the outline, or above it. In Split Mode the JetBrains Client takes the picture and
+of a tab row, they go below the outline, or above it. Number the highlights when they are steps to follow in
+order; outline one area, or several with no order, without numbers. In Split Mode the JetBrains Client takes the picture and
 saves the file on its machine; a highlight on a host Settings page, whose controls exist only on the backend,
 is found there.
 
