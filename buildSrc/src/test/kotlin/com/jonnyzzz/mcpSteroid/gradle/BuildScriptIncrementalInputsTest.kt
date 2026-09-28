@@ -18,9 +18,10 @@ import kotlin.test.fail
  */
 class BuildScriptIncrementalInputsTest {
 
+    // The wrapper marks the root build: buildSrc has a settings.gradle.kts of its own, but no gradlew.
     private val repoRoot: File = run {
         var dir = File(".").canonicalFile
-        while (dir.parentFile != null && !File(dir, "settings.gradle.kts").exists()) {
+        while (dir.parentFile != null && !File(dir, "gradlew").exists()) {
             dir = dir.parentFile
         }
         dir
