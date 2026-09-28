@@ -1149,14 +1149,14 @@ class UiSession(
             if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
             // Numbers give steps an order: several steps are numbered, a single one is only outlined, unless asked. A
             // click point on the outline of what was clicked is part of that step.
-            val marks = UiCapture.steps(highlights.mapIndexed { i, h -> UiCapture.Mark(i + 1, h.screenBounds(), h.label, h.pointer) }, step.numbers)
+            val marks = UiCallouts.steps(highlights.mapIndexed { i, h -> UiCallouts.Mark(i + 1, h.screenBounds(), h.label, h.pointer) }, step.numbers)
             val numbered = marks.any { it.numbered }
             val obstacles = if (marks.isEmpty()) emptyList() else textObstacles(window, highlights)
             // A picture of code shows the code, not where the caret happens to be.
             val codeEditors = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct()
             val showCarets = codeEditors.map(UiCodeRange::hideCaret)
             val painted = try {
-                UiCapture.paint(window).let { if (marks.isEmpty()) it else UiCapture.highlight(it, marks, obstacles) }
+                UiCapture.paint(window).let { if (marks.isEmpty()) it else UiCallouts.highlight(it, marks, obstacles) }
             } finally {
                 showCarets.forEach { it() }
             }
@@ -1168,12 +1168,12 @@ class UiSession(
             }
             val area = when (val crop = step.crop) {
                 null -> null
-                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCapture.withMarks(painted, it, marks, obstacles) }
+                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCallouts.withMarks(painted, it, marks, obstacles) }
                     ?: throw UiStepFailure("crop \"page\" needs a Settings page, and ${describeWindow(window)} shows none")
-                UiCrop.Highlights -> withGutter(UiCapture.markArea(painted, marks, obstacles))
+                UiCrop.Highlights -> withGutter(UiCallouts.markArea(painted, marks, obstacles))
                 UiCrop.Popups -> UiCapture.popupArea(window)?.let { area ->
                     // What a menu was opened from belongs with it: the click point, and the code it clicked.
-                    withGutter(UiCapture.union(listOf(area) + if (marks.isEmpty()) emptyList() else listOf(UiCapture.markArea(painted, marks, obstacles))))
+                    withGutter(UiCapture.union(listOf(area) + if (marks.isEmpty()) emptyList() else listOf(UiCallouts.markArea(painted, marks, obstacles))))
                 } ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
                 is UiCrop.ToolWindow -> {
                     val views = UiLayout.toolWindows(project)
@@ -1181,14 +1181,14 @@ class UiSession(
                         ?: throw UiStepFailure("no tool window ${crop.id} is showing; showing: ${views.joinToString { it.id }}")
                     val decorator = view.window.decorator
                     if (windowOf(decorator) !== window) throw UiStepFailure("the ${view.id} tool window is in another window than the picture")
-                    UiCapture.withMarks(painted, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks, obstacles)
+                    UiCallouts.withMarks(painted, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks, obstacles)
                 }
-                is UiCrop.Control -> if (cropOnBackend != null) UiCapture.withMarks(painted, cropOnBackend, marks, obstacles) else {
+                is UiCrop.Control -> if (cropOnBackend != null) UiCallouts.withMarks(painted, cropOnBackend, marks, obstacles) else {
                     val c = cropControl!!.component
                     if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")
                     // A tree or list in a scroll pane is as tall as all its rows: the part in view is what shows.
                     val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)
-                    UiCapture.withMarks(painted, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks, obstacles)
+                    UiCallouts.withMarks(painted, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks, obstacles)
                 }
             }
             val canvas = area?.let { UiCapture.crop(painted, UiCapture.cropArea(it, step.margin ?: UiSteps.DEFAULT_MARGIN, painted.bounds)) } ?: painted
