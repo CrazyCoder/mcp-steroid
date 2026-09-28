@@ -60,6 +60,8 @@ class UiStepsTest {
     @Test
     fun `theme steps, a menu shown and a window dimension parse`() {
         assertEquals("Light", UiSteps.parse("""[{"action":"set","theme":"Light"}]""").single().theme)
+        assertEquals(UiSteps.THEME_TIMEOUT_MS, UiSteps.parse("""[{"action":"set","theme":"Light"}]""").single().timeoutMs)
+        assertEquals(UiSteps.DEFAULT_TIMEOUT_MS, UiSteps.parse("""[{"action":"set","registry":"a","value":"1"}]""").single().timeoutMs)
         assertTrue(UiSteps.parse("""[{"action":"get","themes":true}]""").single().themes)
         assertTrue(UiSteps.parse("""[{"action":"menu","path":"View > Appearance","show":true}]""").single().show)
         assertEquals("top", UiSteps.parse("""[{"action":"scroll","name":"a","align":"top"}]""").single().align)

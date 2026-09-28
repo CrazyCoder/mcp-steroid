@@ -268,6 +268,9 @@ object UiSteps {
     /** Steps that compile or run a playback script take longer than a UI step. */
     const val LONG_DEFAULT_TIMEOUT_MS = 60_000L
     const val LONG_MAX_TIMEOUT_MS = 600_000L
+
+    /** A theme switch and the repaint of every window take seconds on a large IDE window. */
+    const val THEME_TIMEOUT_MS = 30_000L
     private val LONG_ACTIONS = setOf(UiAction.PERF, UiAction.CODE)
 
     val MODALS = setOf("smart_non_modal", "non_modal", "unleashed", "dialog")
@@ -404,7 +407,11 @@ object UiSteps {
             symbol = obj.string("symbol"),
             id = obj.string("id"),
             nth = obj.int("nth").takeIf { action == UiAction.GOTO } ?: 0,
-            timeoutMs = (obj.long("timeout_ms") ?: if (long) LONG_DEFAULT_TIMEOUT_MS else DEFAULT_TIMEOUT_MS)
+            timeoutMs = (obj.long("timeout_ms") ?: when {
+                long -> LONG_DEFAULT_TIMEOUT_MS
+                action == UiAction.SET && obj.containsKey("theme") -> THEME_TIMEOUT_MS
+                else -> DEFAULT_TIMEOUT_MS
+            })
                 .coerceIn(0, if (long) LONG_MAX_TIMEOUT_MS else MAX_TIMEOUT_MS),
             intent = obj.string("intent"),
             bug = obj.string("bug"),

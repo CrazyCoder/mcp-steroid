@@ -5,6 +5,7 @@ import com.intellij.codeHighlighting.HighlightDisplayLevel
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.HighlightDisplayKey
 import com.intellij.ide.SearchTopHitProvider
+import com.intellij.ide.ui.LafManager
 import com.intellij.ide.ui.OptionsSearchTopHitProvider
 import com.intellij.ide.ui.search.BooleanOptionDescription
 import com.intellij.ide.ui.search.OptionDescription
@@ -62,10 +63,12 @@ internal class UiConfig(private val project: Project) {
         step.option != null -> getOption(step.option!!)
         step.inspection != null -> Outcome(inspectionState(step.inspection!!))
         step.log != null -> Outcome(UiLogs.level(step.log!!))
+        step.themes -> withContext(edtAny) { Outcome(UiThemes.render(UiThemes.list(), LafManager.getInstance().autodetect)) }
         else -> Outcome(getComponent(step.component!!, step.field))
     }
 
     suspend fun set(step: UiStep): Outcome {
+        step.theme?.let { return UiThemes.set(it, step.timeoutMs) }
         val value = step.value!!
         return when {
             step.registry != null -> {
