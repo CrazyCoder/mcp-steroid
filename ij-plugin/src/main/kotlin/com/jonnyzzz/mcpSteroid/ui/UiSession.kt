@@ -768,6 +768,16 @@ class UiSession(
         val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
         val c = node.component
         val pages = step.pages
+        step.align?.let { align ->
+            val pick = pickRow(node, step)
+            return withContext(edtAny) {
+                val area = pick?.let { UiRows.bounds(c, it.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup: pick one with select") }
+                    ?: Rectangle(0, 0, c.width, c.height)
+                val port = UiScrollAlign.scroll(c, area, align) ?: throw UiStepFailure("${describe(node)} is not in a scroll pane")
+                val what = pick?.let { "row #${it.index} \"${it.text.take(80)}\" of " }.orEmpty() + describe(node)
+                "scrolled $what to the ${if (align == "top") "top" else "middle"} of its view; ${position(port)}"
+            }
+        }
         if (pages == null) {
             val row = rowArea(node, step)
             return withContext(edtAny) {
