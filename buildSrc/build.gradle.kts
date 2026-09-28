@@ -34,3 +34,12 @@ dependencies {
     implementation("org.tukaani:xz:1.10")
     testImplementation(kotlin("test"))
 }
+
+// BuildScriptIncrementalInputsTest reads these root-build scripts; without them as inputs,
+// editing only a script leaves :test UP-TO-DATE and its checks never run.
+tasks.test {
+    inputs.files(
+        rootDir.resolve("../npx/build.gradle.kts"),
+        rootDir.resolve("../ocr-tesseract/build.gradle.kts"),
+    ).withPathSensitivity(PathSensitivity.RELATIVE)
+}
