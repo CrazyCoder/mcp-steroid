@@ -141,7 +141,7 @@ window opened. A set reports the value before and after, which is what a cleanup
 | `component` + `field` | `{"action":"set","component":"EditorSettings","field":"IS_WHITESPACES_SHOWN","value":"true"}` | A field of a persistent settings component, by the state name it is saved under. `get` with `component` alone shows its saved XML, which lists the fields that differ from their defaults. Only components already loaded are found, and a field that holds structured XML needs a `code` step |
 | `log` | `{"action":"set","log":"#com.jetbrains.rdserver.fileEditors","value":"debug"}` | A debug log category, as Help \| Diagnostic Tools \| Debug Log Settings sets it: `trace`, `debug`, `all`, or `default` to remove the level set for it. It lasts across restarts, so a cleanup step sets `default`. Set it before the steps whose log lines an `expect` on `log` checks |
 
-`get` also reads two things no `set` changes:
+`get` also reads three things no `set` changes:
 
 - `{"action":"get","editors":true}` lists the open editors of each side, with how many editors a file has
   when it is more than one, and the selected file. On a Remote Development backend it also lists what the
@@ -150,6 +150,11 @@ window opened. A set reports the value before and after, which is what a cleanup
 - `{"action":"get","file":"src/A.kt"}` gives a project file's type, language, size and editor providers, and on
   a backend how many editors each Client session has of it. It shows, for example, whether `.env.local` is a
   DotEnv file in this IDE or plain text.
+- `{"action":"get","memory":true}` gives this side's memory, in the order of the status bar memory indicator's
+  tooltip: the heap used, committed and max, and what stayed in use after the last GC; direct buffers; non-heap
+  pools and threads; memory-mapped files; the OS figures; and the GC's share of the time since the previous
+  report, with how often it was overloaded in the last 15 minutes. A `LOW MEMORY` notice in front of a tool
+  result points here.
 
 Other setup steps:
 

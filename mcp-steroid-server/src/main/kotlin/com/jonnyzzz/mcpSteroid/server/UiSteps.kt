@@ -132,6 +132,8 @@ data class UiStep(
     val log: String? = null,
     /** On a get step: the open editors, per side and per JetBrains Client session. */
     val editors: Boolean = false,
+    /** On a get step: this side's memory, as the status bar's memory indicator shows it, and the GC's load. */
+    val memory: Boolean = false,
     val page: String? = null,
     val registry: String? = null,
     val advanced: String? = null,
@@ -183,7 +185,7 @@ object UiSteps {
         "file", "line", "column", "symbol", "id", "pages",
         "intent", "bug", "soft", "not", "is", "value", "contains", "matches", "caret", "notification", "banner", "error",
         "page", "registry", "advanced", "command", "code", "modal", "option", "inspection", "component", "field", "tab", "hide", "save", "side",
-        "editor", "editors", "log",
+        "editor", "editors", "log", "memory",
     )
     val SIDES = setOf("frontend", "backend")
     /** The levels a set of a log category takes; default puts the category back to the IDE's configuration. */
@@ -295,6 +297,7 @@ object UiSteps {
             editor = obj.string("editor"),
             log = obj.string("log"),
             editors = obj.boolean("editors") ?: false,
+            memory = obj.boolean("memory") ?: false,
             error = (obj["error"] as? JsonPrimitive)?.takeIf { !it.isString && it.booleanOrNull == true }?.let { "" } ?: obj.string("error"),
             page = obj.string("page"),
             registry = obj.string("registry"),
@@ -360,6 +363,7 @@ object UiSteps {
             )
             require(config.isEmpty()) { "${config.joinToString()} go(es) with get and set, not $action" }
             require(!step.editors) { "editors goes with get, not $action" }
+            require(!step.memory) { "memory goes with get, not $action" }
             if (step.action != UiAction.EXPECT) require(step.log == null) { "log goes with expect, get and set, not $action" }
         }
         when (step.action) {
@@ -387,13 +391,13 @@ object UiSteps {
             UiAction.GET, UiAction.SET -> {
                 val kinds = listOfNotNull(
                     step.registry, step.advanced, step.option, step.inspection, step.component, step.log,
-                    step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors },
+                    step.file.takeIf { step.action == UiAction.GET }, "editors".takeIf { step.editors }, "memory".takeIf { step.memory },
                 )
                 require(kinds.size == 1) {
-                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file or editors"
+                    if (step.action == UiAction.GET) "get needs exactly one of registry, advanced, option, inspection, component, log, file, editors or memory"
                     else "set needs exactly one of registry, advanced, option, inspection, component or log"
                 }
-                if (step.action == UiAction.SET) require(!step.editors && step.file == null) { "editors and file go with get, not set" }
+                if (step.action == UiAction.SET) require(!step.editors && !step.memory && step.file == null) { "editors, memory and file go with get, not set" }
                 if (step.action == UiAction.SET && step.log != null) require(step.value?.lowercase() in LOG_LEVELS) {
                     "a log category's level is one of ${LOG_LEVELS.joinToString()}"
                 }

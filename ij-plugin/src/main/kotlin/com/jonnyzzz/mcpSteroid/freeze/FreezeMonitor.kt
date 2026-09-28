@@ -55,7 +55,7 @@ data class Freeze(
  * and dumps threads while it lasts; [FreezeListener] forwards those reports here. Each dump is read for
  * who holds the lock. A steroid_execute_code script that holds a read lock the UI waits for is cancelled.
  * [guard] puts the freeze in front of every tool result, and answers a call that is still waiting once
- * the freeze has been known for [EARLY_ANSWER_MS]. It also carries the [IdeErrors] notice.
+ * the freeze has been known for [EARLY_ANSWER_MS]. It also carries the [IdeMemory], [IdeErrors] and [IdeBanners] notices.
  */
 @Service(Service.Level.APP)
 class FreezeMonitor(private val scope: CoroutineScope) {
@@ -125,9 +125,12 @@ class FreezeMonitor(private val scope: CoroutineScope) {
     @TestOnly
     internal var ideBanners: () -> IdeBanners? = IdeBanners::getInstanceOrNull
 
+    @TestOnly
+    internal var ideMemory: () -> IdeMemory? = IdeMemory::getInstanceOrNull
+
     /**
-     * Runs [call] and puts any freeze, the errors the IDE logged since [session]'s last call, and the warning
-     * banners above open editors it was not told about, in front of its result. A call still running once a
+     * Runs [call] and puts any freeze, the errors the IDE logged since [session]'s last call, the warning
+     * banners above open editors and the memory pressure it was not told about, in front of its result. A call still running once a
      * freeze has been known for [EARLY_ANSWER_MS] is answered with the freeze instead, and keeps running in the
      * IDE. [reportsIdeErrors] tells that the call's own result lists the errors logged while it ran, as
      * steroid_execute_code does.
@@ -135,8 +138,10 @@ class FreezeMonitor(private val scope: CoroutineScope) {
     suspend fun guard(session: Any, reportsIdeErrors: Boolean = false, call: suspend () -> ToolCallResult): ToolCallResult {
         val errors = ideErrors()
         val banners = ideBanners()
+        val memory = ideMemory()
         val startedAtMs = System.currentTimeMillis()
-        fun notices() = listOfNotNull(noticeFor(session), errors?.noticeFor(session), banners?.noticeFor(session)).joinToString("").ifEmpty { null }
+        fun notices() = listOfNotNull(noticeFor(session), memory?.noticeFor(session), errors?.noticeFor(session), banners?.noticeFor(session))
+            .joinToString("").ifEmpty { null }
 
         val run = scope.async(currentCoroutineContext().minusKey(Job)) { call() }
         try {

@@ -61,17 +61,20 @@ class RoutedToolTest {
     private val monitor = FreezeMonitor.getInstanceOrNull()
     private val ideErrors = monitor?.ideErrors
     private val ideBanners = monitor?.ideBanners
+    private val ideMemory = monitor?.ideMemory
 
     @Before
     fun hideIdeErrors() {
         monitor?.ideErrors = { null }
         monitor?.ideBanners = { null }
+        monitor?.ideMemory = { null }
     }
 
     @After
     fun restoreIdeErrors() {
         if (ideErrors != null) monitor?.ideErrors = ideErrors
         if (ideBanners != null) monitor?.ideBanners = ideBanners
+        if (ideMemory != null) monitor?.ideMemory = ideMemory
     }
 
     @Test

@@ -115,8 +115,9 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
           "inspection" takes on, off or a severity; "component" is a persistent settings component by its state
           name, get alone shows its saved XML. "log":"#category" reads or sets a debug log level (trace, debug,
           all, or default). A set reports the value before and after. get also takes "editors":true (the open
-          editors of each side, and in Split Mode where they disagree) and "file":"path" (its type, language,
-          editor providers and open editors)
+          editors of each side, and in Split Mode where they disagree), "file":"path" (its type, language,
+          editor providers and open editors) and "memory":true (heap, heap after the last GC, direct buffers,
+          threads, OS memory and the GC's load, as the memory indicator shows them)
         - {"action":"write", "file":"src/A.kt", "text":"..."}: creates or replaces a file of the project
         - {"action":"perf", "command":"%openFile src/A.kt"}: runs Performance Testing playback commands, one per line
         - {"action":"code", "code":"...", optional "modal"}: runs a Kotlin body as steroid_execute_code does

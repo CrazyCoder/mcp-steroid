@@ -23,6 +23,7 @@ import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
 import com.intellij.openapi.util.Disposer
+import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
 import com.jonnyzzz.mcpSteroid.server.UiAction
 import com.jonnyzzz.mcpSteroid.server.UiEditorState
 import com.jonnyzzz.mcpSteroid.server.UiSnapshotMode
@@ -341,6 +342,7 @@ class UiSession(
         }
         UiAction.GET -> when {
             step.editors -> editorsReport(step)
+            step.memory -> IdeMemory.getInstanceOrNull()?.report() ?: throw UiStepFailure("the IDE application is not available")
             step.file != null -> editors.facts(step.file!!)
             else -> config.get(step).line
         }
