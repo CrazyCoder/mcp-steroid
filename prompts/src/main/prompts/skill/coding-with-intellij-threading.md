@@ -247,7 +247,7 @@ val problems = runInspectionsDirectly(file)
 val rendered = readAction {
     problems.flatMap { (tool, descs) -> descs.map { p -> "$tool: ${p.psiElement.text}" } }
 }
-rendered.forEach(::println)  // safe — Strings, no PSI
+rendered.forEach { println(it) }  // safe — Strings, no PSI
 
 // Alternative — re-enter readAction { } for the entire walk
 readAction {

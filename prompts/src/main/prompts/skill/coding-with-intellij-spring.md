@@ -1567,11 +1567,11 @@ val completed = process.waitFor(180, java.util.concurrent.TimeUnit.SECONDS)
 val keywords = listOf("Tests run:", "FAILED", "ERROR", "Caused by:", "BUILD", "Could not", "Exception in")
 println("Exit: ${if (completed) process.exitValue() else "TIMEOUT"} | total lines: ${lines.size}")
 println("--- First 20 lines (Spring startup errors) ---")
-lines.take(20).forEach(::println)
+lines.take(20).forEach { println(it) }
 println("--- Signal lines only ---")
-lines.filter { l -> keywords.any { k -> k in l } }.take(50).forEach(::println)
+lines.filter { l -> keywords.any { k -> k in l } }.take(50).forEach { println(it) }
 println("--- Last 15 lines (Maven BUILD FAILURE) ---")
-lines.takeLast(15).forEach(::println)
+lines.takeLast(15).forEach { println(it) }
 ```
 
 Similarly for `test-compile` (project-wide dependency check, faster than full test run):
