@@ -115,17 +115,24 @@ as the layout places them without arrows.
 The callout is the badge and label at the tail. With `from: auto`, the layout
 tries the sides in this order: right, left, below, above, below-right,
 above-right, below-left, above-left. It tries each at the given length, then
-at 1.5 and 2 times it, and takes the first spot where:
+at 1.5, 2, 3, 4, 5, 6 and 7 times it, up to 400 px, and takes the first spot
+where:
 
 - the callout lies inside the picture;
 - the callout covers no text of other controls, no line of code in view, no
-  badge or label already placed, and no other outline;
-- the shaft crosses no other outline and no other shaft.
+  badge, label or shaft already placed, and no other outline;
+- the shaft crosses no other outline, no placed callout and no other shaft.
 
-When no spot meets all three, it takes the spot inside the picture whose
-callout covers the fewest pixels of text and marks, a crossing counting as
-much as a badge covered. A bare arrow has no callout, so only its shaft and its
-tail's position count.
+When no spot meets all three, it takes a spot whose callout meets the first
+two and whose shaft crosses least: a shaft hides little of what it crosses, a
+callout hides all. When no callout meets them, it takes the spot inside the
+picture, off placed callouts and shafts where one is, whose callout covers the
+fewest pixels of text and marks, a crossing counting as much as a badge
+covered. A bare arrow has no callout, so only its shaft and its tail's position
+count.
+
+The layout measures label text at the picture's scale, as the drawing does, so
+the report names the spot the picture shows.
 
 A forced side is tried at the given length first. When its callout leaves the
 picture, the arrow flips to the opposite side. When neither fits, the arrow on

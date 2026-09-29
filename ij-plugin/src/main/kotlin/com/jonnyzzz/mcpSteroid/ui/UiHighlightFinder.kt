@@ -21,6 +21,7 @@ import java.awt.Rectangle
 import java.awt.Window
 import javax.swing.AbstractButton
 import javax.swing.JComponent
+import javax.swing.JTree
 import javax.swing.SwingUtilities
 
 /**
@@ -266,8 +267,9 @@ internal class UiHighlightFinder(private val ctx: UiStepContext) {
     }
 
     /**
-     * The screen bounds of the text other controls in [window] and its popups show, such as neighbouring tabs, which a
-     * badge or label should not cover. The highlighted controls and what holds them are left out; text inside a
+     * The screen bounds of the text other controls in [window] and its popups show, such as neighbouring tabs, and of
+     * the text of the tree rows in view, which a badge or label should not cover and a shaft should not cross. The
+     * highlighted controls and what holds them are left out; text inside a
      * highlight's outline is its own, which the layout leaves out, while the other tabs of a highlighted tab row are
      * obstacles, and so are the lines of code in view around a code highlight. EDT.
      */
@@ -279,12 +281,16 @@ internal class UiHighlightFinder(private val ctx: UiStepContext) {
             val lines = editor.xyToLogicalPosition(view.location).line..editor.xyToLogicalPosition(java.awt.Point(view.x, view.y + view.height)).line
             UiCodeRange.textSpans(editor, lines).map { onScreen(editor.contentComponent, it) }
         }
-        return code + (listOf(window) + UiCapture.popupsOf(window)).asSequence()
-            .flatMap { UIUtil.uiTraverser(it).asSequence() }
+        val components = (listOf(window) + UiCapture.popupsOf(window)).asSequence().flatMap { UIUtil.uiTraverser(it).asSequence() }
+        // A tree paints its rows' text without components, highlighted tree or not; a highlighted row's own text lies
+        // inside its outline, which the layout leaves out.
+        val rows = components.filterIsInstance<JTree>().filter { it.isShowing }
+            .flatMap { tree -> UiRows.rowTexts(tree).map { onScreen(tree, it) } }
+        return code + (components
             .filter { c ->
                 c.isShowing && c.width > 0 && c.height > 0 && showsText(c) && marked.none { m -> SwingUtilities.isDescendingFrom(m, c) }
             }
-            .map { onScreen(it, Rectangle(0, 0, it.width, it.height)) }
+            .map { onScreen(it, Rectangle(0, 0, it.width, it.height)) } + rows)
             .take(MAX_OBSTACLES)
             .toList()
     }

@@ -377,9 +377,11 @@ away and points back. Any highlight takes these fields:
 | `number` | `false` | Leaves this step without a badge and a number; the other steps count on without it |
 | `style` | `{"color":"#2F6FEB","width":3}` | This highlight's color and line width: `red` (the default), `orange`, `yellow`, `green`, `blue`, `purple`, `black` or `#RRGGBB`, and 1 to 8 px. Text on a light color, such as yellow, turns black |
 
-`auto` tries right, left, below, above, then the diagonals, at the arrow's length and then at 1.5 and 2 times
-it. It takes the first spot where the callout lies on empty space in the picture, and the shaft crosses no
-text and no other outline; else the spot that covers least. On a diagonal the label's corner meets the tail.
+`auto` tries right, left, below, above, then the diagonals, at the arrow's length and then at longer lengths
+up to 400 px, so that a callout can reach the empty space past a tree's rows. It takes the first spot where
+the callout lies on empty space in the picture, off other callouts and arrows, and the shaft crosses no
+text and no other outline. Else it takes a spot whose callout is on empty space and whose shaft crosses least,
+else the spot that covers least. On a diagonal the label's corner meets the tail.
 A forced side flips to the other side when its callout would leave the picture, and gets shorter when
 neither side fits; text does not move it. A click point that is part of another step, as after a right
 click, draws no arrow of its own. The breadcrumb takes an arrow in its object form, `{"breadcrumb":true}`.

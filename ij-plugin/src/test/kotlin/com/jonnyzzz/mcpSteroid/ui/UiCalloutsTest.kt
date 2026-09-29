@@ -47,6 +47,44 @@ class UiCalloutsTest {
         assertEquals(90, p.length)
     }
 
+    /** Lines of text, as a tree's rows, [x] to [x] + [w] wide, every 30 px from [top] to [bottom]. */
+    private fun rows(x: Int, w: Int, top: Int, bottom: Int) = (top..bottom step 30).map { Rectangle(x, it, w, 14) }
+
+    @Test
+    fun `auto reaches empty space past the nearby text before it covers text`() {
+        // Rows of text above and below the target, up to y 480, and beside it; the picture is empty below them.
+        val text = rows(150, 500, 150, 480).filterNot { it.y == 300 } + listOf(Rectangle(150, 300, 140, 14), Rectangle(370, 300, 280, 14))
+        val p = arrowOf(canvas(800, 600), UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "a label", numbered = false, arrow = UiArrow()), text)
+        val callout = p.callout!!
+        assertTrue("$callout covers text", text.none { it.intersects(callout) })
+    }
+
+    @Test
+    fun `a callout keeps off an earlier arrow's shaft`() {
+        // The first arrow runs down at x 330. Text right of the second mark leaves its left side, whose label would lie
+        // across that shaft.
+        val first = UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), null, numbered = false, arrow = UiArrow(UiArrowSide.BELOW, 200))
+        val second = UiCallouts.Mark(2, Rectangle(400, 400, 40, 16), "label", numbered = false, arrow = UiArrow())
+        val (a, b) = UiCallouts.arrows(canvas(800, 600), listOf(first, second), listOf(Rectangle(440, 380, 360, 60))).map { it!! }
+        assertFalse("${b.callout} lies on the first shaft", java.awt.geom.Line2D.Double(a.tail, a.head).intersects(b.callout!!))
+    }
+
+    @Test
+    fun `the picture draws each arrow where the report says, at any scale`() {
+        // Text right of the target, at every distance: wherever the label's width decides the side, the drawing and the
+        // report must decide alike.
+        for (gap in 0..60 step 3) {
+            val c = canvas(800, 600, scale = 1.5)
+            val mark = UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "Find Actions by Shortcut", numbered = false, arrow = UiArrow())
+            val text = listOf(Rectangle(363 + 60 + 150 + gap, 290, 100, 40))
+            val reported = UiCallouts.arrows(c, listOf(mark), text).single()!!
+            val drawn = UiCallouts.highlight(c, listOf(mark), text)
+            val mid = Point((reported.head.x + reported.tail.x) / 2, (reported.head.y + reported.tail.y) / 2)
+            val rgb = drawn.image.getRGB(((mid.x - 100) * 1.5).toInt(), ((mid.y - 50) * 1.5).toInt())
+            assertNotEquals("gap $gap: no arrow at $mid, the middle of the reported ${reported.side} shaft", Color.WHITE.rgb, rgb)
+        }
+    }
+
     @Test
     fun `a forced side flips at the picture's edge`() {
         val p = arrowOf(canvas(400, 300), UiCallouts.Mark(1, Rectangle(120, 150, 40, 16), "label", numbered = false, arrow = UiArrow(UiArrowSide.LEFT, 80)))
@@ -94,11 +132,39 @@ class UiCalloutsTest {
     }
 
     @Test
-    fun `a shaft may cross painted content when its callout lands on empty space`() {
-        // A narrow control between the target and the callout on the right: only the shaft crosses it.
-        val c = painted(canvas(800, 600), Rectangle(380, 290, 20, 36))
+    fun `a long label covers no glyph, however small a share of it the glyph is`() {
+        // One glyph where the label on the right would lie, a small part of that long label's area.
+        val c = painted(canvas(800, 600), Rectangle(500, 302, 4, 8))
+        val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "a much longer label that holds one glyph under it", numbered = false, arrow = UiArrow()))
+        assertFalse("${p.callout} covers the glyph", p.callout!!.intersects(Rectangle(500, 302, 4, 8)))
+    }
+
+    @Test
+    fun `a callout keeps a clear margin from painted content`() {
+        // A line of text just under where the label on the right would lie.
+        val line = Rectangle(420, 318, 200, 8)
+        val c = painted(canvas(800, 600), line)
+        val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "a label", numbered = false, arrow = UiArrow()))
+        val margin = Rectangle(p.callout!!).apply { grow(2, 2) }
+        assertFalse("$margin touches $line", margin.intersects(line))
+    }
+
+    @Test
+    fun `a shaft may cross painted content when every shaft does`() {
+        // A narrow frame of content around the target: every shaft crosses it, and the callouts beyond are empty.
+        val c = canvas(800, 600)
+        for (r in listOf(Rectangle(270, 270, 120, 4), Rectangle(270, 342, 120, 4), Rectangle(270, 270, 4, 76), Rectangle(386, 270, 4, 76))) painted(c, r)
         val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()))
         assertEquals(UiArrowSide.RIGHT, p.side)
+        assertEquals(60, p.length)
+    }
+
+    @Test
+    fun `a shaft over empty space beats one across painted text`() {
+        // Text between the target and the callout on the right: only that shaft crosses it.
+        val c = painted(canvas(800, 600), Rectangle(380, 300, 20, 16))
+        val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()))
+        assertNotEquals(UiArrowSide.RIGHT, p.side)
     }
 
     @Test

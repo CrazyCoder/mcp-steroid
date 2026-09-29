@@ -114,7 +114,7 @@ object UiCallouts {
             g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
             g.scale(canvas.scale, canvas.scale)
             g.translate(-canvas.origin.x, -canvas.origin.y)
-            for ((mark, parts) in layout(canvas, marks, g, obstacles)) {
+            for ((mark, parts) in layout(canvas, marks, obstacles)) {
                 val b = parts.outline
                 if (mark.pointer) {
                     val arrow = pointer(b.x, b.y)
@@ -192,22 +192,26 @@ object UiCallouts {
         UiCapture.union(markAreas(canvas, marks, obstacles))
 
     /** The screen area of each of [marks], its outline, badge, label and arrow, placed as [highlight] places them. */
-    private fun markAreas(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle>): List<Rectangle> {
-        val g = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics()
-        try {
-            return layout(canvas, marks, g, obstacles).map { (mark, parts) ->
-                UiCapture.union(listOfNotNull(parts.outline, parts.badge, parts.label, parts.arrow?.let { arrowBounds(it, mark) }))
-            }
-        } finally {
-            g.dispose()
+    private fun markAreas(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle>): List<Rectangle> =
+        layout(canvas, marks, obstacles).map { (mark, parts) ->
+            UiCapture.union(listOfNotNull(parts.outline, parts.badge, parts.label, parts.arrow?.let { arrowBounds(it, mark) }))
         }
-    }
 
     /** Where [marks]' arrows went, null for a mark without one, placed as [highlight] places them. */
-    fun arrows(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle> = emptyList()): List<ArrowPlan?> {
+    fun arrows(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle> = emptyList()): List<ArrowPlan?> =
+        layout(canvas, marks, obstacles).map { (_, parts) -> parts.arrow }
+
+    /**
+     * The label font's metrics as [highlight] draws on [canvas]: at its scale, with text antialiasing. Text advances
+     * differ from one scale to another, so a layout measured any other way can choose other spots than the drawing.
+     */
+    private fun labelMetrics(canvas: UiCapture.Canvas): java.awt.FontMetrics {
         val g = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics()
         try {
-            return layout(canvas, marks, g, obstacles).map { (_, parts) -> parts.arrow }
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+            g.scale(canvas.scale, canvas.scale)
+            return g.getFontMetrics(LABEL_FONT)
         } finally {
             g.dispose()
         }
@@ -219,10 +223,13 @@ object UiCallouts {
         return Rectangle(plan.head).union(Rectangle(plan.tail)).apply { grow(grow, grow) }
     }
 
-    /** Where an arrow went: its head and tail, its side and length, and what placement changed of a forced side. */
+    /**
+     * Where an arrow went: its head and tail, its side and length, what placement changed of a forced side, and the
+     * area of the badge and label at its tail.
+     */
     data class ArrowPlan(
         val head: Point, val tail: Point, val side: UiArrowSide, val length: Int,
-        val flippedFrom: UiArrowSide? = null, val shortenedFrom: Int? = null,
+        val flippedFrom: UiArrowSide? = null, val shortenedFrom: Int? = null, val callout: Rectangle? = null,
     )
 
     /**
@@ -280,6 +287,27 @@ object UiCallouts {
             return if (seen == 0L) 0L else hits * r.width.toLong() * r.height / seen
         }
 
+        /**
+         * How many points along [shaft], one every [SAMPLE] logical pixels, show content, leaving out [CLEAR] pixels at
+         * each end, where the shaft meets its target and its callout.
+         */
+        fun busy(shaft: Line2D): Int {
+            val length = shaft.p1.distance(shaft.p2)
+            if (length <= 2 * CLEAR) return 0
+            val img = canvas.image
+            val dx = (shaft.x2 - shaft.x1) / length
+            val dy = (shaft.y2 - shaft.y1) / length
+            var d = CLEAR.toDouble()
+            var hits = 0
+            while (d <= length - CLEAR) {
+                val x = ((shaft.x1 + dx * d - canvas.origin.x) * canvas.scale).toInt()
+                val y = ((shaft.y1 + dy * d - canvas.origin.y) * canvas.scale).toInt()
+                if (x in 0 until img.width && y in 0 until img.height && differs(img.getRGB(x, y) and 0xFFFFFF, background)) hits++
+                d += SAMPLE
+            }
+            return hits
+        }
+
         private fun differs(a: Int, b: Int): Boolean =
             abs((a shr 16 and 0xFF) - (b shr 16 and 0xFF)) > TOLERANCE ||
                 abs((a shr 8 and 0xFF) - (b shr 8 and 0xFF)) > TOLERANCE ||
@@ -298,15 +326,19 @@ object UiCallouts {
 
     /**
      * Where the arrow of [mark], the one at [index] with its [outline], goes. With `auto`, the sides in
-     * [UiArrowSide.AUTO_ORDER] at the arrow's length, then at 1.5 and 2 times it: the first whose callout is in the
-     * picture and covers nothing ([free]) and whose shaft crosses no other outline, no [text] and no placed shaft, else
-     * the one in the picture that covers least, a crossing counting as much as a covered badge. A forced side flips to the
-     * opposite side when its callout leaves the picture, and is shortened, down to the shortest length, when neither
-     * side fits; text does not move it, as the caller chose the side.
+     * [UiArrowSide.AUTO_ORDER] at the arrow's length, then at each of [AUTO_LENGTHS] times it up to the longest arrow:
+     * the first whose callout is in the picture and covers nothing ([free]) and whose shaft crosses no other outline, no
+     * [text], no [placed] callout, no placed shaft and no painted content ([clear]); else the first of those whose shaft
+     * crosses painted content. Else the one whose callout covers nothing and whose shaft crosses
+     * least, as a shaft hides little of what it crosses and a callout hides all. Else, of those that keep off the placed
+     * callouts and shafts, if any, the one in the picture that covers least, a crossing counting as much as a covered
+     * badge. A forced side flips to the opposite side when its callout leaves the picture, and is shortened, down to the
+     * shortest length, when neither side fits; text does not move it, as the caller chose the side.
      */
     private fun placeArrow(
-        mark: Mark, arrow: UiArrow, outline: Rectangle, index: Int, boxes: List<Rectangle>, text: List<Rectangle>, within: Rectangle, shafts: List<Line2D>,
-        labelMetrics: java.awt.FontMetrics, free: (Rectangle) -> Boolean, covered: (Array<Rectangle?>) -> Long,
+        mark: Mark, arrow: UiArrow, outline: Rectangle, index: Int, boxes: List<Rectangle>, text: List<Rectangle>, within: Rectangle,
+        placed: List<Rectangle>, shafts: List<Line2D>,
+        labelMetrics: java.awt.FontMetrics, free: (Rectangle) -> Boolean, clear: (Line2D) -> Boolean, covered: (Array<Rectangle?>) -> Long,
     ): Placed {
         val badgeSize = if (mark.numbered) BADGE else null
         val labelWidth = mark.label?.let { labelMetrics.stringWidth(it) + 2 * LABEL_PAD }
@@ -316,18 +348,25 @@ object UiCallouts {
             else UiArrows.head(outline, side)
             val tail = UiArrows.tail(head, side, length)
             val (badge, label) = UiArrows.callout(tail, side, badgeSize, labelWidth, BADGE)
-            return Placed(ArrowPlan(head, tail, side, length), badge, label)
+            val callout = listOfNotNull(badge, label).takeIf { it.isNotEmpty() }?.let(UiCapture::union)
+            return Placed(ArrowPlan(head, tail, side, length, callout = callout), badge, label)
         }
         fun inside(p: Placed) = within.contains(p.plan.tail) && listOfNotNull(p.badge, p.label).all { within.contains(it) }
         fun crossings(p: Placed): Int {
             val shaft = Line2D.Double(p.plan.tail, p.plan.head)
             return boxes.withIndex().count { (j, b) -> j != index && shaft.intersects(b) } + text.count { shaft.intersects(it) } +
-                shafts.count { it.intersectsLine(shaft) }
+                placed.count { shaft.intersects(it) } + shafts.count { it.intersectsLine(shaft) }
         }
         if (arrow.from == UiArrowSide.AUTO) {
-            val tries = AUTO_LENGTHS.flatMap { f -> UiArrowSide.AUTO_ORDER.map { plan(it, (arrow.length * f).roundToInt()) } }
-            return tries.firstOrNull { p -> inside(p) && crossings(p) == 0 && listOfNotNull(p.badge, p.label).all(free) }
-                ?: tries.filter(::inside).minByOrNull { p -> covered(arrayOf(p.badge, p.label)) + crossings(p) * BADGE.toLong() * BADGE }
+            val lengths = AUTO_LENGTHS.map { f -> minOf((arrow.length * f).roundToInt(), UiArrow.LENGTHS.last) }.distinct()
+            val tries = lengths.flatMap { length -> UiArrowSide.AUTO_ORDER.map { plan(it, length) } }.filter(::inside)
+            val empty = tries.filter { p -> listOfNotNull(p.badge, p.label).all(free) }
+            fun clear(p: Placed) = listOfNotNull(p.badge, p.label).none { r -> placed.any { it.intersects(r) } || shafts.any { it.intersects(r) } }
+            val uncrossed = empty.filter { crossings(it) == 0 }
+            return uncrossed.firstOrNull { clear(Line2D.Double(it.plan.tail, it.plan.head)) }
+                ?: uncrossed.firstOrNull()
+                ?: empty.minByOrNull(::crossings)
+                ?: (tries.filter(::clear).ifEmpty { tries }).minByOrNull { p -> covered(arrayOf(p.badge, p.label)) + crossings(p) * BADGE.toLong() * BADGE }
                 ?: plan(UiArrowSide.RIGHT, UiArrow.LENGTHS.first)
         }
         val forced = plan(arrow.from, arrow.length)
@@ -347,11 +386,11 @@ object UiCallouts {
      * left, below or above. With no spot that covers nothing, they take the one that covers the least. A mark with an
      * arrow has its badge and label at the arrow's tail, as [placeArrow] finds it.
      */
-    private fun layout(canvas: UiCapture.Canvas, marks: List<Mark>, g: Graphics2D, obstacles: List<Rectangle>): List<Pair<Mark, Parts>> {
+    private fun layout(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle>): List<Pair<Mark, Parts>> {
         val placed = mutableListOf<Rectangle>()
         val placedShafts = mutableListOf<Line2D>()
         val content by lazy { Content(canvas) }
-        val labelMetrics = g.getFontMetrics(LABEL_FONT)
+        val labelMetrics = labelMetrics(canvas)
         val within = canvas.bounds
         val boxes = outlineBoxes(marks)
         return marks.mapIndexed { i, mark ->
@@ -372,11 +411,15 @@ object UiCallouts {
             }
             mark.arrow?.let { arrow ->
                 // A callout goes where the picture is empty: besides the text of other controls, it keeps off whatever
-                // the window paints there, such as a combo box, a field, an icon or code. A shaft may cross painted
-                // content, as its line hides little of it, but not text.
-                fun calloutFree(r: Rectangle) = free(r) && content.busy(r) <= r.width.toLong() * r.height / EMPTY_SHARE
+                // the window paints there, such as a combo box, a field, an icon or code. A shaft crosses no text, and
+                // painted content only where every shaft would, as its line hides little of it.
+                fun calloutFree(r: Rectangle) = free(r) && placedShafts.none { it.intersects(r) } &&
+                    content.busy(Rectangle(r).apply { grow(CLEAR, CLEAR) }) <= STRAY
                 fun calloutCovered(parts: Array<Rectangle?>): Long = covered(*parts) + parts.filterNotNull().sumOf { content.busy(it) }
-                val chosen = placeArrow(mark, arrow, outline, i, boxes, others, within, placedShafts, labelMetrics, ::calloutFree, ::calloutCovered)
+                fun shaftClear(shaft: Line2D) = content.busy(shaft) <= STRAY_POINTS
+                val chosen = placeArrow(
+                    mark, arrow, outline, i, boxes, others, within, placed, placedShafts, labelMetrics, ::calloutFree, ::shaftClear, ::calloutCovered,
+                )
                 placedShafts += Line2D.Double(chosen.plan.tail, chosen.plan.head)
                 chosen.badge?.let { placed += it }
                 chosen.label?.let { placed += it }
@@ -509,10 +552,20 @@ object UiCallouts {
     private const val JOIN = 4
     /** What a spot past the picture's edge counts as covering: more than any spot inside it can. */
     private const val OFF_PICTURE = Long.MAX_VALUE / 16
-    /** The lengths `auto` tries, as factors of the arrow's own: a longer arrow is better than a callout over text. */
-    private val AUTO_LENGTHS = listOf(1.0, 1.5, 2.0)
-    /** A callout spot is empty when at most one part in this many of its area shows content, as a stray pixel does. */
-    private const val EMPTY_SHARE = 100
+    /**
+     * The lengths `auto` tries, as factors of the arrow's own, up to the longest arrow: a longer arrow is better than a
+     * callout over text. The long ones reach the empty space past a tree's rows or a page's controls.
+     */
+    private val AUTO_LENGTHS = listOf(1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
+    /**
+     * The logical pixels of content an empty callout spot may show, as a stray pixel does. A fixed amount, not a share of
+     * the spot: a long label's share would let it hide a whole glyph.
+     */
+    private const val STRAY = 8L
+    /** The clear space a callout keeps from painted content, so that it does not touch a line of text. */
+    private const val CLEAR = 3
+    /** The points along a shaft that may show content, as stray pixels do, for the shaft to count as over empty space. */
+    private const val STRAY_POINTS = 2
     /** How much shorter each try of a forced side that fits on neither side is. */
     private const val SHORTEN_STEP = 10
     private val BADGE_FONT = Font(Font.SANS_SERIF, Font.BOLD, 11)
