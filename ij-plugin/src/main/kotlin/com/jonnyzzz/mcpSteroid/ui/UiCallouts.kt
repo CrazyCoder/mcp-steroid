@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
 
 /**
  * The marks drawn over a picture: an outline around each highlight, or a mouse pointer at a click point, with a number
- * badge and a label placed where they cover the least of other text.
+ * badge and a label placed where they cover the least of other text, or at the tail of an arrow, on empty space.
  */
 object UiCallouts {
     /**
@@ -102,7 +102,8 @@ object UiCallouts {
 
     /**
      * A copy of [canvas] with each mark outlined, or drawn as a pointer, its number in a round badge beside it, and its
-     * label; badges and labels keep off [obstacles], the text of other controls, where there is room.
+     * label, or both at the tail of its arrow; badges and labels keep off [obstacles], the text of other controls, where
+     * there is room. [canvas] is the window as painted, before any mark: an arrow's callout looks for empty space in it.
      */
     fun highlight(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle> = emptyList()): UiCapture.Canvas {
         val copy = BufferedImage(canvas.image.width, canvas.image.height, BufferedImage.TYPE_INT_ARGB)
@@ -335,7 +336,8 @@ object UiCallouts {
      * its mark on the badge's line, "(1) [control] label", or left of the badge when the picture has no room there.
      * Where that label would cover the text of another control, one of [obstacles], badge and label move below the
      * mark, or above it. A pointer mark's badge goes right of the pointer, else left of it with the label further
-     * left, below or above. With no spot that covers nothing, they take the one that covers the least.
+     * left, below or above. With no spot that covers nothing, they take the one that covers the least. A mark with an
+     * arrow has its badge and label at the arrow's tail, as [placeArrow] finds it.
      */
     private fun layout(canvas: UiCapture.Canvas, marks: List<Mark>, g: Graphics2D, obstacles: List<Rectangle>): List<Pair<Mark, Parts>> {
         val placed = mutableListOf<Rectangle>()

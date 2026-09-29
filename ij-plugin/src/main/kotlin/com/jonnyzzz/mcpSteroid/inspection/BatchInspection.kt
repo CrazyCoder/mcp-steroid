@@ -216,9 +216,9 @@ class BatchInspection(private val project: Project) {
 
         /**
          * Never: the problems come back to the caller, and no one sees a view. The platform builds the Inspection
-         * Results view on the first problem found, then fills its tree in the background; closing this context under
-         * it made that work fail on a view or tools already gone ("Tools are not initialized", a null view). The
-         * callback never completes, so the work waiting for the view never runs.
+         * Results view on the first problem found, adds it to the Problems tool window and activates that, then fills
+         * its tree in the background, which fails on a view or tools this context has closed ("Tools are not
+         * initialized", a null view). The callback never completes, so the work waiting for the view never runs.
          */
         override fun initializeViewIfNeeded(): ActionCallback = ActionCallback()
 

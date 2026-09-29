@@ -51,8 +51,8 @@ class RefactorToolSpec(val handler: () -> RefactorToolHandler) : McpToolBase() {
 
         By default it is a dry run that changes nothing: it returns the element and its usages as
         path:line: text (usages lists the lines of comments and documents that name it, such as a
-        Markdown code span, apart from the code; for rename, the lines it would change and the references it leaves alone), the
-        problems and their fixes for fix, the intentions available for intention, or the lines
+        Markdown code span, apart from the code; for rename, the lines it would change and the
+        references it leaves alone), the problems and their fixes for fix, the intentions available for intention, or the lines
         optimize_imports and reformat would add and remove. A declaration of the same name that takes the
         target as its value, such as a JavaScript export { name }, is an alias: usages lists its users too,
         and a rename lists the users it leaves alone; a dry run on the alias says whether renaming it renames
