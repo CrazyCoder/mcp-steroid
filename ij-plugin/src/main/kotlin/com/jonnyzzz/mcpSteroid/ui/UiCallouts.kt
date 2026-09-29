@@ -188,12 +188,16 @@ object UiCallouts {
     }
 
     /** The screen area of [marks] with their badges, labels and arrows, placed as [highlight] places them. */
-    fun markArea(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle> = emptyList()): Rectangle {
+    fun markArea(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle> = emptyList()): Rectangle =
+        UiCapture.union(markAreas(canvas, marks, obstacles))
+
+    /** The screen area of each of [marks], its outline, badge, label and arrow, placed as [highlight] places them. */
+    private fun markAreas(canvas: UiCapture.Canvas, marks: List<Mark>, obstacles: List<Rectangle>): List<Rectangle> {
         val g = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB).createGraphics()
         try {
-            return UiCapture.union(layout(canvas, marks, g, obstacles).flatMap { (mark, parts) ->
-                listOfNotNull(parts.outline, parts.badge, parts.label, parts.arrow?.let { arrowBounds(it, mark) })
-            })
+            return layout(canvas, marks, g, obstacles).map { (mark, parts) ->
+                UiCapture.union(listOfNotNull(parts.outline, parts.badge, parts.label, parts.arrow?.let { arrowBounds(it, mark) }))
+            }
         } finally {
             g.dispose()
         }
@@ -221,10 +225,14 @@ object UiCallouts {
         val flippedFrom: UiArrowSide? = null, val shortenedFrom: Int? = null,
     )
 
-    /** [area] grown to hold the outline, badge, label and arrow of each of [marks] that lies in it, so a crop cuts none of them. */
+    /**
+     * [area] grown to hold the outline, badge, label and arrow of each of [marks] that lies in it, so a crop cuts none of
+     * them. They are placed among all the marks, as the picture draws them: a mark outside the area can take the spot a
+     * mark inside would have alone.
+     */
     fun withMarks(canvas: UiCapture.Canvas, area: Rectangle, marks: List<Mark>, obstacles: List<Rectangle> = emptyList()): Rectangle {
-        val inside = marks.filter { area.intersects(it.bounds) }
-        return if (inside.isEmpty()) area else area.union(markArea(canvas, inside, obstacles))
+        if (marks.none { area.intersects(it.bounds) }) return area
+        return markAreas(canvas, marks, obstacles).filterIndexed { i, _ -> area.intersects(marks[i].bounds) }.fold(area, Rectangle::union)
     }
 
     /** A mouse pointer with its tip at ([x], [y]), [POINTER_W] x [POINTER_H] logical pixels. */

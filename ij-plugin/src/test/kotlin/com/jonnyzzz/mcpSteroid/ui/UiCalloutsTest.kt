@@ -116,6 +116,18 @@ class UiCalloutsTest {
     }
 
     @Test
+    fun `a crop grows to where a mark is drawn among all the marks, not where it would go alone`() {
+        val c = canvas(800, 600)
+        // Outside the crop: a mark whose callout takes the spot right of the mark inside it.
+        val outside = UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "first label", numbered = false, arrow = UiArrow(UiArrowSide.RIGHT))
+        val inside = UiCallouts.Mark(2, Rectangle(380, 300, 20, 16), "x", numbered = false, arrow = UiArrow())
+        val drawn = UiCallouts.arrows(c, listOf(outside, inside)).last()!!
+        assertNotEquals(UiArrowSide.RIGHT, drawn.side)
+        val area = UiCallouts.withMarks(c, Rectangle(378, 298, 24, 20), listOf(outside, inside))
+        assertTrue("$area holds ${drawn.tail}", area.contains(drawn.tail))
+    }
+
+    @Test
     fun `a mark that takes no number is skipped by the numbering`() {
         val marks = UiCallouts.steps(listOf(
             UiCallouts.Mark(1, Rectangle(0, 0, 10, 10), null, numberable = false),
