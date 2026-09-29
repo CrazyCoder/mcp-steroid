@@ -13,9 +13,14 @@ The `McpScriptContext` is the receiver (`this`) of your script body. It provides
 These names exist on `McpScriptContext` (or among the default imports) — use them:
 `readAction`, `writeAction`, `smartReadAction`, `writeIntentReadAction`,
 `findFile`, `findPsiFile`, `findProjectFile`, `findProjectFiles`,
-`findProjectPsiFile`, `runInspectionsDirectly`, `projectScope`, `allScope`,
+`findProjectPsiFile`, `runInspectionsDirectly`, `runHighlightingPasses`,
+`getHighlightsWhenReady`, `projectScope`, `allScope`,
 `waitForSmartMode`, `project`, `println`, `printJson`, `printCsv`,
 `printToon`, `progress`, `printException`, `takeIdeScreenshot`, `disposable`.
+
+Call `println` directly or in a lambda: `rows.forEach { println(it) }`. The
+reference `::println` resolves to `kotlin.io.println`, which writes to the IDE
+process's stdout, so its output never reaches the result.
 
 These names **do not exist** — do not write them. Use the replacement on the right:
 
@@ -327,12 +332,35 @@ if (buildFile != null) {
 > `must be run under DaemonProgressIndicator, but got: null` and
 > `No HighlightingSession stored in …`.
 >
-> For inspection diagnostics, use the supported recipes:
+> For the editor's highlights, call `runHighlightingPasses(file)` (below): it
+> sets up that indicator and session, the way the IDE's own `lint_files` MCP
+> tool does. For inspection diagnostics, use the supported recipes:
 > `runInspectionsDirectly(file)` (above) for the full enabled-inspection set,
 > [Inspect and fix](mcp-steroid://ide/inspect-and-fix) for a single inspection
 > with quick fix, or
 > [Inspection summary](mcp-steroid://ide/inspection-summary) for the full
 > project report.
+
+`runHighlightingPasses(file)` returns the highlights the editor shows, including
+unused symbols, without an editor or a window. It works without focus and on a
+split-mode backend, whose project window is never active. Prefer it to the
+daemon wait below unless the question is what the open editor displays.
+
+```kotlin
+import com.intellij.openapi.fileEditor.FileDocumentManager
+
+val file = findProjectFile("src/Main.kt") ?: error("File not found")
+// Default: WEAK_WARNING and above, 30 s; on a timeout it returns an empty list with a warning.
+val highlights = runHighlightingPasses(file)
+val rows = readAction {
+    val document = FileDocumentManager.getInstance().getDocument(file) ?: error("No document")
+    highlights.map { "${document.getLineNumber(it.startOffset) + 1}: ${it.severity} [${it.inspectionToolId}] ${it.description}" }
+}
+rows.forEach { println(it) }
+```
+
+The daemon route reads the open editor's own analysis. It needs the active
+project window:
 
 ```kotlin
 import com.intellij.openapi.fileEditor.FileEditorManager

@@ -255,7 +255,8 @@ interface McpScriptContext {
      *
      * **NOTE**: The daemon analyzes only the active project window (GitHub issue #20); see
      * [waitForEditorHighlighting]. These are the highlights the user sees, including the unused-symbol
-     * pass that [runInspectionsDirectly] does not run.
+     * pass that [runInspectionsDirectly] does not run. [runHighlightingPasses] returns the same
+     * highlights without a window.
      *
      * @param file The virtual file to get highlights for.
      * @param minSeverityValue Minimum severity value (default: WEAK_WARNING). Use HighlightSeverity.*.myVal.
@@ -277,6 +278,38 @@ interface McpScriptContext {
      * ```
      */
     suspend fun getHighlightsWhenReady(
+        file: VirtualFile,
+        minSeverityValue: Int = 200, // HighlightSeverity.WEAK_WARNING.myVal
+        timeout: Duration = 30.seconds
+    ): List<HighlightInfo>
+
+    /**
+     * Runs the main highlighting passes on a file and returns their highlights: the passes the
+     * editor runs, with the project's inspection profile, including the unused-symbol inspection
+     * that [runInspectionsDirectly] does not run.
+     *
+     * It needs no editor and no window, so it works in any window, without focus, and on a
+     * split-mode backend, whose project window is never active. The IDE's own `lint_files` MCP
+     * tool analyzes files the same way (`MainPassesRunner`). The analysis gives way to every
+     * write action and then runs again.
+     *
+     * @param file The virtual file to analyze.
+     * @param minSeverityValue Minimum severity value (default: WEAK_WARNING). Use HighlightSeverity.*.myVal.
+     * @param timeout Maximum time for the analysis (default: 30 seconds).
+     * @return The highlights in document order, or an empty list with a warning in the result when
+     *   the analysis did not finish within [timeout].
+     *
+     * ```kotlin
+     * val file = findProjectFile("src/Main.kt") ?: error("File not found")
+     * val highlights = runHighlightingPasses(file)
+     * val rows = readAction {
+     *     val document = FileDocumentManager.getInstance().getDocument(file)!!
+     *     highlights.map { "${document.getLineNumber(it.startOffset) + 1}: ${it.severity} ${it.description}" }
+     * }
+     * rows.forEach { println(it) }
+     * ```
+     */
+    suspend fun runHighlightingPasses(
         file: VirtualFile,
         minSeverityValue: Int = 200, // HighlightSeverity.WEAK_WARNING.myVal
         timeout: Duration = 30.seconds
@@ -321,8 +354,9 @@ interface McpScriptContext {
      * ```
      *
      * Warnings from the highlighting passes, such as unused symbols, come only from
-     * [getHighlightsWhenReady].
+     * [runHighlightingPasses] and [getHighlightsWhenReady].
      *
+     * @see runHighlightingPasses for the editor's highlights without a window
      * @see getHighlightsWhenReady for daemon-based highlights (requires the active project window)
      */
     suspend fun runInspectionsDirectly(

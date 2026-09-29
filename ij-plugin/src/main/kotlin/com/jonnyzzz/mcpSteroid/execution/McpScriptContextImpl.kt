@@ -6,7 +6,11 @@ import com.fasterxml.jackson.databind.SerializationFeature
 import com.intellij.codeInsight.daemon.DaemonCodeAnalyzer
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerEx
 import com.intellij.codeInsight.daemon.impl.HighlightInfo
+import com.intellij.codeInsight.daemon.impl.MainPassesRunner
 import com.intellij.codeInspection.ProblemDescriptor
+import com.intellij.openapi.progress.ProgressManager
+import com.intellij.openapi.progress.util.ProgressIndicatorBase
+import com.intellij.openapi.util.Computable
 import com.intellij.lang.annotation.HighlightSeverity
 import com.intellij.lang.injection.InjectedLanguageManager
 import com.intellij.openapi.progress.ProcessCanceledException
@@ -36,6 +40,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.psi.PsiDocumentManager
 import com.jonnyzzz.mcpSteroid.inspection.BatchInspection
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallErrorException
+import com.jonnyzzz.mcpSteroid.server.isRemoteDevBackend
 import com.jonnyzzz.mcpSteroid.storage.ExecutionId
 import com.jonnyzzz.mcpSteroid.storage.executionStorage
 import com.jonnyzzz.mcpSteroid.vision.VisionService
@@ -45,6 +50,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -397,7 +404,8 @@ class McpScriptContextImpl(
         if (editor == null) {
             log.warn("[$executionId] No text editor found for ${file.name}, cannot wait for highlighting")
             resultBuilder.logMessage("WARNING: ${file.name} is not open in an editor, so the daemon does not analyze it: " +
-                "open it with FileEditorManager.getInstance(project).openFile(file, true) on the EDT first.")
+                "open it with FileEditorManager.getInstance(project).openFile(file, true) on the EDT first, " +
+                "or call runHighlightingPasses(file), which needs no editor.")
             return false
         }
 
@@ -415,8 +423,14 @@ class McpScriptContextImpl(
         } else {
             // The daemon analyzes only the active project window; say so, since that is the usual cause.
             val active = withContext(Dispatchers.EDT) { WindowManager.getInstance().getFrame(project)?.isActive == true }
-            val cause = if (active) "" else " The project window is not active, and the IDE analyzes only the active window: " +
-                "call ProjectUtil.focusProjectWindow(project, true) on the EDT first."
+            val cause = when {
+                active -> ""
+                isRemoteDevBackend() -> " This IDE is a split-mode backend, whose project window is never active: " +
+                    "call runHighlightingPasses(file) instead, which needs no window."
+                else -> " The project window is not active, and the IDE analyzes only the active window: " +
+                    "call ProjectUtil.focusProjectWindow(project, true) on the EDT first, " +
+                    "or runHighlightingPasses(file), which needs no window."
+            }
             log.warn("[$executionId] Timeout waiting for daemon analysis on ${file.name}")
             resultBuilder.logMessage("WARNING: daemon analysis of ${file.name} did not complete within $timeout.$cause")
         }
@@ -443,6 +457,46 @@ class McpScriptContextImpl(
         return readAction {
             getHighlightsFromDaemon(document, minSeverityValue)
         }
+    }
+
+    override suspend fun runHighlightingPasses(
+        file: VirtualFile,
+        minSeverityValue: Int,
+        timeout: Duration
+    ): List<HighlightInfo> {
+        checkDisposed()
+        log.info("[$executionId] Running highlighting passes on ${file.name}...")
+        resultBuilder.logProgress("Running highlighting passes on ${file.name}...")
+        waitForSmartMode()
+
+        // MainPassesRunner supplies the DaemonProgressIndicator and HighlightingSession that
+        // DaemonCodeAnalyzerImpl.runMainPasses needs, and retries after each write action. From a
+        // background thread it wants a ProgressIndicatorEx as the current indicator. The analysis
+        // blocks its thread, so a timeout or a cancelled script stops it through the indicator.
+        val indicator = ProgressIndicatorBase()
+        val outcome = coroutineScope {
+            val analysis = async(Dispatchers.Default) {
+                runCatching {
+                    ProgressManager.getInstance().runProcess(Computable {
+                        MainPassesRunner(project, "MCP Steroid Highlighting Passes", null).runMainPasses(listOf(file))
+                    }, indicator)
+                }
+            }
+            try {
+                withTimeoutOrNull(timeout) { analysis.await() }
+            } finally {
+                if (!analysis.isCompleted) indicator.cancel()
+            }
+        }
+        if (outcome == null) {
+            log.warn("[$executionId] Highlighting passes on ${file.name} did not finish within $timeout")
+            resultBuilder.logMessage("WARNING: the highlighting passes on ${file.name} did not finish within $timeout; " +
+                "no highlights were returned. Call again with a longer timeout.")
+            return emptyList()
+        }
+        return outcome.getOrThrow().values.flatten()
+            .filter { it.severity.myVal >= minSeverityValue }
+            .sortedBy { it.startOffset }
     }
 
     private fun getHighlightsFromDaemon(document: Document, minSeverityValue: Int): List<HighlightInfo> {

@@ -353,7 +353,7 @@ println("NEXT_MIGRATION=V" + nextVersion)
 
 ### Run Inspections Directly (Recommended)
 
-**Note**: The daemon analyzes only the active project window, so `getHighlightsWhenReady()` needs it in front (`ProjectUtil.focusProjectWindow(project, true)` on the EDT); on a timeout it returns the last analysis with a warning. `runInspectionsDirectly()` works in any window but runs local inspections only, without the unused-symbol pass.
+**Note**: `runInspectionsDirectly()` works in any window but runs local inspections only, without the unused-symbol pass. For the editor's highlights, unused symbols included, use `runHighlightingPasses()` below, which also works in any window.
 ```kotlin
 import com.intellij.codeInspection.ProblemDescriptorUtil
 
@@ -389,9 +389,26 @@ if (problems.isEmpty()) {
 
 **Returns:** `Map<String, List<ProblemDescriptor>>` - inspection tool ID to problems found
 
+### Get Errors and Warnings without a window (Recommended for highlights)
+
+`runHighlightingPasses(file)` runs the editor's highlighting passes with the project's inspection profile and returns the highlights the editor would show, unused symbols included. It needs no editor, no focus and no active window, so it also works on a split-mode backend.
+
+```kotlin
+import com.intellij.openapi.fileEditor.FileDocumentManager
+
+val file = requireNotNull(findProjectFile("src/main/kotlin/MyClass.kt")) { "File not found" }
+val highlights = runHighlightingPasses(file) // WEAK_WARNING and above; empty with a warning on a 30 s timeout
+readAction {
+    val document = FileDocumentManager.getInstance().getDocument(file) ?: error("No document")
+    highlights.forEach { info ->
+        println("Line ${document.getLineNumber(info.startOffset) + 1}: [${info.severity}] ${info.description}")
+    }
+}
+```
+
 ### Get Errors and Warnings (Daemon-based, requires the active project window)
 
-**Note**: The daemon analyzes only the active project window, so `getHighlightsWhenReady()` needs it in front (`ProjectUtil.focusProjectWindow(project, true)` on the EDT); on a timeout it returns the last analysis with a warning. `runInspectionsDirectly()` works in any window but runs local inspections only, without the unused-symbol pass. These are the highlights the user sees in the editor.
+**Note**: The daemon analyzes only the active project window, so `getHighlightsWhenReady()` needs it in front (`ProjectUtil.focusProjectWindow(project, true)` on the EDT); on a timeout it returns the last analysis with a warning. Use it when the question is what the open editor shows; otherwise `runHighlightingPasses()` above gives the same highlights without a window.
 
 ```kotlin
 import com.intellij.codeInsight.daemon.impl.DaemonCodeAnalyzerImpl
