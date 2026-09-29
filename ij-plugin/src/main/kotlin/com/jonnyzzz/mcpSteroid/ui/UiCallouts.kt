@@ -329,11 +329,11 @@ object UiCallouts {
      * [UiArrowSide.AUTO_ORDER] at the arrow's length, then at each of [AUTO_LENGTHS] times it up to the longest arrow:
      * the first whose callout is in the picture and covers nothing ([free]) and whose shaft crosses no other outline, no
      * [text], no [placed] callout, no placed shaft and no painted content ([clear]); else the first of those whose shaft
-     * crosses painted content. Else the one whose callout covers nothing and whose shaft crosses
-     * least, as a shaft hides little of what it crosses and a callout hides all. Else, of those that keep off the placed
-     * callouts and shafts, if any, the one in the picture that covers least, a crossing counting as much as a covered
-     * badge. A forced side flips to the opposite side when its callout leaves the picture, and is shortened, down to the
-     * shortest length, when neither side fits; text does not move it, as the caller chose the side.
+     * crosses painted content. Else the one whose callout covers nothing and whose shaft crosses least, as a shaft hides
+     * little of what it crosses and a callout hides all. Else, of those that keep off the placed callouts and shafts, if
+     * any, the one in the picture that covers least, a crossing counting as much as a covered badge. A forced side flips
+     * to the opposite side when its callout leaves the picture, and is shortened, down to the shortest length, when
+     * neither side fits; text does not move it, as the caller chose the side.
      */
     private fun placeArrow(
         mark: Mark, arrow: UiArrow, outline: Rectangle, index: Int, boxes: List<Rectangle>, text: List<Rectangle>, within: Rectangle,
@@ -361,12 +361,12 @@ object UiCallouts {
             val lengths = AUTO_LENGTHS.map { f -> minOf((arrow.length * f).roundToInt(), UiArrow.LENGTHS.last) }.distinct()
             val tries = lengths.flatMap { length -> UiArrowSide.AUTO_ORDER.map { plan(it, length) } }.filter(::inside)
             val empty = tries.filter { p -> listOfNotNull(p.badge, p.label).all(free) }
-            fun clear(p: Placed) = listOfNotNull(p.badge, p.label).none { r -> placed.any { it.intersects(r) } || shafts.any { it.intersects(r) } }
+            fun offPlaced(p: Placed) = listOfNotNull(p.badge, p.label).none { r -> placed.any { it.intersects(r) } || shafts.any { it.intersects(r) } }
             val uncrossed = empty.filter { crossings(it) == 0 }
             return uncrossed.firstOrNull { clear(Line2D.Double(it.plan.tail, it.plan.head)) }
                 ?: uncrossed.firstOrNull()
                 ?: empty.minByOrNull(::crossings)
-                ?: (tries.filter(::clear).ifEmpty { tries }).minByOrNull { p -> covered(arrayOf(p.badge, p.label)) + crossings(p) * BADGE.toLong() * BADGE }
+                ?: (tries.filter(::offPlaced).ifEmpty { tries }).minByOrNull { p -> covered(arrayOf(p.badge, p.label)) + crossings(p) * BADGE.toLong() * BADGE }
                 ?: plan(UiArrowSide.RIGHT, UiArrow.LENGTHS.first)
         }
         val forced = plan(arrow.from, arrow.length)

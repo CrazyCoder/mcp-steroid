@@ -123,8 +123,12 @@ where:
   badge, label or shaft already placed, and no other outline;
 - the shaft crosses no other outline, no placed callout and no other shaft.
 
-When no spot meets all three, it takes a spot whose callout meets the first
-two and whose shaft crosses least: a shaft hides little of what it crosses, a
+Of those spots, the first whose shaft also runs over empty pixels wins; a shaft
+crosses painted content, such as a combo box's value, only where every such
+shaft would.
+
+When no spot meets all three, it takes a spot whose callout meets the first two
+and whose shaft crosses least: a shaft hides little of what it crosses, a
 callout hides all. When no callout meets them, it takes the spot inside the
 picture, off placed callouts and shafts where one is, whose callout covers the
 fewest pixels of text and marks, a crossing counting as much as a badge

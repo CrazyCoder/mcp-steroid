@@ -70,6 +70,17 @@ class UiCalloutsTest {
     }
 
     @Test
+    fun `with no empty spot a callout still keeps off an earlier arrow's shaft`() {
+        // Text over the whole picture, so every spot covers as much; the first arrow runs down at x 330, where the second
+        // mark's callout on the right would lie.
+        val everywhere = listOf(Rectangle(100, 50, 800, 600))
+        val first = UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), null, numbered = false, arrow = UiArrow(UiArrowSide.BELOW, 200))
+        val second = UiCallouts.Mark(2, Rectangle(220, 400, 40, 16), "label", numbered = false, arrow = UiArrow())
+        val (a, b) = UiCallouts.arrows(canvas(800, 600), listOf(first, second), everywhere).map { it!! }
+        assertFalse("${b.callout} lies on the first shaft", java.awt.geom.Line2D.Double(a.tail, a.head).intersects(b.callout!!))
+    }
+
+    @Test
     fun `the picture draws each arrow where the report says, at any scale`() {
         // Text right of the target, at every distance: wherever the label's width decides the side, the drawing and the
         // report must decide alike.

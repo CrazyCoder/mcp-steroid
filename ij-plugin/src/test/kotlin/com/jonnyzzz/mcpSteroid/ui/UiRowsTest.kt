@@ -130,7 +130,7 @@ class UiRowsTest {
         onEdt {
             // As the Settings tree lays out its rows: each as wide as the tree.
             val tree = object : JTree(root) {
-                override fun getRowBounds(row: Int): Rectangle? = super.getRowBounds(row)?.apply { width = this@apply.let { 400 - x } }
+                override fun getRowBounds(row: Int): Rectangle? = super.getRowBounds(row)?.apply { width = 400 - x }
             }.apply { setSize(400, 1000) }
             val texts = UiRows.rowTexts(tree)
             assertEquals(2, texts.size)
