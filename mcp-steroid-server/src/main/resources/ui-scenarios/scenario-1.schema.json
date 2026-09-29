@@ -20,6 +20,15 @@
     "cleanup": {"type": "array", "items": {"$ref": "#/$defs/step"}, "description": "Steps that run after the others whether they pass or fail."}
   },
   "$defs": {
+    "style": {
+      "description": "The color and line width of marks: a named color or #RRGGBB, and a width of 1 to 8 logical pixels.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "color": {"type": "string", "pattern": "^(red|orange|yellow|green|blue|purple|black|#[0-9A-Fa-f]{6})$"},
+        "width": {"type": "number", "minimum": 1, "maximum": 8}
+      }
+    },
     "requires": {
       "description": "What the IDE must be for the scenario to mean anything; a replay on another IDE is SKIPPED.",
       "type": "object",
@@ -101,11 +110,31 @@
             "click": {"const": true, "description": "The point of the call's last click, drawn as a mouse pointer."},
             "inspection": {"type": "string", "description": "An inspection's row on the Inspections page, by its short name."},
             "console": {"type": "string", "description": "The console of a run by its name; contains names the lines to outline."},
-            "contains": {"type": "string"}
+            "contains": {"type": "string"},
+            "breadcrumb": {"const": true, "description": "The breadcrumb bar of the Settings page shown, as an object that can take an arrow."},
+            "arrow": {
+              "description": "An arrow from a callout, which holds the badge and label, to the highlight: true for the automatic side, or its side, length and head.",
+              "anyOf": [
+                {"const": true},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "from": {"enum": ["auto", "left", "right", "above", "below", "above-left", "above-right", "below-left", "below-right"]},
+                    "length": {"type": "integer", "minimum": 20, "maximum": 400},
+                    "head": {"enum": ["filled", "open", "none"]}
+                  }
+                }
+              ]
+            },
+            "outline": {"const": false, "description": "Draw the arrow without an outline around the target; needs arrow."},
+            "number": {"const": false, "description": "No badge and no number for this highlight; the other steps count on without it."},
+            "style": {"$ref": "#/$defs/style"}
           },
           "anyOf": [
             {"required": ["ref"]}, {"required": ["name"]}, {"required": ["text"]}, {"required": ["class"]}, {"required": ["xpath"]},
-            {"required": ["lines"]}, {"required": ["symbol"]}, {"required": ["click"]}, {"required": ["inspection"]}, {"required": ["console", "contains"]}
+            {"required": ["lines"]}, {"required": ["symbol"]}, {"required": ["click"]}, {"required": ["inspection"]}, {"required": ["console", "contains"]},
+            {"required": ["breadcrumb"]}
           ]
         }
       ]
@@ -191,6 +220,7 @@
         ]},
         "fit": {"type": "boolean", "description": "On a screenshot: make room for content the picture would show cut, and put the sizes back afterwards."},
         "numbers": {"type": "boolean", "description": "On a screenshot: number the highlights, or outline them only; without it, several are numbered and a single one is not."},
+        "style": {"$ref": "#/$defs/style", "description": "On a screenshot: the color and line width of every highlight, which a highlight's own style overrides field by field."},
         "within": {"type": "string", "pattern": "^-?\\d+,-?\\d+,\\d+,\\d+(;-?\\d+,-?\\d+,\\d+,\\d+)*$", "description": "On a get of the layout: the screen areas x,y,width,height;... that must show whole; content cut outside them does not count."},
         "proportion": {"type": "number", "minimum": 0, "maximum": 1, "description": "On a splitter: the first pane's share, 0.05 to 0.95; a restore by key takes any saved share."},
         "size": {"anyOf": [{"const": "fit"}, {"type": "integer", "minimum": 0, "maximum": 20000}], "description": "On a splitter: the pane's size in logical pixels, or fit."},

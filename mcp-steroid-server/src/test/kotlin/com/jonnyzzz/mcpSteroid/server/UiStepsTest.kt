@@ -121,6 +121,66 @@ class UiStepsTest {
         assertMentions(fails("""[{"action":"click","name":"a","numbers":false}]"""), "screenshot")
     }
 
+    private fun shot(highlight: String, extra: String = "") =
+        UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","highlight":[$highlight]$extra}]""").single()
+
+    @Test
+    fun `an arrow of true points from auto at the default length`() {
+        assertEquals(UiArrow(), shot("""{"name":"a","arrow":true}""").highlight!!.single().arrow)
+    }
+
+    @Test
+    fun `an arrow takes its side, length and head`() {
+        assertEquals(UiArrow(UiArrowSide.ABOVE_LEFT, 90, UiArrowHead.OPEN),
+            shot("""{"symbol":"parse","arrow":{"from":"above-left","length":90,"head":"open"}}""").highlight!!.single().arrow)
+    }
+
+    @Test
+    fun `outline false and number false are read`() {
+        val h = shot("""{"click":true,"arrow":true,"outline":false,"number":false}""").highlight!!.single()
+        assertFalse(h.outline)
+        assertFalse(h.number)
+    }
+
+    @Test
+    fun `a breadcrumb object takes an arrow`() {
+        val h = shot("""{"breadcrumb":true,"arrow":{"from":"below"}}""").highlight!!.single()
+        assertTrue(h.breadcrumb)
+        assertEquals(UiArrowSide.BELOW, h.arrow!!.from)
+    }
+
+    @Test
+    fun `a style names a color or gives it in hex, with a width`() {
+        assertEquals(UiStyle(0xFF9F1C, 4.0), shot("""{"name":"a"}""", ""","style":{"color":"orange","width":4}""").style)
+        assertEquals(UiStyle(0x123ABC, null), shot("""{"name":"a","style":{"color":"#123abc"}}""").highlight!!.single().style)
+    }
+
+    @Test
+    fun `a highlight style overrides the step style field by field`() {
+        assertEquals(UiStyle(0xFF9F1C, 5.0), UiStyle(width = 5.0).over(UiStyle(0xFF9F1C, 2.0)))
+    }
+
+    @Test
+    fun `bad arrows and styles fail with the valid values`() {
+        fun bad(highlight: String) = fails("""[{"action":"screenshot","out":"C:/a.png","highlight":[$highlight]}]""")
+        assertMentions(bad("""{"name":"a","arrow":{"from":"up"}}"""), "above-left")
+        assertMentions(bad("""{"name":"a","arrow":{"head":"round"}}"""), "filled, open, none")
+        assertMentions(bad("""{"name":"a","arrow":{"length":10}}"""), "20 to 400")
+        assertMentions(bad("""{"name":"a","arrow":{"size":10}}"""), "from, length, head")
+        assertMentions(bad("""{"name":"a","arrow":false}"""), "true or an object")
+        assertMentions(bad("""{"name":"a","outline":false}"""), "outline false needs arrow")
+        assertMentions(bad("""{"name":"a","number":true}"""), "number takes only false")
+        assertMentions(bad("""{"name":"a","style":{"color":"teal"}}"""), "red, orange")
+        assertMentions(bad("""{"name":"a","style":{"color":"#12345"}}"""), "#RRGGBB")
+        assertMentions(bad("""{"name":"a","style":{"width":9}}"""), "1 to 8")
+        assertMentions(bad("""{"name":"a","style":{"dash":true}}"""), "color and width")
+    }
+
+    @Test
+    fun `style goes with screenshot only`() {
+        assertMentions(fails("""[{"action":"click","name":"a","style":{"color":"red"}}]"""), "style goes with screenshot")
+    }
+
     @Test
     fun `a screenshot crops to a tool window and fits`() {
         val s = UiSteps.parse("""[{"action":"screenshot","out":"C:/a.png","crop":{"toolwindow":"Run"},"fit":true}]""").single()

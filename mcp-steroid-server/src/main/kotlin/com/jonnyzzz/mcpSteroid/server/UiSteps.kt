@@ -40,7 +40,7 @@ object UiSteps {
         "editor", "editors", "log", "memory", "below", "width", "height", "maximize", "layout", "path", "mode", "delete",
         "builds", "changes", "console", "lines", "changed", "diff", "golden", "notifications", "problems", "severity",
         "out", "highlight", "crop", "margin", "align", "show", "theme", "themes", "dimension",
-        "proportion", "size", "key", "fit", "numbers", "within",
+        "proportion", "size", "key", "fit", "numbers", "within", "style",
     )
     /** The share of its first pane a splitter step sets: a pane never shrinks to nothing. */
     val PROPORTIONS = 0.05..0.95
@@ -270,6 +270,7 @@ object UiSteps {
             key = obj.string("key"),
             fit = obj.boolean("fit") ?: false,
             numbers = obj.boolean("numbers"),
+            style = obj["style"]?.let(UiHighlightSpec::parseStyle),
             side = obj.string("side"),
             command = obj.string("command"),
             code = obj.string("code"),
@@ -329,6 +330,7 @@ object UiSteps {
             require(step.action == UiAction.SPLITTER) { "proportion, size and key go with splitter, not $action" }
         }
         if (step.fit) require(step.action == UiAction.SCREENSHOT) { "fit goes with screenshot, not $action" }
+        if (step.style != null) require(step.action == UiAction.SCREENSHOT) { "style goes with screenshot, not $action" }
         if (step.numbers != null) {
             require(step.action == UiAction.SCREENSHOT) { "numbers goes with screenshot, not $action" }
             require(!step.highlight.isNullOrEmpty()) { "numbers numbers the highlights: add highlight, or leave numbers out" }

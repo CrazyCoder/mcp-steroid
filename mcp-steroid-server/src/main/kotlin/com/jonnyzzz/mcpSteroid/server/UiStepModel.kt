@@ -256,6 +256,8 @@ data class UiStep(
      * it, several highlights are numbered and a single one is not.
      */
     val numbers: Boolean? = null,
+    /** On a screenshot step: the color and line width of every highlight, which a highlight's own style overrides. */
+    val style: UiStyle? = null,
     /**
      * Split Mode: `backend` runs the step on the Remote Development backend, where the project, its files and the
      * windows the backend draws are; the call's own side otherwise. Ignored in a regular IDE.
