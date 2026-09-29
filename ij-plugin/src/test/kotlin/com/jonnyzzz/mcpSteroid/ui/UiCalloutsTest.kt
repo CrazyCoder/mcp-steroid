@@ -1,6 +1,8 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.ui
 
+import com.jonnyzzz.mcpSteroid.server.UiArrow
+import com.jonnyzzz.mcpSteroid.server.UiArrowSide
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -17,6 +19,63 @@ class UiCalloutsTest {
         val image = BufferedImage((w * scale).toInt(), (h * scale).toInt(), BufferedImage.TYPE_INT_RGB)
         image.createGraphics().apply { color = Color.WHITE; fillRect(0, 0, image.width, image.height); dispose() }
         return UiCapture.Canvas(image, Point(100, 50), scale)
+    }
+
+    @Test
+    fun `a mark that takes no number is skipped by the numbering`() {
+        val marks = UiCallouts.steps(listOf(
+            UiCallouts.Mark(1, Rectangle(0, 0, 10, 10), null, numberable = false),
+            UiCallouts.Mark(2, Rectangle(0, 50, 10, 10), null),
+            UiCallouts.Mark(3, Rectangle(0, 100, 10, 10), null),
+        ), null)
+        assertEquals(listOf(false, true, true), marks.map { it.numbered })
+        assertEquals(listOf(1, 2), marks.filter { it.numbered }.map { it.number })
+    }
+
+    @Test
+    fun `a picture of marks that take no number has no badges`() {
+        val marks = UiCallouts.steps(listOf(
+            UiCallouts.Mark(1, Rectangle(0, 0, 10, 10), null, numberable = false),
+            UiCallouts.Mark(2, Rectangle(0, 50, 10, 10), null, numberable = false),
+        ), null)
+        assertTrue(marks.none { it.numbered })
+    }
+
+    @Test
+    fun `a joined pointer drops its arrow`() {
+        val marks = UiCallouts.steps(listOf(
+            UiCallouts.Mark(1, Rectangle(100, 100, 60, 16), null),
+            UiCallouts.Mark(2, Rectangle(162, 110, 1, 1), null, pointer = true, arrow = UiArrow()),
+        ), null)
+        assertTrue(marks[1].joined)
+        assertEquals(null, marks[1].arrow)
+    }
+
+    @Test
+    fun `the mark area holds an arrow and its callout`() {
+        val c = canvas(800, 600)
+        val mark = UiCallouts.Mark(1, Rectangle(400, 300, 60, 16), "x", numbered = false, arrow = UiArrow(UiArrowSide.LEFT, 120))
+        val area = UiCallouts.markArea(c, listOf(mark))
+        assertTrue(area.toString(), area.x <= 400 - 3 - 3 - 120 - 5)
+    }
+
+    @Test
+    fun `an outline in another color paints in that color`() {
+        val c = canvas(300, 200)
+        val painted = UiCallouts.highlight(c, listOf(UiCallouts.Mark(1, Rectangle(150, 100, 60, 20), null, numbered = false, color = Color(0x2F6FEB))))
+        // The outline's left edge crosses row 60 of the picture, whose origin is at (100, 50) on screen.
+        val row = (0 until 80).map { painted.image.getRGB(it, 60) and 0xFFFFFF }
+        assertTrue(row.map { Integer.toHexString(it) }.toString(), 0x2F6FEB in row)
+    }
+
+    @Test
+    fun `a mark without an outline paints no outline`() {
+        val c = canvas(300, 200)
+        val painted = UiCallouts.highlight(c, listOf(UiCallouts.Mark(1, Rectangle(150, 100, 60, 20), null, numbered = false, outline = false,
+            arrow = UiArrow(UiArrowSide.RIGHT, 40))))
+        // Left of the target, where only an outline could paint, the picture stays white.
+        val row = (0 until 80).map { painted.image.getRGB(it, 60) and 0xFFFFFF }
+        assertTrue(row.all { it == 0xFFFFFF })
     }
 
     @Test
