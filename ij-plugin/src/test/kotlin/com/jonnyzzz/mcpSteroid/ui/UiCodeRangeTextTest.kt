@@ -21,4 +21,17 @@ class UiCodeRangeTextTest : BasePlatformTestCase() {
             factory.releaseEditor(editor)
         }
     }
+
+    fun `test a soft-wrapped line has a span on each of its visual lines`() {
+        myFixture.configureByText("a.txt", "val s = aaaaaaaaaa bbbbbbbbbb cccccccccc dddddddddd\n")
+        val editor = myFixture.editor
+        com.intellij.testFramework.EditorTestUtil.configureSoftWraps(editor, 20)
+        val wraps = editor.softWrapModel.getSoftWrapsForLine(0)
+        assertTrue("the line wraps", wraps.isNotEmpty())
+        val spans = UiCodeRange.textSpans(editor, 0..0)
+        assertEquals(wraps.size + 1, spans.size)
+        assertEquals(spans.map { it.y }.distinct().size, spans.size)
+        // The first visual line runs to where it wraps, not to where the last one ends.
+        assertEquals(editor.offsetToXY(wraps.first().start, false, true).x, spans.first().x + spans.first().width)
+    }
 }

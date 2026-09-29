@@ -67,17 +67,23 @@ object UiCodeRange {
     }
 
     /**
-     * The text of [lines], 0-based, of [editor]'s document: for each line with text, the box from its first character
-     * that is not whitespace to its end, on its first visual line. A picture's badges keep off it.
+     * The text of [lines], 0-based, of [editor]'s document: for each visual line with text, the box from its first
+     * character that is not whitespace to its end. A soft-wrapped line has one on each of its visual lines. A
+     * picture's badges and arrows keep off them.
      */
     fun textSpans(editor: Editor, lines: IntRange): List<Rectangle> {
         val doc = editor.document
-        return lines.filter { it in 0 until doc.lineCount }.mapNotNull { line ->
+        return lines.filter { it in 0 until doc.lineCount }.flatMap { line ->
             val start = doc.getLineStartOffset(line)
             val end = doc.getLineEndOffset(line)
-            val first = (start until end).firstOrNull { !doc.charsSequence[it].isWhitespace() } ?: return@mapNotNull null
-            val from = editor.offsetToXY(first)
-            Rectangle(from.x, from.y, maxOf(1, editor.offsetToXY(end).x - from.x), editor.lineHeight)
+            val cuts = listOf(start) + editor.softWrapModel.getSoftWrapsForLine(line).map { it.start } + end
+            cuts.zipWithNext().mapNotNull { (a, b) ->
+                val first = (a until b).firstOrNull { !doc.charsSequence[it].isWhitespace() } ?: return@mapNotNull null
+                val from = editor.offsetToXY(first)
+                // The end of a visual line that wraps is before the wrap: past it, the offset is on the next visual line.
+                val to = editor.offsetToXY(b, false, b != end)
+                Rectangle(from.x, from.y, maxOf(1, to.x - from.x), editor.lineHeight)
+            }
         }
     }
 

@@ -43,6 +43,14 @@ class UiArrowsTest {
     }
 
     @Test
+    fun `on a diagonal, the label's corner nearest the target sits at the tail`() {
+        assertEquals(null to Rectangle(140, 50, 50, 18), UiArrows.callout(Point(140, 50), UiArrowSide.BELOW_RIGHT, null, 50, 18))
+        assertEquals(null to Rectangle(140, 32, 50, 18), UiArrows.callout(Point(140, 50), UiArrowSide.ABOVE_RIGHT, null, 50, 18))
+        assertEquals(null to Rectangle(90, 50, 50, 18), UiArrows.callout(Point(140, 50), UiArrowSide.BELOW_LEFT, null, 50, 18))
+        assertEquals(null to Rectangle(90, 32, 50, 18), UiArrows.callout(Point(140, 50), UiArrowSide.ABOVE_LEFT, null, 50, 18))
+    }
+
+    @Test
     fun `text is white on red, green and blue, and black on yellow and orange`() {
         for (fill in listOf(0xE52B50, 0x2A9D5B, 0x2F6FEB, 0x202020)) assertEquals(Integer.toHexString(fill), Color.WHITE, UiArrows.textOn(Color(fill)))
         for (fill in listOf(0xFFD60A, 0xFF9F1C)) assertEquals(Integer.toHexString(fill), Color.BLACK, UiArrows.textOn(Color(fill)))

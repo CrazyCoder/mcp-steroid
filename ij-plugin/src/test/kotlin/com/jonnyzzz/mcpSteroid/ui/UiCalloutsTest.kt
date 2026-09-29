@@ -21,6 +21,100 @@ class UiCalloutsTest {
         return UiCapture.Canvas(image, Point(100, 50), scale)
     }
 
+    private fun arrowOf(c: UiCapture.Canvas, mark: UiCallouts.Mark, obstacles: List<Rectangle> = emptyList()) =
+        UiCallouts.arrows(c, listOf(mark), obstacles).single()!!
+
+    @Test
+    fun `auto points from the right when nothing is there`() {
+        val p = arrowOf(canvas(800, 600), UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()))
+        assertEquals(UiArrowSide.RIGHT, p.side)
+        assertEquals(60, p.length)
+    }
+
+    @Test
+    fun `auto passes over a side whose callout covers text`() {
+        val text = Rectangle(360, 280, 200, 60)
+        val p = arrowOf(canvas(800, 600), UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()), listOf(text))
+        assertEquals(UiArrowSide.LEFT, p.side)
+    }
+
+    @Test
+    fun `auto tries a longer arrow before a worse spot`() {
+        // Text all around the target, reaching past every callout at 60 px, and clear of the one at 90 px on the right.
+        val around = Rectangle(200, 200, 250, 220)
+        val p = arrowOf(canvas(800, 600), UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()), listOf(around))
+        assertEquals(UiArrowSide.RIGHT, p.side)
+        assertEquals(90, p.length)
+    }
+
+    @Test
+    fun `a forced side flips at the picture's edge`() {
+        val p = arrowOf(canvas(400, 300), UiCallouts.Mark(1, Rectangle(120, 150, 40, 16), "label", numbered = false, arrow = UiArrow(UiArrowSide.LEFT, 80)))
+        assertEquals(UiArrowSide.RIGHT, p.side)
+        assertEquals(UiArrowSide.LEFT, p.flippedFrom)
+    }
+
+    @Test
+    fun `a forced side that fits on neither side is shortened`() {
+        val c = canvas(300, 200)
+        val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(200, 120, 60, 16), null, numbered = false, arrow = UiArrow(UiArrowSide.LEFT, 400)))
+        assertEquals(UiArrowSide.LEFT, p.side)
+        assertEquals(400, p.shortenedFrom)
+        assertEquals(90, p.length)
+        assertTrue(c.bounds.contains(p.tail))
+    }
+
+    @Test
+    fun `a shaft does not cross another outline when a side is free`() {
+        val other = UiCallouts.Mark(1, Rectangle(380, 300, 40, 16), null, numbered = false)
+        val arrowed = UiCallouts.Mark(2, Rectangle(300, 300, 60, 16), null, numbered = false, arrow = UiArrow(length = 120))
+        val p = UiCallouts.arrows(canvas(800, 600), listOf(other, arrowed)).last()!!
+        assertNotEquals(UiArrowSide.RIGHT, p.side)
+    }
+
+    @Test
+    fun `a shaft does not run through text when a side is free`() {
+        // Text right of the target covers the callouts there; a label left of the target lies on the left shaft.
+        val right = Rectangle(420, 280, 200, 60)
+        val onShaft = Rectangle(250, 302, 30, 12)
+        val p = arrowOf(canvas(800, 600), UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()), listOf(right, onShaft))
+        assertEquals(UiArrowSide.BELOW, p.side)
+    }
+
+    /** [c] with the screen area [r] painted gray, as a control or an icon the picture shows. */
+    private fun painted(c: UiCapture.Canvas, r: Rectangle): UiCapture.Canvas = c.also {
+        it.image.createGraphics().apply { color = Color(0x80, 0x80, 0x80); fillRect(r.x - 100, r.y - 50, r.width, r.height); dispose() }
+    }
+
+    @Test
+    fun `a callout goes where the picture is empty, off controls no text list names`() {
+        val c = painted(canvas(800, 600), Rectangle(380, 290, 160, 36))
+        val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()))
+        assertNotEquals(UiArrowSide.RIGHT, p.side)
+    }
+
+    @Test
+    fun `a shaft may cross painted content when its callout lands on empty space`() {
+        // A narrow control between the target and the callout on the right: only the shaft crosses it.
+        val c = painted(canvas(800, 600), Rectangle(380, 290, 20, 36))
+        val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(300, 300, 60, 16), "x", numbered = false, arrow = UiArrow()))
+        assertEquals(UiArrowSide.RIGHT, p.side)
+    }
+
+    @Test
+    fun `auto with every side covered still draws inside the picture`() {
+        val c = canvas(200, 120)
+        val p = arrowOf(c, UiCallouts.Mark(1, Rectangle(180, 90, 40, 16), "long label here", numbered = false, arrow = UiArrow()), listOf(Rectangle(100, 50, 200, 120)))
+        assertTrue(c.bounds.contains(p.tail))
+    }
+
+    @Test
+    fun `a pointer's arrow stops short of its tip on the tail's side`() {
+        val p = arrowOf(canvas(800, 600), UiCallouts.Mark(1, Rectangle(300, 300, 1, 1), null, pointer = true, numbered = false, arrow = UiArrow(UiArrowSide.LEFT, 50)))
+        assertEquals(Point(297, 300), p.head)
+        assertEquals(Point(247, 300), p.tail)
+    }
+
     @Test
     fun `a mark that takes no number is skipped by the numbering`() {
         val marks = UiCallouts.steps(listOf(
@@ -66,6 +160,33 @@ class UiCalloutsTest {
         // The outline's left edge crosses row 60 of the picture, whose origin is at (100, 50) on screen.
         val row = (0 until 80).map { painted.image.getRGB(it, 60) and 0xFFFFFF }
         assertTrue(row.map { Integer.toHexString(it) }.toString(), 0x2F6FEB in row)
+    }
+
+    /** The top and bottom rows of the white text pixels in columns [xs] and rows [ys] of [c]'s image. */
+    private fun textRows(c: UiCapture.Canvas, xs: IntRange, ys: IntRange): IntRange {
+        val rows = ys.filter { y -> xs.any { x -> Color(c.image.getRGB(x, y)).let { it.red > 200 && it.green > 200 && it.blue > 200 } } }
+        return rows.first()..rows.last()
+    }
+
+    @Test
+    fun `a label's text sits in the middle of its box`() {
+        // Unnumbered, the label goes right of the outline: the box spans rows 101-118 on screen, 51-68 in the picture.
+        val painted = UiCallouts.highlight(canvas(400, 200, scale = 2.0), listOf(UiCallouts.Mark(1, Rectangle(150, 100, 60, 20), "pick a theme", numbered = false)))
+        val rows = textRows(painted, (2 * 117 + 12)..(2 * 117 + 40), (2 * 51)..(2 * 69 - 1))
+        val middle = (rows.first + rows.last) / 2.0
+        assertEquals(rows.toString(), 2 * 51 + 2 * 18 / 2.0, middle, 1.5)
+    }
+
+    @Test
+    fun `a badge's number sits in the middle of its badge`() {
+        val c = canvas(400, 200, scale = 2.0)
+        val bounds = Rectangle(200, 100, 60, 20)
+        val badge = UiCallouts.badgeBounds(UiCallouts.outlines(listOf(bounds)).single(), 18, c.bounds, emptyList())
+        val painted = UiCallouts.highlight(c, listOf(UiCallouts.Mark(7, bounds, null, numbered = true)))
+        val x0 = 2 * (badge.x - 100)
+        val y0 = 2 * (badge.y - 50)
+        val rows = textRows(painted, (x0 + 10)..(x0 + 26), (y0 + 4)..(y0 + 32))
+        assertEquals(rows.toString(), y0 + 18.0, (rows.first + rows.last) / 2.0, 1.5)
     }
 
     @Test

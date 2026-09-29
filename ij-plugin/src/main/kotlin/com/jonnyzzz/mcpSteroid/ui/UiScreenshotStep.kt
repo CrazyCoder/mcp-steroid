@@ -4,6 +4,7 @@ package com.jonnyzzz.mcpSteroid.ui
 import com.jonnyzzz.mcpSteroid.server.UiCrop
 import com.jonnyzzz.mcpSteroid.server.UiStep
 import com.jonnyzzz.mcpSteroid.server.UiSteps
+import com.jonnyzzz.mcpSteroid.server.UiStyle
 import com.jonnyzzz.mcpSteroid.server.UiTarget
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -64,17 +65,29 @@ internal class UiScreenshotStep(private val ctx: UiStepContext, private val find
             if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
             // Numbers give steps an order: several steps are numbered, a single one is only outlined, unless asked. A
             // click point on the outline of what was clicked is part of that step.
-            val marks = UiCallouts.steps(highlights.mapIndexed { i, h -> UiCallouts.Mark(i + 1, h.screenBounds(), h.label, h.pointer) }, step.numbers)
+            // A highlight's arrow, outline, number and style, over the step's style; found in the order of step.highlight.
+            val specs = step.highlight.orEmpty()
+            val marks = UiCallouts.steps(highlights.mapIndexed { i, h ->
+                val spec = specs.getOrNull(i)
+                val style = (spec?.style ?: UiStyle()).over(step.style)
+                UiCallouts.Mark(
+                    i + 1, h.screenBounds(), h.label, h.pointer,
+                    arrow = spec?.arrow, outline = spec?.outline ?: true, numberable = spec?.number ?: true,
+                    color = java.awt.Color(style.color ?: UiStyle.DEFAULT_COLOR), width = (style.width ?: UiStyle.DEFAULT_WIDTH).toFloat(),
+                )
+            }, step.numbers)
             val numbered = marks.any { it.numbered }
             val obstacles = if (marks.isEmpty()) emptyList() else finder.textObstacles(window, highlights)
             // A picture of code shows the code, not where the caret happens to be.
             val codeEditors = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct()
             val showCarets = codeEditors.map(UiCodeRange::hideCaret)
-            val painted = try {
-                UiCapture.paint(window).let { if (marks.isEmpty()) it else UiCallouts.highlight(it, marks, obstacles) }
+            // The marks are laid out on the window as painted, before any mark: a callout looks for empty space in it.
+            val raw = try {
+                UiCapture.paint(window)
             } finally {
                 showCarets.forEach { it() }
             }
+            val painted = if (marks.isEmpty()) raw else UiCallouts.highlight(raw, marks, obstacles)
             // Code cut to its lines keeps their line numbers: the crop reaches left to the editor's gutter.
             fun withGutter(area: Rectangle) = codeEditors.fold(area) { a, editor ->
                 val gutter = (editor as? com.intellij.openapi.editor.ex.EditorEx)?.gutterComponentEx?.takeIf { it.isShowing }
@@ -83,12 +96,12 @@ internal class UiScreenshotStep(private val ctx: UiStepContext, private val find
             }
             val area = when (val crop = step.crop) {
                 null -> null
-                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCallouts.withMarks(painted, it, marks, obstacles) }
+                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCallouts.withMarks(raw, it, marks, obstacles) }
                     ?: throw UiStepFailure("crop \"page\" needs a Settings page, and ${describeWindow(window)} shows none")
-                UiCrop.Highlights -> withGutter(UiCallouts.markArea(painted, marks, obstacles))
+                UiCrop.Highlights -> withGutter(UiCallouts.markArea(raw, marks, obstacles))
                 UiCrop.Popups -> UiCapture.popupArea(window)?.let { area ->
                     // What a menu was opened from belongs with it: the click point, and the code it clicked.
-                    withGutter(UiCapture.union(listOf(area) + if (marks.isEmpty()) emptyList() else listOf(UiCallouts.markArea(painted, marks, obstacles))))
+                    withGutter(UiCapture.union(listOf(area) + if (marks.isEmpty()) emptyList() else listOf(UiCallouts.markArea(raw, marks, obstacles))))
                 } ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
                 is UiCrop.ToolWindow -> {
                     val views = UiLayout.toolWindows(project)
@@ -96,25 +109,27 @@ internal class UiScreenshotStep(private val ctx: UiStepContext, private val find
                         ?: throw UiStepFailure("no tool window ${crop.id} is showing; showing: ${views.joinToString { it.id }}")
                     val decorator = view.window.decorator
                     if (windowOf(decorator) !== window) throw UiStepFailure("the ${view.id} tool window is in another window than the picture")
-                    UiCallouts.withMarks(painted, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks, obstacles)
+                    UiCallouts.withMarks(raw, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks, obstacles)
                 }
-                is UiCrop.Control -> if (cropOnBackend != null) UiCallouts.withMarks(painted, cropOnBackend, marks, obstacles) else {
+                is UiCrop.Control -> if (cropOnBackend != null) UiCallouts.withMarks(raw, cropOnBackend, marks, obstacles) else {
                     val c = cropControl!!.component
                     if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")
                     // A tree or list in a scroll pane is as tall as all its rows: the part in view is what shows.
                     val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)
-                    UiCallouts.withMarks(painted, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks, obstacles)
+                    UiCallouts.withMarks(raw, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks, obstacles)
                 }
             }
             val canvas = area?.let { UiCapture.crop(painted, UiCapture.cropArea(it, step.margin ?: UiSteps.DEFAULT_MARGIN, painted.bounds)) } ?: painted
             val facts = UiPictureFacts.of(window)
+            val arrows = if (marks.any { it.arrow != null }) UiCallouts.arrows(raw, marks, obstacles) else marks.map { null }
             val what = listOfNotNull(
-                highlights.takeIf { it.isNotEmpty() }?.zip(marks)?.joinToString(", ", prefix = if (numbered) "highlights: " else "highlights, outlined without numbers: ") { (h, m) ->
+                highlights.takeIf { it.isNotEmpty() }?.indices?.joinToString(", ", prefix = if (numbered) "highlights: " else "highlights, outlined without numbers: ") { i ->
+                    val (h, m) = highlights[i] to marks[i]
                     when {
                         m.joined -> "${h.what}, a bare pointer on the outline it clicked"
-                        numbered -> "${m.number} ${h.what}"
+                        m.numbered -> "${m.number} ${h.what}"
                         else -> h.what
-                    }
+                    } + arrows[i]?.let(::arrowNote).orEmpty()
                 },
                 step.crop?.let { "crop ${if (it is UiCrop.Control) it.target.toString() else it.toString()}" },
                 "the caret is hidden in the picture".takeIf { codeEditors.isNotEmpty() },
@@ -171,6 +186,10 @@ internal class UiScreenshotStep(private val ctx: UiStepContext, private val find
      * lies in [area], a picture's screen area. With [essential] areas, the highlights, content cut outside them does
      * not count. EDT.
      */
+    /** Where an arrow went, for the report: its side and length, and what placement changed of a forced side. */
+    private fun arrowNote(p: UiCallouts.ArrowPlan): String = ", arrow from ${p.side.wire} ${p.length}px" +
+        (p.flippedFrom?.let { ", flipped from ${it.wire}" } ?: "") + (p.shortenedFrom?.let { ", shortened from ${it}px" } ?: "")
+
     private fun pictureProblems(
         window: Window, area: Rectangle, host: List<UiLayout.Problem> = emptyList(), essential: List<Rectangle> = emptyList(),
     ): List<UiLayout.Problem> =

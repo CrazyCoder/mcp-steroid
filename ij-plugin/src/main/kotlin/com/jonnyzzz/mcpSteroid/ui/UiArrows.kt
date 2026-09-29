@@ -50,8 +50,9 @@ object UiArrows {
 
     /**
      * The badge, a square of [badge], and the label, [labelWidth] wide, at [tail], reading away from the target on
-     * [side]: the badge centred on the tail and the label past it, or the label alone starting at the tail. Either is
-     * null when the mark has none; a label alone is [labelHeight] high.
+     * [side]: the badge centred on the tail and the label past it, or the label alone starting at the tail, from its
+     * corner nearest the target on a diagonal. Either is null when the mark has none; a label alone is [labelHeight]
+     * high.
      */
     fun callout(tail: Point, side: UiArrowSide, badge: Int?, labelWidth: Int?, labelHeight: Int): Pair<Rectangle?, Rectangle?> {
         val b = badge?.let { Rectangle(tail.x - it / 2, tail.y - it / 2, it, it) }
@@ -61,6 +62,8 @@ object UiArrows {
         val label = when {
             b != null && side.dx < 0 -> Rectangle(b.x - GAP - w, y, w, h)
             b != null -> Rectangle(b.x + b.width + GAP, y, w, h)
+            // On a diagonal the label's corner nearest the target meets the tail, so the arrow leaves from its corner.
+            side.dx != 0 && side.dy != 0 -> Rectangle(if (side.dx < 0) tail.x - w else tail.x, if (side.dy < 0) tail.y - h else tail.y, w, h)
             side.dx < 0 -> Rectangle(tail.x - w, y, w, h)
             side.dx > 0 -> Rectangle(tail.x, y, w, h)
             else -> Rectangle(tail.x - w / 2, if (side.dy < 0) tail.y - h else tail.y, w, h)
