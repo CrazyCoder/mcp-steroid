@@ -411,8 +411,8 @@ object UiCallouts {
             }
             mark.arrow?.let { arrow ->
                 // A callout goes where the picture is empty: besides the text of other controls, it keeps off whatever
-                // the window paints there, such as a combo box, a field, an icon or code. A shaft crosses no text, and
-                // painted content only where every shaft would, as its line hides little of it.
+                // the window paints there, such as a combo box, a field, an icon or code. A shaft keeps off text, and
+                // off painted content where some spot allows it; its line hides little of what it crosses.
                 fun calloutFree(r: Rectangle) = free(r) && placedShafts.none { it.intersects(r) } &&
                     content.busy(Rectangle(r).apply { grow(CLEAR, CLEAR) }) <= STRAY
                 fun calloutCovered(parts: Array<Rectangle?>): Long = covered(*parts) + parts.filterNotNull().sumOf { content.busy(it) }
