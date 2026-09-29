@@ -79,8 +79,11 @@ then take a `screenshot` with the controls to point at outlined (numbered when t
  {"action":"screenshot","out":"C:/pics/line-numbers.png","highlight":["breadcrumb",{"name":"Show line numbers"}],"crop":"page"}]
 ```
 
-The crops, the framing steps (window size, scroll alignment, an open menu, a theme) and documentation
-screenshots that a replay refreshes are in [IDE scenarios](mcp-steroid://ide/ui-scenarios).
+Where a label would crowd a small target, such as a word in code, a highlight takes `"arrow": true`: its
+badge and label move to the arrow's tail, on empty space in the picture. `"outline": false`, `"number": false`
+and `"style": {"color": "orange"}` go with it. The crops, arrows and styles, the framing steps (window size,
+scroll alignment, an open menu, a theme) and documentation screenshots that a replay refreshes are in
+[IDE scenarios](mcp-steroid://ide/ui-scenarios).
 
 ## See the UI with refs
 

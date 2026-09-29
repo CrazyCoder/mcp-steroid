@@ -313,6 +313,7 @@ window's size, the screen's scale and the IDE's zoom, the theme, the editor font
 | `margin` | `8` | The padding around a crop, 16 px without it |
 | `fit` | `true` | Runs the steps the `cut:` lines name before the picture, and puts the sizes back with the restore. With highlights, only what they outline must show whole, and other long lines may stay cut; a window grows by half its size at most |
 | `numbers` | `false` | Numbers the highlights 1, 2, 3 as steps to follow, or with `false` outlines them only, for areas with no order. Without it, several highlights are numbered and a single one is only outlined |
+| `style` | `{"color":"orange","width":3}` | The color and line width of every highlight, which a highlight's own `style` overrides field by field. See Arrows below |
 
 A highlight out of view is scrolled to the middle of its view first; a control larger than its view, such as a
 tree, is outlined as far as it shows. A highlight that is not showing, such as one on another tab, fails the
@@ -363,6 +364,33 @@ word as step 1 with the pointer on it and the menu item as step 2:
 the clicked word shows beside its menu. Badges and labels keep off the lines of code in view.
 
 `{"action":"select","inspection":"NullableProblems"}` selects that row on the Inspections page.
+
+### Arrows, numbers and styles
+
+Where a badge and label would crowd a small target, such as a word in code or an icon, an arrow moves them
+away and points back. Any highlight takes these fields:
+
+| Field | Example | Does |
+|---|---|---|
+| `arrow` | `true`, `{"from":"left","length":80,"head":"open"}` | An arrow whose tail holds the badge and label. `from` is `auto` (the default), `left`, `right`, `above`, `below`, or a diagonal such as `below-left`; `length` is 20 to 400 logical pixels, 60 by default; `head` is `filled` (the default), `open` or `none` |
+| `outline` | `false` | Draws the arrow without the outline around the target; needs `arrow` |
+| `number` | `false` | Leaves this step without a badge and a number; the other steps count on without it |
+| `style` | `{"color":"#2F6FEB","width":3}` | This highlight's color and line width: `red` (the default), `orange`, `yellow`, `green`, `blue`, `purple`, `black` or `#RRGGBB`, and 1 to 8 px. Text on a light color, such as yellow, turns black |
+
+`auto` tries right, left, below, above, then the diagonals, at the arrow's length and then at 1.5 and 2 times
+it. It takes the first spot where the callout lies on empty space in the picture, and the shaft crosses no
+text and no other outline; else the spot that covers least. On a diagonal the label's corner meets the tail.
+A forced side flips to the other side when its callout would leave the picture, and gets shorter when
+neither side fits; text does not move it. A click point that is part of another step, as after a right
+click, draws no arrow of its own. The breadcrumb takes an arrow in its object form, `{"breadcrumb":true}`.
+
+The report says where each arrow went, such as `arrow from below-right 60px`, and adds `flipped from left` or
+`shortened from 400px` when placement changed a forced side:
+
+```
+[{"action":"goto","file":"src/orders.ts","symbol":"applyCoupon"},
+ {"action":"screenshot","out":"C:/pics/rename.png","highlight":[{"symbol":"applyCoupon","arrow":true,"outline":false,"label":"rename this"}],"crop":"highlights"}]
+```
 
 ### Tabs of run and debug tool windows
 
