@@ -156,6 +156,14 @@ class UiStepsTest {
     }
 
     @Test
+    fun `each side's opposite lies across the target`() {
+        assertEquals(UiArrowSide.RIGHT, UiArrowSide.LEFT.opposite)
+        assertEquals(UiArrowSide.BELOW, UiArrowSide.ABOVE.opposite)
+        assertEquals(UiArrowSide.BELOW_RIGHT, UiArrowSide.ABOVE_LEFT.opposite)
+        assertEquals(UiArrowSide.ABOVE_RIGHT, UiArrowSide.BELOW_LEFT.opposite)
+    }
+
+    @Test
     fun `a highlight style overrides the step style field by field`() {
         assertEquals(UiStyle(0xFF9F1C, 5.0), UiStyle(width = 5.0).over(UiStyle(0xFF9F1C, 2.0)))
     }

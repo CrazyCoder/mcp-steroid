@@ -13,7 +13,7 @@ import java.nio.file.Path
 import kotlinx.serialization.json.JsonObject
 import javax.swing.SwingUtilities
 
-/** What the step classes split out of [UiSession] use of it: its project and call state, and target resolution. */
+/** What the step classes take from the [UiSession] that runs them: its project, the call's state, and target resolution. */
 internal interface UiStepContext {
     val project: Project
     val registry: UiRefRegistry

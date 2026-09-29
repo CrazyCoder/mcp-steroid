@@ -64,8 +64,8 @@ internal class UiScreenshotStep(private val ctx: UiStepContext, private val find
         val (canvas, facts, line) = withContext(edtAny) {
             if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
             // Numbers give steps an order: several steps are numbered, a single one is only outlined, unless asked. A
-            // click point on the outline of what was clicked is part of that step.
-            // A highlight's arrow, outline, number and style, over the step's style; found in the order of step.highlight.
+            // click point on the outline of what was clicked is part of that step. Each mark takes its highlight's
+            // arrow, outline, number and style, over the step's style; the highlights are found in their given order.
             val specs = step.highlight.orEmpty()
             val marks = UiCallouts.steps(highlights.mapIndexed { i, h ->
                 val spec = specs.getOrNull(i)
