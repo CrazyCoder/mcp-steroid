@@ -33,6 +33,15 @@ class UiMarksTest {
     }
 
     @Test
+    fun `a row label moves past the row's text when the text reaches its right end`() {
+        val row = Rectangle(10, 40, 140, 30)
+        val text = Rectangle(10, 40, 135, 30)
+        val marked = UiMarks.draw(white(), listOf(UiMarks.Mark("e7#3", row, row = true, content = text)))
+        val tag = (0 until 200).filter { x -> (40 until 70).any { y -> marked.getRGB(x, y) != Color.WHITE.rgb } }
+        assertTrue("tag at ${tag.firstOrNull()}..${tag.lastOrNull()}", tag.isNotEmpty() && tag.first() >= 145)
+    }
+
+    @Test
     fun `a mark is covered when a popup hides at least half of it`() {
         val mark = Rectangle(0, 0, 100, 20)
         assertTrue(UiMarks.covered(mark, Rectangle(50, 0, 200, 200)))

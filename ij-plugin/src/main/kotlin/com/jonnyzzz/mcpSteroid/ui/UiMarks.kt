@@ -12,13 +12,17 @@ import java.awt.RenderingHints
 import java.awt.image.BufferedImage
 import javax.swing.JComponent
 import javax.swing.JTabbedPane
+import javax.swing.JTree
 import javax.swing.SwingUtilities
 import kotlin.math.roundToInt
 
 /** Ref labels drawn over a screenshot, so a control seen in the picture can be addressed by its ref. */
 object UiMarks {
-    /** A labelled area. A [row] of a list, tree or table spans the row in view and is labelled at its right end, unoutlined. */
-    data class Mark(val ref: String, val bounds: Rectangle, val row: Boolean = false)
+    /**
+     * A labelled area. A [row] of a list, tree or table spans the row in view and is labelled at its right end,
+     * unoutlined; [content] is the part of a tree row its renderer paints, where its text is.
+     */
+    data class Mark(val ref: String, val bounds: Rectangle, val row: Boolean = false, val content: Rectangle? = null)
 
     @Suppress("UseJBColor")
     private val OUTLINE = Color(0xE0, 0x1B, 0x84)
@@ -43,11 +47,14 @@ object UiMarks {
                 val overlays = viewportHeaders(c)
                 val own = if (c is JTabbedPane) emptyList() else listOf(Mark(ref, onScreen(c, shown)))
                 val rows = rowMarks(c, UiRows.comboOf(c)?.let(registry::refFor) ?: ref, shown)
-                    .map { it.copy(bounds = onScreen(c, it.bounds)) }
+                    .map { it.copy(bounds = onScreen(c, it.bounds), content = it.content?.let { r -> onScreen(c, r) }) }
                     .filterNot { mark -> overlays.any { covered(mark.bounds, it) } }
                 (own + rows).filterNot { mark -> covers.any { covered(mark.bounds, it) } }.asSequence()
             }
-            .map { it.copy(bounds = scale(Rectangle(it.bounds).apply { translate(-origin.x, -origin.y) }, scale)) }
+            .map { mark ->
+                fun toImage(r: Rectangle) = scale(Rectangle(r).apply { translate(-origin.x, -origin.y) }, scale)
+                mark.copy(bounds = toImage(mark.bounds), content = mark.content?.let(::toImage))
+            }
             .toList()
     }
 
@@ -57,7 +64,9 @@ object UiMarks {
         return view.rows.mapNotNull { row ->
             val at = UiRows.bounds(c, row.index) ?: return@mapNotNull null
             val area = if (c is JTabbedPane) at else Rectangle(shown.x, at.y, shown.width, at.height)
-            area.intersection(shown).takeUnless { it.isEmpty }?.let { Mark("$ref#${row.index}", it, row = c !is JTabbedPane) }
+            // A tree row's text can be told apart from its row; a list's and a table's cells span the row.
+            val content = (c as? JTree)?.let { UiRows.rowText(it, row.index) }
+            area.intersection(shown).takeUnless { it.isEmpty }?.let { Mark("$ref#${row.index}", it, row = c !is JTabbedPane, content = content) }
         }
     }
 
@@ -111,7 +120,7 @@ object UiMarks {
      * A copy of [image] with each mark outlined and labelled with its ref. A label goes above its control when there
      * is room, else below it, and moves right past labels already drawn; it is translucent, so the text under it stays
      * readable. A control that covers a large part of the image, such as the editor, gets its label but no outline.
-     * A row's label goes inside the row at its right end, where it does not hide the row's text.
+     * A row's label goes inside the row at its right end, or just past a tree row's text that reaches there.
      */
     fun draw(image: BufferedImage, marks: List<Mark>): BufferedImage {
         val copy = BufferedImage(image.width, image.height, BufferedImage.TYPE_INT_RGB)
@@ -131,7 +140,7 @@ object UiMarks {
                     g.drawRect(b.x, b.y, b.width, b.height)
                 }
                 val size = Rectangle(0, 0, metrics.stringWidth(mark.ref) + 4, metrics.height)
-                val label = if (mark.row) rowLabelSpot(b, size) else labelSpot(b, size, image.width, image.height, placed)
+                val label = if (mark.row) rowLabelSpot(b, mark.content, size, image.width) else labelSpot(b, size, image.width, image.height, placed)
                 placed += label
                 g.color = LABEL
                 g.fillRect(label.x, label.y, label.width, label.height)
@@ -156,9 +165,17 @@ object UiMarks {
         return spot
     }
 
-    /** Where a label of [size] goes for a row at [b]: inside it at its right end, centred on the row. */
-    private fun rowLabelSpot(b: Rectangle, size: Rectangle): Rectangle =
-        Rectangle(maxOf(b.x, b.x + b.width - size.width - 2), b.y + (b.height - size.height) / 2, size.width, size.height)
+    /**
+     * Where a label of [size] goes for a row at [b]: inside it at its right end, centred on the row. Where the row's
+     * [content], such as a long tree row's text, reaches under that spot, the label goes just past the content instead,
+     * out of the row if need be, so that it hides none of the text.
+     */
+    private fun rowLabelSpot(b: Rectangle, content: Rectangle?, size: Rectangle, width: Int): Rectangle {
+        val y = b.y + (b.height - size.height) / 2
+        val x = maxOf(b.x, b.x + b.width - size.width - 2)
+        val end = content?.let { it.x + it.width } ?: return Rectangle(x, y, size.width, size.height)
+        return Rectangle(if (end <= x) x else minOf(end + 2, width - size.width), y, size.width, size.height)
+    }
 
     /** A control larger than this fraction of the image, as 1/n, is not outlined. */
     private const val LARGE_FRACTION = 5

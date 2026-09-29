@@ -83,6 +83,34 @@ object UiRows {
         else -> null
     }
 
+    /**
+     * What the rows of [tree] in view paint, in its coordinates: each row's node, its icon and text, which ends where the
+     * text does, not at the tree's right edge. EDT.
+     */
+    fun rowTexts(tree: JTree): List<Rectangle> {
+        val view = tree.visibleRect.takeUnless { it.isEmpty } ?: return emptyList()
+        val first = tree.getClosestRowForLocation(view.x, view.y).takeIf { it >= 0 } ?: return emptyList()
+        val last = tree.getClosestRowForLocation(view.x, view.y + view.height - 1)
+        return (first..last).mapNotNull { row -> rowText(tree, row)?.intersection(view)?.takeUnless { it.isEmpty } }
+    }
+
+    /**
+     * What row [row] of [tree] paints, in its coordinates: its bounds, cut to its renderer's preferred width. A tree
+     * such as the Settings tree lays each row out as wide as itself, and its row bounds then say nothing of where the
+     * text ends. EDT.
+     */
+    fun rowText(tree: JTree, row: Int): Rectangle? {
+        val bounds = tree.getRowBounds(row) ?: return null
+        val path = tree.getPathForRow(row) ?: return bounds
+        val renderer = runCatching {
+            tree.cellRenderer?.getTreeCellRendererComponent(
+                tree, path.lastPathComponent, tree.isRowSelected(row), tree.isExpanded(row), tree.model.isLeaf(path.lastPathComponent), row, false,
+            )
+        }.getOrNull() ?: return bounds
+        val width = renderer.preferredSize.width.takeIf { it > 0 } ?: return bounds
+        return Rectangle(bounds.x, bounds.y, minOf(bounds.width, width), bounds.height)
+    }
+
     /** The combo box whose open popup shows [list], or null when [list] is not a combo box's popup list. */
     fun comboOf(list: Component): JComboBox<*>? {
         if (list !is JList<*>) return null

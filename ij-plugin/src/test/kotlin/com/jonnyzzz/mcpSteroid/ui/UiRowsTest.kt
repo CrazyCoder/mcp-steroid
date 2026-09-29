@@ -108,6 +108,37 @@ class UiRowsTest {
     }
 
     @Test
+    fun `a tree's row texts are what its rows in view paint, not the rows' full width`() {
+        val root = DefaultMutableTreeNode("root").apply {
+            add(DefaultMutableTreeNode("child one"))
+            add(DefaultMutableTreeNode("child two"))
+        }
+        onEdt {
+            val tree = JTree(root).apply { setSize(400, 1000) }
+            val texts = UiRows.rowTexts(tree)
+            assertEquals(3, texts.size)
+            assertTrue("$texts", texts.all { it.width in 1 until 200 })
+            assertTrue("$texts: a child is indented", texts[1].x > texts[0].x)
+            tree.setSize(400, tree.getRowBounds(0).height)
+            assertEquals("the rows out of view are left out", 1, UiRows.rowTexts(tree).size)
+        }
+    }
+
+    @Test
+    fun `a row's text ends where its renderer's content does, in a tree whose rows fill its width`() {
+        val root = DefaultMutableTreeNode("root").apply { add(DefaultMutableTreeNode("child")) }
+        onEdt {
+            // As the Settings tree lays out its rows: each as wide as the tree.
+            val tree = object : JTree(root) {
+                override fun getRowBounds(row: Int): Rectangle? = super.getRowBounds(row)?.apply { width = this@apply.let { 400 - x } }
+            }.apply { setSize(400, 1000) }
+            val texts = UiRows.rowTexts(tree)
+            assertEquals(2, texts.size)
+            assertTrue("$texts", texts.all { it.x + it.width < 200 })
+        }
+    }
+
+    @Test
     fun `table rows are the first column`() {
         val table = JTable(arrayOf(arrayOf<Any>("x", 1), arrayOf<Any>("y", 2)), arrayOf<Any>("name", "n"))
         assertEquals(listOf("x", "y"), UiRows.rows(table))
