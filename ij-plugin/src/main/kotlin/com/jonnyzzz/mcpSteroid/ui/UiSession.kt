@@ -18,7 +18,6 @@ import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.IdeFrame
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.popup.util.PopupUtil
 import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.SimpleColoredComponent
 import com.intellij.util.ui.UIUtil
@@ -50,10 +49,8 @@ import java.awt.Dialog
 import java.awt.Frame
 import java.awt.KeyboardFocusManager
 import java.awt.Point
-import java.awt.Rectangle
 import java.awt.Window
 import java.awt.event.MouseEvent
-import java.awt.event.WindowEvent
 import java.nio.file.Path
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -64,18 +61,12 @@ import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JMenu
 import javax.swing.JMenuItem
-import javax.swing.JPopupMenu
-import javax.swing.JScrollPane
-import javax.swing.MenuSelectionManager
 import javax.swing.JSpinner
-import javax.swing.JTabbedPane
 import javax.swing.JTable
 import javax.swing.JTree
-import javax.swing.JViewport
 import javax.swing.RootPaneContainer
 import javax.swing.SwingUtilities
 import javax.swing.text.JTextComponent
-import javax.swing.tree.TreePath
 import kotlin.time.TimeSource
 
 /** A step that could not do what it asked for. The message says what the IDE showed instead. */
@@ -144,10 +135,21 @@ class UiSession(
         override fun scopeWindows() = this@UiSession.scopeWindows()
         override fun describe(node: UiNode) = this@UiSession.describe(node)
         override fun describeWindow(w: Window) = this@UiSession.describeWindow(w)
+        override fun windowTitle(w: Window) = this@UiSession.windowTitle(w)
+        override fun projectFrame() = this@UiSession.projectFrame()
+        override fun undo(steps: List<JsonObject>) = this@UiSession.undo(steps)
         override suspend fun applyFix(fix: String) = this@UiSession.applyFix(fix)
     }
     private val finder = UiHighlightFinder(context)
     private val screenshots = UiScreenshotStep(context, finder)
+    private val rows = UiRowSteps(context, finder)
+    private val windows = UiWindowSteps(context)
+
+    /**
+     * Closes the windows and menus that opened since [before], the newest first, for a call with restore; see
+     * [UiWindowSteps.closeOpenedSince].
+     */
+    suspend fun closeOpenedSince(before: Set<Window>): List<String> = windows.closeOpenedSince(before)
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
     /** The step that runs, and what a replay of it names instead of its refs, row indexes, page names and option names. */
@@ -525,7 +527,7 @@ class UiSession(
         return when (step.action) {
             UiAction.CLICK -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
-                val row = rowArea(node, tabOf(node, step))
+                val row = rows.rowArea(node, rows.tabOf(node, step))
                 clickOpensWindow = withContext(edtAny) { (node.component as? AbstractButton)?.text?.let(::opensWindow) == true }
                 closingDialog = withContext(edtAny) {
                     (node.component as? JButton)?.takeIf { it.isDefaultButton && DialogWrapper.findInstance(it) != null }?.let(SwingUtilities::getWindowAncestor)
@@ -545,12 +547,12 @@ class UiSession(
             }
             UiAction.HOVER -> {
                 val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
-                val row = rowArea(node, step)
+                val row = rows.rowArea(node, step)
                 input.hover(node.component, row?.area)
                 (node.component as? JMenu)?.takeIf { row == null }?.let { menu -> return submenu(menu, node, "moved over") }
                 "moved over ${row?.let { "${it.label} in " }.orEmpty()}${describe(node)}"
             }
-            UiAction.SCROLL -> scrollStep(step)
+            UiAction.SCROLL -> rows.scroll(step)
             UiAction.TYPE -> {
                 val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = true) }
                 val report = input.type(step.text!!, node?.component ?: keyRecipient())
@@ -590,20 +592,20 @@ class UiSession(
                     "${describe(node)} is now ${if (wanted) "checked" else "unchecked"}"
                 }
             }
-            UiAction.SELECT -> selectStep(step)
-            UiAction.CLOSE -> closeStep(step)
+            UiAction.SELECT -> rows.select(step)
+            UiAction.CLOSE -> windows.close(step)
             UiAction.GOTO -> editorSteps.goto(step)
             UiAction.RUN -> editorSteps.run(step, actionComponent(), ::inplaceActive)
             UiAction.PERF -> ideSteps.perf(step)
             UiAction.TOOLWINDOW -> ideSteps.toolWindow(step, undo)
-            UiAction.WINDOW -> windowStep(step)
+            UiAction.WINDOW -> windows.window(step)
             UiAction.MENU -> when {
                 step.mode != null -> menu.setMode(step.mode!!, withContext(edtAny) { projectFrame() }, undo)
                 step.show -> menu.show(step.path!!, withContext(edtAny) { projectFrame() }, input, step.timeoutMs)
                 else -> menu.step(step.path, actionComponent(), step.timeoutMs, undo = undo)
             }
             UiAction.WAIT, UiAction.SNAPSHOT, UiAction.INSPECT, UiAction.EXPECT, UiAction.GET, UiAction.SET,
-            UiAction.SPLITTER -> splitterStep(step)
+            UiAction.SPLITTER -> windows.splitter(step)
             UiAction.WRITE, UiAction.CODE, UiAction.SETTINGS, UiAction.SCREENSHOT -> error("not an input step")
         }
     }
@@ -701,26 +703,6 @@ class UiSession(
     }
 
     /**
-     * Selects a row through the component's selection, as the keyboard does. A click would also activate the row in
-     * a list that acts on a click, such as Find Action's results, and a combo box would need its popup opened.
-     */
-    private suspend fun selectStep(given: UiStep): String {
-        // A JetBrains Client's Inspections page is the backend's, whose profile names the rows: the backend selects.
-        given.inspection?.let { name -> finder.backendInspectionSelect(name)?.let { return it } }
-        val step = given.inspection?.let { given.copy(target = UiTarget(cls = INSPECTIONS_TREE), row = finder.inspectionPath(it), inspection = null) } ?: given
-        val found = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
-        // An open combo box popup's list shows the combo box's items: selecting in the list alone would not pick one.
-        val node = withContext(edtAny) { UiRows.comboOf(found.component)?.let { FallbackUiWalker().leaf(it) } } ?: found
-        val host = node.component
-        val pick = pickRow(node, step)!!
-        return withContext(edtAny) {
-            UiRows.select(host, pick.index)
-            if (!UiRows.isSelected(host, pick.index)) throw UiStepFailure("${describe(node)} did not take the selection of row #${pick.index}")
-            pick.expandedNote() + "selected row #${pick.index} \"${pick.text}\" in ${describe(node)}"
-        }
-    }
-
-    /**
      * The row "row" or "index" of [step] names in [node]'s list, tree, table or tabbed pane, or null when the step
      * names none. A tree path whose parents are collapsed, such as `Editor > Code Style > Java`, expands them. A row
      * that is not there yet is waited for up to the step's timeout: a list filled asynchronously, such as the Settings
@@ -742,7 +724,7 @@ class UiSession(
             }
             // A tree table's rows are its tree's, so the tree's row found is the table's row too.
             val tree = withContext(edtAny) { UiRows.treeOf(c) }
-            if (wanted != null && tree != null && UiRows.PATH_SEPARATOR in wanted) return expandPath(tree, wanted, step.timeoutMs)
+            if (wanted != null && tree != null && UiRows.PATH_SEPARATOR in wanted) return this.rows.expandPath(tree, wanted, step.timeoutMs)
             if (late) {
                 val shown = rows.withIndex().take(20).joinToString("; ") { (i, row) -> "#$i $row" }
                 throw UiStepFailure("no row ${wanted?.let { "\"$it\"" } ?: "#$index"} in ${describe(node)} after ${step.timeoutMs} ms; rows: $shown" +
@@ -750,319 +732,6 @@ class UiSession(
             }
             delay(POLL_MS)
         }
-    }
-
-    /**
-     * Finds `A > B > C` in [tree] one segment at a time, expanding each parent as a user would and waiting up to
-     * [timeoutMs] for its children to load. The first segment may be any row in view.
-     */
-    private suspend fun expandPath(tree: JTree, wanted: String, timeoutMs: Long): UiRowPick {
-        val started = TimeSource.Monotonic.markNow()
-        val segments = wanted.split(UiRows.PATH_SEPARATOR).map { it.trim() }
-        val expanded = mutableListOf<String>()
-        var parent: TreePath? = null
-        for ((i, segment) in segments.withIndex()) {
-            var row: Int
-            while (true) {
-                // An async tree model shows a "loading" child first, so wait for the row itself. Read the deadline
-                // first: a busy EDT can run the expansion only after the time is up, and the look after it counts.
-                val late = started.elapsedNow().inWholeMilliseconds >= timeoutMs
-                row = withContext(edtAny) { UiRows.childRow(tree, parent, segment) }
-                if (row >= 0 || late) break
-                delay(POLL_MS)
-            }
-            if (row < 0) {
-                val reached = segments.take(i).joinToString(UiRows.PATH_SEPARATOR)
-                val children = withContext(edtAny) { parent?.let { UiRows.childRows(tree, it) } }
-                throw UiStepFailure(
-                    when {
-                        parent == null -> "no row \"$segment\" in the tree's rows in view"
-                        children.isNullOrEmpty() -> "\"$reached\" shows no children after $timeoutMs ms"
-                        else -> "no row \"$segment\" under \"$reached\"; its rows: ${children.take(20).joinToString("; ")}"
-                    }
-                )
-            }
-            parent = withContext(edtAny) {
-                val path = tree.getPathForRow(row)
-                if (i < segments.lastIndex && !tree.isExpanded(path)) {
-                    tree.expandPath(path)
-                    expanded += UiRows.treePath(tree, row)
-                }
-                path
-            }
-        }
-        return withContext(edtAny) {
-            val row = tree.getRowForPath(parent)
-            UiRowPick(row, UiRows.treePath(tree, row), expanded)
-        }
-    }
-
-    /**
-     * [step] aimed at a tab when it clicks a tabbed pane without a row: the tab its name or text names. A tabbed pane's
-     * name is its selected tab's title, so a click by that name means the tab, not the middle of the pane's content.
-     */
-    private fun tabOf(node: UiNode, step: UiStep): UiStep {
-        if (node.component !is JTabbedPane && node.component !is com.intellij.ui.tabs.JBTabs || step.row != null || step.index != null) return step
-        val tab = step.target?.name ?: step.target?.text
-            ?: throw UiStepFailure("${describe(node)} is clicked on a tab: pass \"row\" with the tab's title, or a row ref")
-        return step.copy(row = tab)
-    }
-
-    /** Row [pick] of [node] scrolled into view, with where it is: the row's area in the component and how to name it. */
-    private class RowArea(val area: Rectangle, val label: String)
-
-    /** The row a click or hover step names, scrolled into view, or null when it names none. */
-    private suspend fun rowArea(node: UiNode, step: UiStep): RowArea? {
-        val pick = pickRow(node, step) ?: return null
-        return withContext(edtAny) {
-            val c = node.component
-            val area = UiRows.bounds(c, pick.index)
-                ?: throw UiStepFailure("${describe(node)} shows its items in a popup: pick one with select")
-            UiRows.scrollTo(c, pick.index)
-            RowArea(area, pick.expandedNote() + "row #${pick.index} \"${pick.text.take(80)}\"")
-        }
-    }
-
-    /**
-     * Brings the target, or its row, into view, as a user scrolls to it; or with "pages", scrolls the scroll pane
-     * around the target by that many pages, down when positive. The report says what part of the content shows.
-     */
-    private suspend fun scrollStep(step: UiStep): String {
-        val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
-        val c = node.component
-        val pages = step.pages
-        step.align?.let { align ->
-            val pick = pickRow(node, step)
-            return withContext(edtAny) {
-                val area = pick?.let { UiRows.bounds(c, it.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup: pick one with select") }
-                    ?: Rectangle(0, 0, c.width, c.height)
-                val what = pick?.let { "row #${it.index} \"${it.text.take(80)}\" of " }.orEmpty() + describe(node)
-                // A control in no scroll pane shows where it is: the step reports that, and its bounds, which a JetBrains
-                // Client's highlight on a host page reads.
-                val port = UiScrollAlign.scroll(c, area, align)
-                val moved = if (port == null) "$what is in no scroll pane, so it stays where it is"
-                else "scrolled $what to the ${if (align == "top") "top" else "middle"} of its view; ${position(port)}"
-                "$moved; ${UiScrollAlign.boundsNote(onScreen(c, area))}"
-            }
-        }
-        if (pages == null) {
-            val row = rowArea(node, step)
-            return withContext(edtAny) {
-                if (row == null) (c as? JComponent)?.scrollRectToVisible(Rectangle(0, 0, c.width, c.height))
-                "scrolled ${row?.let { "${it.label} of " }.orEmpty()}${describe(node)} into view" + (viewport(c)?.let { "; ${position(it)}" }.orEmpty()) +
-                    "; " + UiScrollAlign.boundsNote(onScreen(c, row?.area ?: Rectangle(0, 0, c.width, c.height)))
-            }
-        }
-        return withContext(edtAny) {
-            val port = viewport(c) ?: throw UiStepFailure("${describe(node)} is not in a scroll pane")
-            val view = port.view ?: throw UiStepFailure("the scroll pane around ${describe(node)} shows nothing")
-            val extent = port.extentSize
-            val maxY = maxOf(0, view.height - extent.height)
-            val y = (port.viewPosition.y.toLong() + pages.toLong() * extent.height).coerceIn(0, maxY.toLong()).toInt()
-            port.viewPosition = Point(port.viewPosition.x, y)
-            "scrolled ${UiComponentFacts.simpleClassName(port.parent ?: port)} by $pages page(s); ${position(port)}"
-        }
-    }
-
-    /** The viewport of the scroll pane that holds [c], or [c]'s own when it is a scroll pane. EDT. */
-    private fun viewport(c: Component): JViewport? =
-        (c as? JScrollPane)?.viewport ?: SwingUtilities.getAncestorOfClass(JViewport::class.java, c) as? JViewport
-
-    /** Which part of a viewport's content shows, such as `showing 600-1200 of 2400 px, the bottom`. EDT. */
-    private fun position(port: JViewport): String {
-        val view = port.view ?: return "the scroll pane is empty"
-        val top = port.viewPosition.y
-        val bottom = top + port.extentSize.height
-        val where = when {
-            top <= 0 && bottom >= view.height -> "all of it"
-            top <= 0 -> "the top"
-            bottom >= view.height -> "the bottom"
-            else -> "${top * 100 / maxOf(1, view.height)}% down"
-        }
-        return "showing $top-$bottom of ${view.height} px, $where"
-    }
-
-    private suspend fun closeStep(step: UiStep): String {
-        val window = if (step.target != null) {
-            val node = resolve(step.target!!, step.timeoutMs, requireEnabled = false)
-            withContext(edtAny) { node.component as? Window ?: SwingUtilities.getWindowAncestor(node.component) }
-        } else {
-            withContext(edtAny) { scopeWindows().firstOrNull { it !== projectFrame() } }
-        } ?: throw UiStepFailure("there is no dialog, popup or separate window to close")
-        return closeWindow(window)
-    }
-
-    /**
-     * Closes the windows and menus that opened since [before], the newest first, as a close step does each, for a call
-     * with restore. A window that does not close is reported, not failed: the restores after it still run.
-     */
-    suspend fun closeOpenedSince(before: Set<Window>): List<String> {
-        val lines = mutableListOf<String>()
-        withContext(edtAny) {
-            val menus = MenuSelectionManager.defaultManager()
-            if (menus.selectedPath.isNotEmpty()) {
-                menus.clearSelectedPath()
-                lines += "closed the open menu"
-            }
-        }
-        UiSettle.barrier()
-        // The showing windows leave tooltips out; the IDE lists windows in the order they were made.
-        val new = UiSettle.showingWindows() - before
-        val opened = withContext(edtAny) { Window.getWindows().filter { it in new }.reversed() }
-        for (window in opened) {
-            if (!withContext(edtAny) { window.isShowing }) continue
-            val name = withContext(edtAny) { describeWindow(window) }
-            lines += try {
-                "$name: ${closeWindow(window)}"
-            } catch (e: UiStepFailure) {
-                "$name: not closed: ${e.message}"
-            }
-        }
-        return lines
-    }
-
-    private suspend fun closeWindow(window: Window): String {
-        val windowsBefore = UiSettle.showingWindows()
-        val (way, closed) = withContext(edtAny) {
-            val root = (window as? RootPaneContainer)?.rootPane
-            val inside = root?.let { UIUtil.findComponentsOfType(it, JComponent::class.java).lastOrNull() }
-            val dialog = inside?.let { DialogWrapper.findInstance(it) }
-            val popup = inside?.let { PopupUtil.getPopupContainerFor(it) }
-            val way = UiWindows.closeWay(
-                UiWindows.kind(window),
-                isProjectFrame = window === projectFrame(),
-                hasDialogWrapper = dialog != null,
-                hasPopup = popup != null,
-                hasMenu = inside != null && UIUtil.findComponentOfType(root, JPopupMenu::class.java) != null,
-            ) ?: throw UiStepFailure("the IDE window itself does not close; name a dialog, popup or separate window")
-            val app = ApplicationManager.getApplication()
-            way to when (way) {
-                UiWindows.CloseWay.CANCEL_DIALOG -> {
-                    app.invokeLater({ dialog!!.doCancelAction() }, ModalityState.any())
-                    "cancelled the dialog"
-                }
-                UiWindows.CloseWay.CANCEL_POPUP -> {
-                    app.invokeLater({ popup!!.cancel() }, ModalityState.any())
-                    "cancelled the popup"
-                }
-                // A context menu or a main menu is a Swing menu, which closes with its submenus, as ESCAPE does.
-                UiWindows.CloseWay.CLOSE_MENU -> {
-                    MenuSelectionManager.defaultManager().clearSelectedPath()
-                    "closed the menu and its submenus"
-                }
-                // A window no DialogWrapper holds, such as the separate or floating Settings window, closes as by its
-                // title bar's close button.
-                UiWindows.CloseWay.REQUEST_CLOSE -> {
-                    app.invokeLater({ window.dispatchEvent(WindowEvent(window, WindowEvent.WINDOW_CLOSING)) }, ModalityState.any())
-                    "asked the window to close"
-                }
-            }
-        }
-        UiSettle.barrier()
-        // A menu closes in place and may leave its window showing. Any other window must go, or open another, such as
-        // a confirmation: a window that ignores the request would otherwise read as closed.
-        if (way != UiWindows.CloseWay.CLOSE_MENU) {
-            suspend fun stillOpen() = withContext(edtAny) { window.isShowing } && UiSettle.showingWindows().none { it !in windowsBefore }
-            val started = TimeSource.Monotonic.markNow()
-            while (stillOpen() && started.elapsedNow().inWholeMilliseconds < CLOSE_WAIT_MS) delay(POLL_MS)
-            if (stillOpen()) {
-                throw UiStepFailure("$closed, and window \"${withContext(edtAny) { windowTitle(window) }}\" is still open; click its Cancel or Close button")
-            }
-        }
-        return closed
-    }
-
-    /**
-     * Sizes the window that holds the target, the one whose title contains "title", or the topmost window: the Settings
-     * dialog when it shows, else the project frame.
-     */
-    private suspend fun windowStep(step: UiStep): String {
-        step.dimension?.let { key -> return withContext(edtAny) { UiResize.restoreSavedSize(key, step.width!!.toInt(), step.height!!.toInt(), project) } }
-        val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
-        val window = withContext(edtAny) {
-            when {
-                node != null -> node.component as? Window ?: SwingUtilities.getWindowAncestor(node.component)
-                step.title != null -> Window.getWindows().firstOrNull { it.isShowing && windowTitle(it)?.contains(step.title!!) == true }
-                    ?: throw UiStepFailure("no window titled \"${step.title}\"; showing: " +
-                        Window.getWindows().filter { it.isShowing }.mapNotNull(::windowTitle).joinToString { "\"$it\"" })
-                else -> scopeWindows().firstOrNull()
-            }
-        } ?: throw UiStepFailure("no window is showing")
-        // The IDE window keeps its size after the run. A dialog or the Settings window closes, but the IDE saves its size
-        // for the next opening, which the restore puts back.
-        withContext(edtAny) {
-            when {
-                window is IdeFrame && window is Frame -> undo(listOf(frameSize(window)))
-                else -> UiResize.savedSizeKey(window)?.let { key ->
-                    undo(listOf(UiRestore.step("window", "dimension" to key, "width" to window.width, "height" to window.height)))
-                }
-            }
-        }
-        return UiResize.window(window, step.width, step.height, step.maximize)
-    }
-
-    /**
-     * Moves a splitter's divider: the splitter the target is, or the nearest one above the control, whose pane holding
-     * it gets the size, or for "fit", the one along which its content is cut. With a key and no target, puts back the
-     * proportion a `JBSplitter` saves, on the one showing or in the saved settings.
-     */
-    private suspend fun splitterStep(step: UiStep): String {
-        step.key?.let { key -> return withContext(edtAny) { restoreSplitterKey(key, step.proportion!!) } }
-        val node = try {
-            resolve(step.target!!, step.timeoutMs, requireEnabled = false)
-        } catch (e: UiStepFailure) {
-            // A restore names the pane by ref with no wait: a pane whose window closed has nothing left to put back.
-            if (step.timeoutMs == 0L && step.target?.ref != null) return "the splitter pane ${step.target!!.ref} is gone; nothing to put back"
-            throw e
-        }
-        val line = withContext(edtAny) {
-            val c = node.component
-            val pane = (if (step.size == UiSteps.FIT) UiSplitters.cutAxes(c).firstNotNullOfOrNull { UiSplitters.paneOf(c, it) } else null)
-                ?: UiSplitters.paneOf(c)
-                ?: throw UiStepFailure("${describe(node)} is in no splitter; a window or tool window step sizes what holds it")
-            val s = pane.splitter
-            val restores = mutableListOf(UiRestore.step("splitter", "ref" to registry.refFor(pane.child), "size" to UiSplitters.size(pane), "timeout_ms" to 0))
-            UiSplitters.savedKey(s)?.let { key -> restores += UiRestore.step("splitter", "key" to key, "proportion" to UiSplitters.proportion(s)) }
-            undo(restores)
-            val r = when {
-                step.proportion != null -> UiSplitters.setProportion(s, step.proportion!!)
-                step.size == UiSteps.FIT -> UiSplitters.setSize(pane, UiSplitters.fitSize(pane, c.takeUnless { it === s }))
-                else -> UiSplitters.setSize(pane, step.size!!.toInt())
-            }
-            val axis = if (pane.axis == UiSplitters.Axis.HEIGHT) "high" else "wide"
-            val paneNode = FallbackUiWalker().leaf(pane.child)
-            // A console or an editor wants any size; only content the other pane now cuts calls for a larger window.
-            val refOf = { n: UiNode -> registry.refFor(n.component) }
-            val otherCuts = UiSplitters.others(pane).flatMap { UiLayout.cuts(FallbackUiWalker().build(it), refOf) }
-            "moved the divider of ${UiComponentFacts.simpleClassName(s)} [ref=${registry.refFor(s)}]: the pane with ${describe(paneNode)} is ${r.after} px $axis, " +
-                "was ${r.before} px (proportion ${UiSplitters.format(r.proportionAfter)}, was ${UiSplitters.format(r.proportionBefore)})" +
-                (r.heldBack?.let { "; held back: $it" } ?: "") +
-                (if (otherCuts.isNotEmpty()) "; the other pane now cuts content (${otherCuts.first().what}), so a larger window gives both room: " +
-                    UiLayout.windowStep(SwingUtilities.getWindowAncestor(s)) else "")
-        }
-        UiSettle.barrier()
-        return line
-    }
-
-    /** Puts back proportion [share] under [key]: on the `JBSplitter` showing with that key, else in the saved settings. EDT. */
-    private fun restoreSplitterKey(key: String, share: Double): String {
-        val showing = Window.getWindows().asSequence().filter { it.isShowing }
-            .flatMap { UIUtil.uiTraverser(it).asSequence() }
-            .firstOrNull { it is com.intellij.ui.JBSplitter && it.isShowing && UiSplitters.savedKey(it) == key } as? com.intellij.ui.JBSplitter
-        if (showing != null) {
-            showing.proportion = share.toFloat()
-            return "the splitter saved as $key is back to ${UiSplitters.format(share)}"
-        }
-        // As JBSplitter stores it, a float in text form, which it reads with getFloat.
-        com.intellij.ide.util.PropertiesComponent.getInstance().setValue(key, share.toFloat().toString())
-        return "the saved proportion of $key is back to ${UiSplitters.format(share)}"
-    }
-
-    /** The step that gives the IDE window [frame] its size now: maximized, or its width and height. EDT. */
-    private fun frameSize(frame: Frame): JsonObject {
-        val target = "class" to frame.javaClass.simpleName
-        return if (frame.extendedState and Frame.MAXIMIZED_BOTH == Frame.MAXIMIZED_BOTH) UiRestore.step("window", target, "maximize" to true)
-        else UiRestore.step("window", target, "width" to frame.width, "height" to frame.height)
     }
 
     /**
@@ -1516,14 +1185,12 @@ class UiSession(
         private const val BUILDS_LISTED = 10
         private const val NOTIFICATIONS_LISTED = 20
         private const val SUBMENU_WAIT_MS = 2_000L
-        private const val CLOSE_WAIT_MS = 3_000L
         private const val NO_CHANGES = "in Split Mode the steps' code changes are not tracked: the JetBrains Client holds no project files, " +
             "and the backend runs each step it is sent as a call of its own; check a file's text with {\"action\":\"expect\",\"file\":\"...\",\"contains\":\"...\"}"
         private const val ON_BACKEND = "on the backend: "
         private const val LUX_PREFIX = "Lux"
         private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")
         private val UNCHECKED_WORDS = setOf("false", "off", "no", "[ ]")
-        private const val POLL_MS = 100L
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L
         private const val FIRST_TEXT_MAX = 60

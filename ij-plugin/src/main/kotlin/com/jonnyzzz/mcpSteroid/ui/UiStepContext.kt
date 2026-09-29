@@ -10,6 +10,7 @@ import java.awt.Point
 import java.awt.Rectangle
 import java.awt.Window
 import java.nio.file.Path
+import kotlinx.serialization.json.JsonObject
 import javax.swing.SwingUtilities
 
 /** What the step classes split out of [UiSession] use of it: its project and call state, and target resolution. */
@@ -31,6 +32,10 @@ internal interface UiStepContext {
     fun scopeWindows(): List<Window>
     fun describe(node: UiNode): String
     fun describeWindow(w: Window): String
+    fun windowTitle(w: Window): String?
+    fun projectFrame(): Window
+    /** Records the steps that put back what the running step changes. */
+    fun undo(steps: List<JsonObject>)
     suspend fun applyFix(fix: String): String
 }
 
@@ -44,3 +49,6 @@ internal fun windowOf(c: Component): Window? = c as? Window ?: SwingUtilities.ge
 internal class UiRowPick(val index: Int, val text: String, val expanded: List<String>) {
     fun expandedNote() = if (expanded.isEmpty()) "" else "expanded ${expanded.joinToString(", ") { "\"$it\"" }}; "
 }
+
+/** How often a step looks again while it waits. */
+internal const val POLL_MS = 100L
