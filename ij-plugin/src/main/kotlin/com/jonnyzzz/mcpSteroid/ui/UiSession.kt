@@ -29,8 +29,6 @@ import com.jonnyzzz.mcpSteroid.freeze.IdeMemory
 import com.jonnyzzz.mcpSteroid.freeze.IdeNotifications
 import com.jonnyzzz.mcpSteroid.freeze.IdeRuns
 import com.jonnyzzz.mcpSteroid.server.UiAction
-import com.jonnyzzz.mcpSteroid.server.UiCrop
-import com.jonnyzzz.mcpSteroid.server.UiHighlight
 import com.jonnyzzz.mcpSteroid.server.UiEditorState
 import com.jonnyzzz.mcpSteroid.server.UiForwardedStep
 import com.jonnyzzz.mcpSteroid.server.UiRestore
@@ -46,10 +44,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import java.awt.Component
 import java.awt.Dialog
 import java.awt.Frame
@@ -57,7 +52,6 @@ import java.awt.KeyboardFocusManager
 import java.awt.Point
 import java.awt.Rectangle
 import java.awt.Window
-import java.awt.image.BufferedImage
 import java.awt.event.MouseEvent
 import java.awt.event.WindowEvent
 import java.nio.file.Path
@@ -136,6 +130,24 @@ class UiSession(
     private val config = UiConfig(project)
     private val editors = UiEditors(project)
     private val menu = UiMenu()
+    private val context = object : UiStepContext {
+        override val project get() = this@UiSession.project
+        override val registry get() = this@UiSession.registry
+        override val forward get() = this@UiSession.forward
+        override val edtAny get() = this@UiSession.edtAny
+        override val artifacts get() = this@UiSession.artifacts
+        override val scenarioDir get() = this@UiSession.scenarioDir
+        override val lastClick get() = this@UiSession.lastClick
+        override suspend fun resolve(target: UiTarget, timeoutMs: Long, requireEnabled: Boolean) = this@UiSession.resolve(target, timeoutMs, requireEnabled)
+        override suspend fun match(target: UiTarget) = this@UiSession.match(target)
+        override suspend fun pickRow(node: UiNode, step: UiStep) = this@UiSession.pickRow(node, step)
+        override fun scopeWindows() = this@UiSession.scopeWindows()
+        override fun describe(node: UiNode) = this@UiSession.describe(node)
+        override fun describeWindow(w: Window) = this@UiSession.describeWindow(w)
+        override suspend fun applyFix(fix: String) = this@UiSession.applyFix(fix)
+    }
+    private val finder = UiHighlightFinder(context)
+    private val screenshots = UiScreenshotStep(context, finder)
     private val edtAny get() = Dispatchers.EDT + ModalityState.any().asContextElement()
 
     /** The step that runs, and what a replay of it names instead of its refs, row indexes, page names and option names. */
@@ -484,7 +496,7 @@ class UiSession(
             line + (runs.report()?.let { "; $it" } ?: "")
         }
         UiAction.GET -> when {
-            step.layout -> layoutReport(step)
+            step.layout -> screenshots.layoutReport(step)
             step.editors -> editorsReport(step)
             step.memory -> IdeMemory.getInstanceOrNull()?.report() ?: throw UiStepFailure("the IDE application is not available")
             step.builds -> IdeBuilds.getInstanceOrNull()?.recent(BUILDS_LISTED)?.let(IdeBuilds::renderRecent) ?: throw UiStepFailure("the IDE application is not available")
@@ -504,7 +516,7 @@ class UiSession(
         UiAction.SETTINGS -> withEffects {
             ideSteps.settings(step).also { o -> o.id?.let { portableFields["page"] = it } }.line
         }
-        UiAction.SCREENSHOT -> screenshotStep(step)
+        UiAction.SCREENSHOT -> screenshots.run(step)
         UiAction.EXPECT -> error("an expect runs in run()")
         else -> withEffects { actStep(step) }
     }
@@ -694,8 +706,8 @@ class UiSession(
      */
     private suspend fun selectStep(given: UiStep): String {
         // A JetBrains Client's Inspections page is the backend's, whose profile names the rows: the backend selects.
-        given.inspection?.let { name -> backendInspectionSelect(name)?.let { return it } }
-        val step = given.inspection?.let { given.copy(target = UiTarget(cls = INSPECTIONS_TREE), row = inspectionPath(it), inspection = null) } ?: given
+        given.inspection?.let { name -> finder.backendInspectionSelect(name)?.let { return it } }
+        val step = given.inspection?.let { given.copy(target = UiTarget(cls = INSPECTIONS_TREE), row = finder.inspectionPath(it), inspection = null) } ?: given
         val found = resolve(step.target!!, step.timeoutMs, requireEnabled = true)
         // An open combo box popup's list shows the combo box's items: selecting in the list alone would not pick one.
         val node = withContext(edtAny) { UiRows.comboOf(found.component)?.let { FallbackUiWalker().leaf(it) } } ?: found
@@ -708,18 +720,13 @@ class UiSession(
         }
     }
 
-    /** A row a step picked, and the tree rows it expanded to reach it. */
-    private class RowPick(val index: Int, val text: String, val expanded: List<String>) {
-        fun expandedNote() = if (expanded.isEmpty()) "" else "expanded ${expanded.joinToString(", ") { "\"$it\"" }}; "
-    }
-
     /**
      * The row "row" or "index" of [step] names in [node]'s list, tree, table or tabbed pane, or null when the step
      * names none. A tree path whose parents are collapsed, such as `Editor > Code Style > Java`, expands them. A row
      * that is not there yet is waited for up to the step's timeout: a list filled asynchronously, such as the Settings
      * tree filtering to what was just typed into its search, shows its rows some time after the step before it.
      */
-    private suspend fun pickRow(node: UiNode, step: UiStep): RowPick? {
+    private suspend fun pickRow(node: UiNode, step: UiStep): UiRowPick? {
         if (step.row == null && step.index == null) return null
         val c = node.component
         val wanted = step.row
@@ -731,7 +738,7 @@ class UiSession(
             val index = step.index ?: withContext(edtAny) { UiRows.find(c, rows, wanted!!) }
             if (index in rows.indices) {
                 if (step.index != null && current === step) withContext(edtAny) { UiPortable.stableRow(c, rows, index) }?.let { portableRow = it }
-                return RowPick(index, withContext(edtAny) { UiRows.named(c, rows, index, wanted) }, emptyList())
+                return UiRowPick(index, withContext(edtAny) { UiRows.named(c, rows, index, wanted) }, emptyList())
             }
             // A tree table's rows are its tree's, so the tree's row found is the table's row too.
             val tree = withContext(edtAny) { UiRows.treeOf(c) }
@@ -749,7 +756,7 @@ class UiSession(
      * Finds `A > B > C` in [tree] one segment at a time, expanding each parent as a user would and waiting up to
      * [timeoutMs] for its children to load. The first segment may be any row in view.
      */
-    private suspend fun expandPath(tree: JTree, wanted: String, timeoutMs: Long): RowPick {
+    private suspend fun expandPath(tree: JTree, wanted: String, timeoutMs: Long): UiRowPick {
         val started = TimeSource.Monotonic.markNow()
         val segments = wanted.split(UiRows.PATH_SEPARATOR).map { it.trim() }
         val expanded = mutableListOf<String>()
@@ -786,7 +793,7 @@ class UiSession(
         }
         return withContext(edtAny) {
             val row = tree.getRowForPath(parent)
-            RowPick(row, UiRows.treePath(tree, row), expanded)
+            UiRowPick(row, UiRows.treePath(tree, row), expanded)
         }
     }
 
@@ -1116,483 +1123,6 @@ class UiSession(
             }
         }
     }
-
-    /**
-     * Saves a picture of the window that holds the target, or of the topmost window, with the popups open above it:
-     * to `out`, or as `<save>.png` in the call's execution folder. The highlights are outlined, numbered when there are several, each
-     * scrolled into the middle of its view first when it is out of view, and the crop cuts the picture to the
-     * Settings page, the highlights or a control. `<name>.json` beside it records what makes two pictures of the same
-     * state differ: the window's size, the scale, the theme, the editor font, the IDE build and the crop. A picture
-     * that replaces a file says whether it changed.
-     */
-    private suspend fun screenshotStep(step: UiStep): String {
-        val file = step.out?.let { UiCapturePaths.resolve(it, scenarioDir) }
-            ?: (artifacts ?: throw UiStepFailure("screenshot has no folder to save to in this call")).resolve("screenshots").resolve(step.save!! + ".png")
-        // A popup that a right click in an editor opens can show after that step's report: the picture and its
-        // highlights wait for it, or a highlight of a menu item finds the main menu's item of the same name.
-        UiSettle.settle()
-        val node = step.target?.let { resolve(it, step.timeoutMs, requireEnabled = false) }
-        val window = withContext(edtAny) { (node?.let { windowOf(it.component) } ?: scopeWindows().firstOrNull())?.let(UiCapture::pictured) }
-            ?: throw UiStepFailure("no window is showing")
-        // The highlights are what the picture is about: fit makes room for them, and lets other long lines stay cut. A
-        // row's area is taken where it is found, so after a fit that resized something they are found again.
-        val found = step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
-        val made = if (step.fit) fitForPicture(step, window) { found.map { it.screenBounds() } } else emptyList()
-        val highlights = if (made.isEmpty()) found else step.highlight.orEmpty().map { locateHighlight(it, window, step.timeoutMs) }
-        val essential = { highlights.map { it.screenBounds() } }
-        val hostCuts = hostProblems(window, withContext(edtAny) { essential() })
-        val cropOnBackend = (step.crop as? UiCrop.Control)?.let { backendBounds(it.target, null, null, window)?.first }
-        val cropControl = if (cropOnBackend != null) null else (step.crop as? UiCrop.Control)?.let { resolve(it.target, step.timeoutMs, requireEnabled = false) }
-        withContext(edtAny) { highlights.forEach { it.bringIntoView() } }
-        UiSettle.settle()
-        val (canvas, facts, line) = withContext(edtAny) {
-            if (!window.isShowing) throw UiStepFailure("${describeWindow(window)} closed before its picture")
-            // Numbers give steps an order: several steps are numbered, a single one is only outlined, unless asked. A
-            // click point on the outline of what was clicked is part of that step.
-            val marks = UiCallouts.steps(highlights.mapIndexed { i, h -> UiCallouts.Mark(i + 1, h.screenBounds(), h.label, h.pointer) }, step.numbers)
-            val numbered = marks.any { it.numbered }
-            val obstacles = if (marks.isEmpty()) emptyList() else textObstacles(window, highlights)
-            // A picture of code shows the code, not where the caret happens to be.
-            val codeEditors = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct()
-            val showCarets = codeEditors.map(UiCodeRange::hideCaret)
-            val painted = try {
-                UiCapture.paint(window).let { if (marks.isEmpty()) it else UiCallouts.highlight(it, marks, obstacles) }
-            } finally {
-                showCarets.forEach { it() }
-            }
-            // Code cut to its lines keeps their line numbers: the crop reaches left to the editor's gutter.
-            fun withGutter(area: Rectangle) = codeEditors.fold(area) { a, editor ->
-                val gutter = (editor as? com.intellij.openapi.editor.ex.EditorEx)?.gutterComponentEx?.takeIf { it.isShowing }
-                val x = gutter?.locationOnScreen?.x
-                if (x == null || x >= a.x) a else Rectangle(x, a.y, a.x + a.width - x, a.height)
-            }
-            val area = when (val crop = step.crop) {
-                null -> null
-                UiCrop.Page -> UiSettingsParts.page(window)?.let { UiCallouts.withMarks(painted, it, marks, obstacles) }
-                    ?: throw UiStepFailure("crop \"page\" needs a Settings page, and ${describeWindow(window)} shows none")
-                UiCrop.Highlights -> withGutter(UiCallouts.markArea(painted, marks, obstacles))
-                UiCrop.Popups -> UiCapture.popupArea(window)?.let { area ->
-                    // What a menu was opened from belongs with it: the click point, and the code it clicked.
-                    withGutter(UiCapture.union(listOf(area) + if (marks.isEmpty()) emptyList() else listOf(UiCallouts.markArea(painted, marks, obstacles))))
-                } ?: throw UiStepFailure("crop \"popups\" needs an open menu or popup above ${describeWindow(window)}")
-                is UiCrop.ToolWindow -> {
-                    val views = UiLayout.toolWindows(project)
-                    val view = views.firstOrNull { it.id.equals(crop.id, ignoreCase = true) }
-                        ?: throw UiStepFailure("no tool window ${crop.id} is showing; showing: ${views.joinToString { it.id }}")
-                    val decorator = view.window.decorator
-                    if (windowOf(decorator) !== window) throw UiStepFailure("the ${view.id} tool window is in another window than the picture")
-                    UiCallouts.withMarks(painted, onScreen(decorator, Rectangle(0, 0, decorator.width, decorator.height)), marks, obstacles)
-                }
-                is UiCrop.Control -> if (cropOnBackend != null) UiCallouts.withMarks(painted, cropOnBackend, marks, obstacles) else {
-                    val c = cropControl!!.component
-                    if (windowOf(c) !== window) throw UiStepFailure("the crop ${crop.target} is in another window than the picture")
-                    // A tree or list in a scroll pane is as tall as all its rows: the part in view is what shows.
-                    val shown = (c as? JComponent)?.visibleRect ?: Rectangle(0, 0, c.width, c.height)
-                    UiCallouts.withMarks(painted, shown.apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }, marks, obstacles)
-                }
-            }
-            val canvas = area?.let { UiCapture.crop(painted, UiCapture.cropArea(it, step.margin ?: UiSteps.DEFAULT_MARGIN, painted.bounds)) } ?: painted
-            val facts = UiPictureFacts.of(window)
-            val what = listOfNotNull(
-                highlights.takeIf { it.isNotEmpty() }?.zip(marks)?.joinToString(", ", prefix = if (numbered) "highlights: " else "highlights, outlined without numbers: ") { (h, m) ->
-                    when {
-                        m.joined -> "${h.what}, a bare pointer on the outline it clicked"
-                        numbered -> "${m.number} ${h.what}"
-                        else -> h.what
-                    }
-                },
-                step.crop?.let { "crop ${if (it is UiCrop.Control) it.target.toString() else it.toString()}" },
-                "the caret is hidden in the picture".takeIf { codeEditors.isNotEmpty() },
-                made.takeIf { it.isNotEmpty() }?.joinToString("; ", prefix = "made room: "),
-            )
-            // What the picture shows cut, each with the step that fixes it, so a bad picture is known without reading it.
-            // What the crop names, before its margin and the badges it grew by: those show the edge of what lies around
-            // it, whose cuts are not the picture's.
-            val cut = pictureProblems(window, if (area == null) canvas.bounds else pictureScope(step, window, marks.map { it.bounds }), hostCuts, essential())
-                .map { "\ncut: " + it.line.removePrefix("layout: ") }
-            Triple(canvas, facts, "saved ${canvas.image.width}x${canvas.image.height} picture of ${describeWindow(window)} to $file (${facts.describe()})" +
-                what.joinToString("") { "; $it" } + cut.joinToString(""))
-        }
-        val change = withContext(Dispatchers.IO) {
-            try {
-                java.nio.file.Files.createDirectories(file.parent)
-                val before = if (java.nio.file.Files.isRegularFile(file)) runCatching { javax.imageio.ImageIO.read(file.toFile()) }.getOrNull() else null
-                val existed = java.nio.file.Files.exists(file)
-                val format = UiCapturePaths.format(file)
-                // A JPEG has no alpha channel: ImageIO writes nothing for an ARGB picture.
-                val image = if (format == "png") canvas.image else BufferedImage(canvas.image.width, canvas.image.height, BufferedImage.TYPE_INT_RGB).also {
-                    it.createGraphics().apply { drawImage(canvas.image, 0, 0, java.awt.Color.WHITE, null); dispose() }
-                }
-                java.nio.file.Files.newOutputStream(file).use { if (!javax.imageio.ImageIO.write(image, format, it)) throw java.io.IOException("no $format writer") }
-                val json = file.resolveSibling(file.fileName.toString().substringBeforeLast('.') + ".json")
-                java.nio.file.Files.writeString(json, facts.json(crop = step.crop?.let {
-                    when (it) {
-                        is UiCrop.Control -> "control"
-                        is UiCrop.ToolWindow -> "toolwindow"
-                        else -> it.toString()
-                    }
-                } ?: "window"))
-                when {
-                    !existed -> ""
-                    before == null -> "; replaced a file that was not a readable picture"
-                    // A JPEG never reads back as it was painted, so only a PNG is compared.
-                    format != "png" -> ""
-                    else -> when (val n = UiCapture.differingPixels(before, canvas.image)) {
-                        0 -> "; unchanged"
-                        Int.MAX_VALUE -> "; changed: the size was ${before.width}x${before.height}"
-                        else -> "; changed: $n pixels differ"
-                    }
-                }
-            } catch (e: java.io.IOException) {
-                // An AccessDeniedException's message is only the path: its class says what went wrong.
-                throw UiStepFailure("cannot write the picture to $file (${e.javaClass.simpleName}" + (e.message?.takeIf { it != file.toString() }?.let { ": $it" } ?: "") + ")")
-            }
-        }
-        return line + change
-    }
-
-    /**
-     * The layout problems of [window], and [host], the backend's of a host Settings page it shows, whose cut content
-     * lies in [area], a picture's screen area. With [essential] areas, the highlights, content cut outside them does
-     * not count. EDT.
-     */
-    private fun pictureProblems(
-        window: Window, area: Rectangle, host: List<UiLayout.Problem> = emptyList(), essential: List<Rectangle> = emptyList(),
-    ): List<UiLayout.Problem> =
-        (UiLayout.problems(window, UiModel.build(window).root, { registry.refFor(it.component) }, project, essential) + host)
-            .filter { it.area?.intersects(area) == true }
-
-    /**
-     * The layout problems of the showing windows, one line each, which a JetBrains Client reads for a host page; with
-     * the step's `within` areas, only content cut in them counts.
-     */
-    private suspend fun layoutReport(step: UiStep): String = withContext(edtAny) {
-        val essential = step.within?.let(UiSteps::parseAreas).orEmpty()
-        val lines = Window.getWindows().filter { it.isShowing }.flatMap { w ->
-            UiLayout.problems(w, UiModel.build(w).root, { registry.refFor(it.component) }, project, essential).map { UiHostLayout.encode(it, w.size) }
-        }
-        if (lines.isEmpty()) "no layout problems" else lines.joinToString("\n")
-    }
-
-    /**
-     * In a JetBrains Client showing a host Settings page, the backend's layout problems of the page, with the fixes the
-     * Client runs; none elsewhere. With [essential] areas, the highlights, only content cut in them counts. A backend
-     * that does not answer leaves the picture without them rather than failing it.
-     */
-    private suspend fun hostProblems(window: Window, essential: List<Rectangle>): List<UiLayout.Problem> {
-        val forward = forward ?: return emptyList()
-        if (!withContext(edtAny) { UiSettingsParts.hostPage(window) }) return emptyList()
-        val step = UiSteps.parse(JsonArray(listOf(buildJsonObject {
-            put("action", "get")
-            put("layout", true)
-            if (essential.isNotEmpty()) put("within", essential.joinToString(";") { "${it.x},${it.y},${it.width},${it.height}" })
-            put("side", "backend")
-        }))).single()
-        val report = forward.invoke(step).takeIf { it.passed } ?: return emptyList()
-        val client = withContext(edtAny) { window.size }
-        return UiHostLayout.decode(report.text).map { p ->
-            val fix = UiHostLayout.clientFix(p.fix, p.window, client)
-            UiLayout.Problem(if (p.fix != null && fix != null) p.line.replace(p.fix, fix) else p.line, fix, null, p.area)
-        }
-    }
-
-    /**
-     * For a screenshot with fit: runs the steps that make room for what the picture would show cut, the part the crop
-     * names or the whole window, and looks again once, as the room one step makes can show another cut. With
-     * highlights, [essential] gives their screen areas, and only content cut in them counts. The restores go with the
-     * step's. Returns what each step did.
-     */
-    private suspend fun fitForPicture(step: UiStep, window: Window, essential: () -> List<Rectangle>): List<String> {
-        val done = mutableListOf<String>()
-        val tried = mutableSetOf<String>()
-        val before = withContext(edtAny) { window.width }
-        repeat(FIT_ROUNDS) {
-            val areas = withContext(edtAny) { essential() }
-            val host = hostProblems(window, areas)
-            val fixes = withContext(edtAny) {
-                val scope = pictureScope(step, window)
-                pictureProblems(window, scope, host, areas).mapNotNull { it.fix }
-                    .mapNotNull { UiLayout.capWindowFix(it, before, window.width) }.filter { tried.add(it) }
-            }
-            if (fixes.isEmpty()) return done
-            fixes.forEach { done += applyFix(it) }
-            UiSettle.settle()
-        }
-        return done
-    }
-
-    /**
-     * The screen area a screenshot's crop names, without its margin and badges: a control, a tool window, the Settings
-     * page, the open popups, the highlights at [marks], or the window. EDT.
-     */
-    private suspend fun pictureScope(step: UiStep, window: Window, marks: List<Rectangle> = emptyList()): Rectangle = when (val crop = step.crop) {
-        UiCrop.Popups -> UiCapture.popupArea(window)?.let { UiCapture.union(listOf(it) + marks) }
-        UiCrop.Highlights -> marks.takeIf { it.isNotEmpty() }?.let(UiCapture::union)
-        is UiCrop.Control -> match(crop.target).let { m -> (m as? UiMatch.One)?.node?.component?.takeIf { it.isShowing }?.let { onScreen(it, Rectangle(0, 0, it.width, it.height)) } }
-        is UiCrop.ToolWindow -> UiLayout.toolWindows(project).firstOrNull { it.id.equals(crop.id, ignoreCase = true) }?.window?.decorator
-            ?.takeIf { it.isShowing }?.let { onScreen(it, Rectangle(0, 0, it.width, it.height)) }
-        UiCrop.Page -> UiSettingsParts.page(window)
-        else -> null
-    } ?: Rectangle(window.locationOnScreen, window.size)
-
-    /** [area], in [c]'s coordinates, on screen. EDT. */
-    private fun onScreen(c: Component, area: Rectangle): Rectangle = Rectangle(area).apply { translate(c.locationOnScreen.x, c.locationOnScreen.y) }
-
-    /**
-     * A highlight found: where to outline it, how to name it, and its label. [component] is the control it outlines,
-     * whose own text is no obstacle to its badge; [pointer] draws it as the point of a click.
-     */
-    private sealed class Located(val what: String, val label: String?, val component: Component? = null, val pointer: Boolean = false) {
-        /** Scrolls the highlight to the middle of its view when part of it is out of view. EDT. */
-        abstract fun bringIntoView()
-
-        /** EDT. */
-        abstract fun screenBounds(): Rectangle
-    }
-
-    /**
-     * A highlight in this process: its component and the area of it to outline, in its coordinates. With [visibleOnly],
-     * a control larger than its view, the outline covers the part that shows when the picture is taken.
-     */
-    private inner class LocalHighlight(
-        val target: Component, val area: Rectangle, what: String, label: String?, val visibleOnly: Boolean = false,
-    ) : Located(what, label, target) {
-        override fun bringIntoView() {
-            if (!visibleOnly && !UiScrollAlign.inView(target, area)) UiScrollAlign.scroll(target, area, "center")
-        }
-
-        override fun screenBounds(): Rectangle =
-            onScreen(target, if (visibleOnly) (target as? JComponent)?.visibleRect ?: area else area)
-    }
-
-    /** A highlight on a host Settings page, which the backend found and scrolled into view: its screen bounds. */
-    private class BackendHighlight(val bounds: Rectangle, what: String, label: String?) : Located(what, label) {
-        override fun bringIntoView() = Unit
-        override fun screenBounds(): Rectangle = Rectangle(bounds)
-    }
-
-    /** Lines or a symbol of code: an area of [editor]'s content, which the editor scrolls into the middle of its view. */
-    private inner class CodeHighlight(val editor: Editor, val area: Rectangle, what: String, label: String?) : Located(what, label, editor.contentComponent) {
-        override fun bringIntoView() = UiCodeRange.bringIntoView(editor, area, what)
-        override fun screenBounds(): Rectangle = onScreen(editor.contentComponent, area)
-    }
-
-    /** The screen point of the call's last click, drawn as a pointer. */
-    private class PointHighlight(val point: Point, label: String?) : Located("the point of the last click", label, pointer = true) {
-        override fun bringIntoView() = Unit
-        override fun screenBounds(): Rectangle = Rectangle(point.x, point.y, 1, 1)
-    }
-
-    /**
-     * The editor a code highlight names: the one of [file] that shows, or the selected one without a file; either must
-     * be in [window]. EDT.
-     */
-    private fun highlightEditor(file: com.intellij.openapi.vfs.VirtualFile?, path: String?, window: Window): Editor {
-        val manager = FileEditorManager.getInstance(project)
-        val editor = if (file == null) manager.selectedTextEditor ?: throw UiStepFailure("no editor is selected; open the file with a goto step first")
-        else manager.getAllEditors(file).filterIsInstance<com.intellij.openapi.fileEditor.TextEditor>().map { it.editor }.firstOrNull { it.contentComponent.isShowing }
-            ?: throw UiStepFailure("$path shows in no editor; open it with a goto step first")
-        if (!SwingUtilities.isDescendingFrom(editor.contentComponent, window)) {
-            throw UiStepFailure("the editor of ${editor.virtualFile?.name ?: "the file"} is not in the pictured ${describeWindow(window)}")
-        }
-        return editor
-    }
-
-    /**
-     * The row of inspection [shortName] on the Inspections page: its group path and display name, as the tree shows
-     * them, which the row search expands.
-     */
-    private suspend fun inspectionHighlight(shortName: String, label: String?, window: Window, timeoutMs: Long): Located =
-        locateHighlight(UiHighlight(UiTarget(cls = INSPECTIONS_TREE), row = inspectionPath(shortName), label = label), window, timeoutMs)
-
-    /**
-     * The row path of inspection [shortName] in the Inspections tree: its groups, then its display name. A JetBrains
-     * Client's Inspections page is the backend's, and the Client's own profile may lack the inspection or name its
-     * groups otherwise: the backend selects the row there, and its report names the path.
-     */
-    private suspend fun inspectionPath(shortName: String): String {
-        backendInspectionSelect(shortName)?.let { report ->
-            return SELECTED_PATH.find(report)?.groupValues?.get(1) ?: throw UiStepFailure("the backend selected the inspection but named no row: $report")
-        }
-        return withContext(edtAny) { localInspection(shortName) }
-            ?: throw UiStepFailure("no inspection has the short name \"$shortName\"; a get of an inspection lists short names as it finds them")
-    }
-
-    /** The row path of inspection [shortName] from this side's profile, or null when it has none. EDT. */
-    private fun localInspection(shortName: String): String? =
-        com.intellij.profile.codeInspection.InspectionProjectProfileManager.getInstance(project).currentProfile.getInspectionTool(shortName, project)
-            ?.let { tool -> (tool.groupPath.toList() + tool.displayName).joinToString(UiRows.PATH_SEPARATOR) }
-
-    /** In a JetBrains Client, the report of a select of inspection [shortName] run on the backend, or null elsewhere. */
-    private suspend fun backendInspectionSelect(shortName: String): String? {
-        val forward = forward ?: return null
-        val step = UiSteps.parse(JsonArray(listOf(buildJsonObject {
-            put("action", "select")
-            put("inspection", shortName)
-            put("side", "backend")
-        }))).single()
-        val report = forward.invoke(step)
-        if (!report.passed) throw UiStepFailure("on the backend: ${report.text}")
-        return report.text
-    }
-
-    /**
-     * The lines of the console of run [name] that hold [text], the last of them unless [nth] counts back further, in a
-     * console built on an editor. EDT.
-     */
-    private fun consoleHighlight(name: String, text: String, nth: Int, label: String?, window: Window): Located {
-        val descriptors = com.intellij.execution.ui.RunContentManager.getInstance(project).allDescriptors
-        val descriptor = descriptors.lastOrNull { it.displayName == name } ?: descriptors.lastOrNull { it.displayName.contains(name, ignoreCase = true) }
-            ?: throw UiStepFailure("no run named \"$name\" has a console; runs: ${descriptors.joinToString { "\"${it.displayName}\"" }}")
-        val console = descriptor.executionConsole
-        (console as? com.intellij.terminal.TerminalExecutionConsole)?.let { return terminalLine(it, descriptor.displayName, text, nth, label, window) }
-        val editor = (console as? com.intellij.execution.impl.ConsoleViewImpl)?.editor
-            ?: throw UiStepFailure("the console of '${descriptor.displayName}' is a ${console?.let { UiComponentFacts.simpleClassName(it.component) } ?: "console"} without an editor; outline it with a locator")
-        if (!editor.contentComponent.isShowing) throw UiStepFailure("the console of '${descriptor.displayName}' is not showing; show its tab first")
-        val doc = editor.document
-        val lines = (0 until doc.lineCount).filter { line ->
-            doc.charsSequence.subSequence(doc.getLineStartOffset(line), doc.getLineEndOffset(line)).contains(text)
-        }
-        val line = lines.reversed().getOrNull(nth)
-            ?: throw UiStepFailure(if (lines.isEmpty()) "no line of the console of '${descriptor.displayName}' holds \"$text\"" else "\"$text\" is on ${lines.size} lines; nth $nth asked")
-        if (!SwingUtilities.isDescendingFrom(editor.contentComponent, window)) throw UiStepFailure("the console of '${descriptor.displayName}' is not in the pictured ${describeWindow(window)}")
-        return CodeHighlight(editor, UiCodeRange.linesArea(editor, (line + 1)..(line + 1)), "line ${line + 1} of the console of '${descriptor.displayName}'", label)
-    }
-
-    /**
-     * The lines of a terminal-based console, as a Node.js run shows, that hold [text], among those on its screen: the
-     * last of them unless [nth] counts back further. Its cells are the panel's size shared out over the screen's
-     * columns and rows. EDT.
-     */
-    private fun terminalLine(console: com.intellij.terminal.TerminalExecutionConsole, name: String, text: String, nth: Int, label: String?, window: Window): Located {
-        val panel = console.terminalWidget.terminalPanel
-        if (!panel.isShowing) throw UiStepFailure("the console of '$name' is not showing; show its tab first")
-        if (!SwingUtilities.isDescendingFrom(panel, window)) throw UiStepFailure("the console of '$name' is not in the pictured ${describeWindow(window)}")
-        val buffer = panel.terminalTextBuffer
-        // Line by line: the buffer's screen text call is newer than the oldest IDE build the plugin supports.
-        val screen = (0 until buffer.height).map { buffer.getLine(it).text }
-        val lines = screen.indices.filter { screen[it].contains(text) }
-        val line = lines.reversed().getOrNull(nth)
-            ?: throw UiStepFailure(if (lines.isEmpty()) "no line on the screen of the console of '$name' holds \"$text\"; scroll it to the line first" else "\"$text\" is on ${lines.size} lines; nth $nth asked")
-        // In fractions: at a HiDPI scale a cell is not a whole number of logical pixels, and rounding each loses a character.
-        val cellHeight = panel.pixelHeight.toDouble() / maxOf(1, buffer.height)
-        val cellWidth = panel.pixelWidth.toDouble() / maxOf(1, buffer.width)
-        // One cell more: the terminal paints a glyph a little wider than its cell, so the last character reaches past it.
-        val width = kotlin.math.ceil((screen[line].trimEnd().length + 1) * cellWidth).toInt()
-        val top = (line * cellHeight).toInt()
-        return LocalHighlight(panel, Rectangle(0, top, width, kotlin.math.ceil((line + 1) * cellHeight).toInt() - top), "line ${line + 1} of the screen of the console of '$name'", label)
-    }
-
-    /**
-     * The screen bounds of the text other controls in [window] and its popups show, such as neighbouring tabs, which a
-     * badge or label should not cover. The highlighted controls and what holds them are left out; text inside a
-     * highlight's outline is its own, which the layout leaves out, while the other tabs of a highlighted tab row are
-     * obstacles, and so are the lines of code in view around a code highlight. EDT.
-     */
-    private fun textObstacles(window: Window, highlights: List<Located>): List<Rectangle> {
-        val marked = highlights.mapNotNull { it.component }
-        // The code around a code highlight is what the picture is about: its lines in view are obstacles too.
-        val code = highlights.filterIsInstance<CodeHighlight>().map { it.editor }.distinct().flatMap { editor ->
-            val view = editor.scrollingModel.visibleArea
-            val lines = editor.xyToLogicalPosition(view.location).line..editor.xyToLogicalPosition(java.awt.Point(view.x, view.y + view.height)).line
-            UiCodeRange.textSpans(editor, lines).map { onScreen(editor.contentComponent, it) }
-        }
-        return code + (listOf(window) + UiCapture.popupsOf(window)).asSequence()
-            .flatMap { UIUtil.uiTraverser(it).asSequence() }
-            .filter { c ->
-                c.isShowing && c.width > 0 && c.height > 0 && showsText(c) && marked.none { m -> SwingUtilities.isDescendingFrom(m, c) }
-            }
-            .map { onScreen(it, Rectangle(0, 0, it.width, it.height)) }
-            .take(MAX_OBSTACLES)
-            .toList()
-    }
-
-    private fun showsText(c: Component): Boolean = when (c) {
-        is javax.swing.JLabel -> !c.text.isNullOrBlank()
-        is SimpleColoredComponent -> c.getCharSequence(false).isNotBlank()
-        is AbstractButton -> !c.text.isNullOrBlank()
-        else -> false
-    }
-
-    /**
-     * Finds [h] in [window] or a popup above it: the Settings breadcrumb, a row of a list, tree or table, or a control.
-     * A control in another window, or one that is not showing, fails the step: its outline would land elsewhere.
-     */
-    private suspend fun locateHighlight(h: UiHighlight, window: Window, timeoutMs: Long): Located {
-        if (h.lines != null || h.symbol != null) {
-            val file = h.file?.let { path -> withContext(Dispatchers.IO) { CodeLocation.findFile(project, path) } ?: throw UiStepFailure("file not found: $path") }
-            return withContext(edtAny) {
-                val editor = highlightEditor(file, h.file, window)
-                val name = editor.virtualFile?.name ?: "the editor"
-                if (h.lines != null) CodeHighlight(editor, UiCodeRange.linesArea(editor, UiSteps.parseLines(h.lines!!)), "lines ${h.lines} of $name", h.label)
-                else CodeHighlight(editor, UiCodeRange.symbolArea(editor, h.symbol!!, h.nth ?: 0), "\"${h.symbol}\" in $name", h.label)
-            }
-        }
-        if (h.click) return withContext(edtAny) {
-            val (clicked, point) = lastClick ?: throw UiStepFailure("a click highlight marks the call's last click, and no step clicked before it")
-            if (clicked !== window && clicked !in UiCapture.popupsOf(window)) {
-                throw UiStepFailure("the last click was in ${describeWindow(clicked)}, not in the pictured ${describeWindow(window)}")
-            }
-            PointHighlight(point, h.label)
-        }
-        h.inspection?.let { return inspectionHighlight(it, h.label, window, timeoutMs) }
-        h.console?.let { name -> return withContext(edtAny) { consoleHighlight(name, h.contains!!, h.nth ?: 0, h.label, window) } }
-        if (h.breadcrumb) return withContext(edtAny) {
-            val bar = UiSettingsParts.breadcrumbs(window) ?: throw UiStepFailure("no Settings page is showing, so there is no breadcrumb to highlight")
-            val crumbs = UiSettingsParts.crumbsBounds(bar)
-            LocalHighlight(bar, Rectangle(0, 0, crumbs.width, crumbs.height), "breadcrumb", h.label)
-        }
-        backendBounds(h.target!!, h.row, h.index, window)?.let { (bounds, what) -> return BackendHighlight(bounds, what, h.label) }
-        val node = resolve(h.target!!, timeoutMs, requireEnabled = false)
-        val pick = pickRow(node, UiStep(UiAction.SCREENSHOT, h.target, row = h.row, index = h.index, timeoutMs = timeoutMs))
-        return withContext(edtAny) {
-            val c = node.component
-            if (!c.isShowing) throw UiStepFailure("${describe(node)} is not showing; select its tab or page first")
-            val owner = windowOf(c)
-            if (owner !== window && owner !in UiCapture.popupsOf(window)) {
-                throw UiStepFailure("${describe(node)} is in ${owner?.let { describeWindow(it) } ?: "no window"}, not in the pictured ${describeWindow(window)}")
-            }
-            val what = pick?.let { "row #${it.index} \"${it.text.take(60)}\" of ${describe(node)}" } ?: describe(node)
-            if (pick != null) {
-                val row = UiRows.bounds(c, pick.index) ?: throw UiStepFailure("${describe(node)} shows its items in a popup; open it first")
-                LocalHighlight(c, row, what, h.label)
-            } else {
-                val (area, scroll) = UiScrollAlign.wholeAreaOf(c)
-                // A control that fits its view is outlined whole; one larger than its view as far as it shows.
-                LocalHighlight(c, area, what, h.label, visibleOnly = !scroll && area != Rectangle(0, 0, c.width, c.height))
-            }
-        }
-    }
-
-    /**
-     * In a JetBrains Client showing a host Settings page, whose controls exist only on the backend, the screen bounds of
-     * [target] (or its row) as the backend finds them after scrolling it to the middle of its view, and how the backend
-     * names it. Null when this is no JetBrains Client, no host page shows, or the Client has a match of its own.
-     */
-    private suspend fun backendBounds(target: UiTarget, row: String?, index: Int?, window: Window): Pair<Rectangle, String>? {
-        if (forward == null || !withContext(edtAny) { UiSettingsParts.hostPage(window) } || match(target) !is UiMatch.None) return null
-        val source = buildJsonObject {
-            put("action", "scroll")
-            target.ref?.let { put("ref", it) }
-            target.name?.let { put("name", it) }
-            target.text?.let { put("text", it) }
-            target.cls?.let { put("class", it) }
-            target.xpath?.let { put("xpath", it) }
-            target.nth?.let { put("nth", it) }
-            row?.let { put("row", it) }
-            index?.let { put("index", it) }
-            put("align", "center")
-            put("side", "backend")
-        }
-        val step = UiSteps.parse(JsonArray(listOf(source))).single()
-        val report = forward.invoke(step)
-        if (!report.passed) throw UiStepFailure("on the backend's host page: ${report.text}")
-        val bounds = UiScrollAlign.parseBounds(report.text) ?: throw UiStepFailure("the backend gave no screen bounds: ${report.text}")
-        return bounds to "${UiScrollAlign.parseWhat(report.text) ?: target} on the backend's host page"
-    }
-
-    /** The window that holds [c], or [c] itself when it is one. EDT. */
-    private fun windowOf(c: Component): Window? = c as? Window ?: SwingUtilities.getWindowAncestor(c)
 
     private suspend fun snapshotStep(step: UiStep): String {
         if (step.target == null) return "\n" + render(withBounds = false)
@@ -1994,14 +1524,6 @@ class UiSession(
         private val CHECKED_WORDS = setOf("true", "on", "yes", "[x]")
         private val UNCHECKED_WORDS = setOf("false", "off", "no", "[ ]")
         private const val POLL_MS = 100L
-        /** How many times a screenshot with fit looks for cut content: the room one step makes can show another cut. */
-        private const val FIT_ROUNDS = 2
-        /** The tree table of Settings | Editor | Inspections, which an inspection highlight searches. */
-        private const val INSPECTIONS_TREE = "InspectionsConfigTreeTable"
-        /** The row path in a select step's report, as `selected row #70 "A > B > C" in ...`. */
-        private val SELECTED_PATH = Regex("""selected row #\d+ "(.+?)" in """)
-        /** The most text controls a picture's badges keep off: an IDE window shows a few hundred. */
-        private const val MAX_OBSTACLES = 2_000
         private const val ACTION_QUIET_MS = 700L
         private const val ACTION_SETTLE_MS = 2_500L
         private const val FIRST_TEXT_MAX = 60
