@@ -20,6 +20,7 @@ import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.ActionCallback
 import com.intellij.openapi.util.InvalidDataException
 import com.intellij.openapi.util.WriteExternalException
 import com.intellij.openapi.vfs.VirtualFile
@@ -212,6 +213,14 @@ class BatchInspection(private val project: Project) {
             indicator = ProgressManager.getGlobalProgressIndicator()
             super.runTools(scope, runGlobalToolsOnly, isOfflineInspections)
         }
+
+        /**
+         * Never: the problems come back to the caller, and no one sees a view. The platform builds the Inspection
+         * Results view on the first problem found, then fills its tree in the background; closing this context under
+         * it made that work fail on a view or tools already gone ("Tools are not initialized", a null view). The
+         * callback never completes, so the work waiting for the view never runs.
+         */
+        override fun initializeViewIfNeeded(): ActionCallback = ActionCallback()
 
         override fun notifyInspectionsFinished(scope: AnalysisScope) {
             done.complete(problems() to true)
