@@ -105,42 +105,39 @@ class DevrigToolForwardingTest {
         val exposed = routing.routes().single().exposedProjectName
         val tools = devrigTools(routing, DevrigToolBridgeClient(httpClient), tempDir)
 
-        val forwarded = tools.devrigToolSpecs().filter { it.name in FORWARDED_TOOLS }
-        assertEquals(FORWARDED_TOOLS, forwarded.map { it.name }.toSet())
-        for (spec in forwarded) {
+        // Every tool devrig serves goes to the IDE except the ones below, so a new tool is covered.
+        val forwarded = tools.devrigToolSpecs().filter { it.name !in LOCAL_TOOLS }
+        assertTrue(forwarded.size >= 6, "forwarded tools: ${forwarded.map { it.name }}")
+        // Two passes with different values, so a handler that sends a fixed value fails one of them.
+        for (pass in 0..1) for (spec in forwarded) {
             val properties = spec.inputSchema["properties"]!!.jsonObject
             val arguments = buildJsonObject {
                 for ((name, schema) in properties) {
-                    put(name, if (name == "project_name") JsonPrimitive(exposed) else sample(name, schema.jsonObject))
+                    put(name, if (name == "project_name") JsonPrimitive(exposed) else sample(name, schema.jsonObject, pass))
                 }
             }
             bodies.clear()
             val result = callToolViaSpec(spec, arguments, NoOpProgressReporter)
             assertEquals(false, result.isError, "${spec.name}: $result")
             val sent = bodies.single()["arguments"]!!.jsonObject
-            val missing = properties.keys.filterNot { it in sent }
+            // Leaving out a false flag sends its default, false.
+            val missing = properties.keys.filterNot { it in sent || arguments[it] == JsonPrimitive(false) }
             assertTrue(missing.isEmpty(), "${spec.name} drops $missing; sent ${sent.keys}")
             for (name in properties.keys - "project_name") {
-                assertEquals(arguments[name].content(), sent[name].content(), "${spec.name}.$name")
+                if (name in sent) assertEquals(arguments[name].content(), sent[name].content(), "${spec.name}.$name, pass $pass")
             }
         }
     }
 
     @Test
-    fun `the calls of one devrig name one session and a devrig that names none sends none`(@TempDir tempDir: Path) = runBlocking {
-        val route = ProjectRoute(
-            route = DiscoveredIde(
-                backendName = backendNameForMarker(7L, "IU-261.1"),
-                processId = 7,
-                rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:$port/mcp").rpcBaseUrl,
-                bridgeHeaders = emptyMap(),
-                ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
-                plugin = PluginInfo("io.github.crazycoder.mcp-steroid", "MCP Steroid", "0.0.0-test"),
-            ),
-            projectInfo = IdeProjectState("original-project", tempDir.toString()),
-            exposedProjectName = "original-project-abcdefgh",
-            projectPath = tempDir.toString(),
-        )
+    fun `a client without a session sends none`(@TempDir tempDir: Path) = runBlocking {
+        DevrigToolBridgeClient(httpClient, session = null).callProjectTool(route(tempDir), "steroid_list_windows") {}
+        assertTrue("session" !in bodies.single(), "no session key: ${bodies.single()}")
+    }
+
+    @Test
+    fun `the calls of one devrig name one session`(@TempDir tempDir: Path) = runBlocking {
+        val route = route(tempDir)
         val bridge = DevrigToolBridgeClient(httpClient)
         repeat(2) { bridge.callProjectTool(route, "steroid_list_windows") {} }
         DevrigToolBridgeClient(httpClient).callProjectTool(route, "steroid_list_windows") {}
@@ -149,6 +146,20 @@ class DevrigToolForwardingTest {
         assertEquals(sessions[0], sessions[1], "one devrig, one session")
         assertTrue(sessions[0] != sessions[2], "another devrig, another session")
     }
+
+    private fun route(tempDir: Path) = ProjectRoute(
+        route = DiscoveredIde(
+            backendName = backendNameForMarker(7L, "IU-261.1"),
+            processId = 7,
+            rpcBaseUrl = testDevrigEndpoint("http://127.0.0.1:$port/mcp").rpcBaseUrl,
+            bridgeHeaders = emptyMap(),
+            ide = IdeInfo("IntelliJ IDEA", "2026.1", "IU-261.1"),
+            plugin = PluginInfo("io.github.crazycoder.mcp-steroid", "MCP Steroid", "0.0.0-test"),
+        ),
+        projectInfo = IdeProjectState("original-project", tempDir.toString()),
+        exposedProjectName = "original-project-abcdefgh",
+        projectPath = tempDir.toString(),
+    )
 
     private fun devrigTools(routing: DevrigProjectRoutingService, bridge: DevrigToolBridgeClient, tempDir: Path) =
         object : McpSteroidTools() {
@@ -167,26 +178,31 @@ class DevrigToolForwardingTest {
             )
         }
 
-    /** A valid value for each parameter: an enum's first value, a type's sample, or a value its parser accepts. */
-    private fun sample(name: String, schema: JsonObject): JsonElement = SAMPLES[name]
-        ?: schema["enum"]?.jsonArray?.first()
+    /**
+     * A valid value for each parameter, different in each [pass]: an enum's first or last value, a type's
+     * sample, or a value its parser accepts.
+     */
+    private fun sample(name: String, schema: JsonObject, pass: Int): JsonElement = SAMPLES[name]
+        ?: schema["enum"]?.jsonArray?.let { if (pass == 0) it.first() else it.last() }
         ?: when (schema["type"]?.jsonPrimitive?.content) {
-            "integer" -> JsonPrimitive(3)
-            "number" -> JsonPrimitive(0.5)
-            "boolean" -> JsonPrimitive(true)
-            else -> JsonPrimitive("sample-$name")
+            "integer" -> JsonPrimitive(3 + pass)
+            "number" -> JsonPrimitive(0.5 + pass / 4.0)
+            "boolean" -> JsonPrimitive(pass == 0)
+            else -> JsonPrimitive("sample-$name-$pass")
         }
 
     private fun JsonElement?.content(): String? = (this as? JsonPrimitive)?.content ?: this?.toString()
 
     private companion object {
-        val FORWARDED_TOOLS = setOf(
-            "steroid_execute_code",
-            "steroid_execute_feedback",
-            "steroid_take_screenshot",
-            "steroid_input",
-            "steroid_ui",
-            "steroid_refactor",
+        /**
+         * The tools devrig answers itself, from its own routing and bundled guides, and steroid_open_project, which
+         * picks or starts a backend before it forwards and has tests of its own in DevrigToolBridgeClientTest.
+         */
+        val LOCAL_TOOLS = setOf(
+            "steroid_list_projects",
+            "steroid_list_windows",
+            "steroid_fetch_resource",
+            "steroid_open_project",
         )
         val SAMPLES = mapOf(
             "sequence" to JsonPrimitive("press:ENTER"),

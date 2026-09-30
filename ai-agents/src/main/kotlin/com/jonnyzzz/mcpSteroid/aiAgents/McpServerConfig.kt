@@ -23,7 +23,7 @@ data class McpConnectionInfo(
     val serverUrl: String,
     val commands: Map<String, String>,
     val jsonConfig: String,
-    val feedbackUrl: String = "https://github.com/jonnyzzz/mcp-steroid/issues",
+    val feedbackUrl: String = "https://github.com/CrazyCoder/mcp-steroid/issues",
 ) {
     fun toMarkdown(): String = buildString {
         appendLine("# MCP Steroid Server")

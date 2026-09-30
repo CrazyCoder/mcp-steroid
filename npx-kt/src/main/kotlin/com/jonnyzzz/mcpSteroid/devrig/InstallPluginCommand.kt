@@ -158,8 +158,9 @@ fun DevrigServices.runInstallPluginCommand(check: Boolean): Int {
 }
 
 /**
- * The pure orchestrator: narrates what is about to happen, skips already-provisioned IDEs, then for each
- * remaining IDE checks Marketplace compatibility and (unless [check]) fires the native install dialog.
+ * The pure orchestrator: narrates what is about to happen and the plugin repository the IDE needs, skips
+ * already-provisioned IDEs, then for each remaining IDE checks that it answers and (unless [check]) asks it to
+ * open the native install dialog.
  * Returns one [PluginInstallReport] per IDE considered. Prints to [out]; per-IDE failures go to [err].
  */
 suspend fun installPluginIntoRunningIdes(
@@ -190,6 +191,11 @@ suspend fun installPluginIntoRunningIdes(
     }
 
     printPreamble(out, check)
+    // A clean IDE has no plugin repository yet, and without one its dialog finds no plugin: say so first.
+    out.println("MCP Steroid Plus is not on JetBrains Marketplace: an IDE finds it only in its plugin")
+    out.println("repository. Add the repository in each IDE first:")
+    printPluginRepositoryHelp(out)
+    out.println()
 
     if (already.isNotEmpty()) {
         out.println("Already have the MCP Steroid plugin (skipped):")
@@ -215,18 +221,14 @@ suspend fun installPluginIntoRunningIdes(
         val requested = reports.count { it.outcome == PluginInstallOutcome.REQUESTED }
         if (requested > 0) {
             out.println("Asked $requested IDE(s) to install MCP Steroid.")
-            out.println("Each IDE now shows its OWN \"Choose Plugins to Install or Enable\" dialog — switch to")
-            out.println("the IDE window, click OK to confirm, and restart the IDE if it asks. devrig never")
-            out.println("installs silently.")
+            out.println("An IDE with the plugin repository now shows its OWN \"Choose Plugins to Install or")
+            out.println("Enable\" dialog — switch to the IDE window, click OK to confirm, and restart the IDE if")
+            out.println("it asks. An IDE without the repository finds no plugin: add it as above and run")
+            out.println("'devrig install plugin' again. devrig never installs silently.")
         } else {
             out.println("No install dialog could be opened. See the per-IDE notes above.")
         }
     }
-    out.println()
-    out.println("MCP Steroid Plus is not on JetBrains Marketplace: an IDE finds it only in its plugin")
-    out.println("repository. If the IDE's dialog does not list the plugin, add the repository and run")
-    out.println("'devrig install plugin' again:")
-    printPluginRepositoryHelp(out)
 
     return reports + already.map { PluginInstallReport(it.ide, PluginInstallOutcome.ALREADY_INSTALLED) }
 }
@@ -297,13 +299,13 @@ private fun printPreamble(out: PrintStream, check: Boolean) {
 }
 
 /** How to install the plugin in an IDE by hand: its repository, or its ZIP from disk. */
-private fun printPluginRepositoryHelp(out: PrintStream) {
-    out.println("  1. In the IDE, open Settings | Plugins, click the gear icon, choose")
-    out.println("     'Manage Plugin Repositories…' and add:")
-    out.println("       $PLUGIN_REPOSITORY_URL")
-    out.println("  2. Search for \"MCP Steroid Plus\" and install it.")
-    out.println("  Or download the plugin ZIP from $RELEASES_URL and choose 'Install Plugin from Disk'")
-    out.println("  in the same gear menu.")
+internal fun printPluginRepositoryHelp(out: PrintStream, indent: String = "  ") {
+    out.println("${indent}1. In the IDE, open Settings | Plugins, click the gear icon, choose")
+    out.println("$indent   'Manage Plugin Repositories…' and add:")
+    out.println("$indent     $PLUGIN_REPOSITORY_URL")
+    out.println("${indent}2. Search for \"MCP Steroid Plus\" and install it.")
+    out.println("${indent}Or download the plugin ZIP from $RELEASES_URL and choose 'Install Plugin from Disk'")
+    out.println("${indent}in the same gear menu.")
 }
 
 private fun describeTarget(target: ProvisionTarget): String =

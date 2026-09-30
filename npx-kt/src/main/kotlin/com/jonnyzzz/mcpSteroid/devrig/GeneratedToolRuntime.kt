@@ -99,13 +99,14 @@ data class GeneratedToolInvocation(
  * failing, and swallowing it would stop structured concurrency from unwinding the surrounding scope.
  *
  * [tools] is a parameter so a test can inject handler doubles and drive the real spec `call()` path without
- * a live IDE; production always passes the [StubMcpSteroidTools] wiring the `devrig mcp` stdio proxy uses.
+ * a live IDE; production passes the [StubMcpSteroidTools] handlers the `devrig mcp` stdio proxy uses, with
+ * no shared IDE session, as one CLI call is the whole session.
  * Human mode streams progress to stderr. `--json` suppresses that live stream because agent shell tools
  * commonly merge stderr into their command result; the result envelope remains the single parseable value.
  */
 fun DevrigServices.runGeneratedToolCommand(
     command: GeneratedToolInvocation,
-    tools: McpSteroidTools = StubMcpSteroidTools(this),
+    tools: McpSteroidTools = StubMcpSteroidTools(this, sharedIdeSession = false),
 ): Int {
     val spec = liveToolSpec(command.toolName, tools)
     val presentation = presentationFor(command.json, spec.cli.outputStyle, homePaths::tmpDir)

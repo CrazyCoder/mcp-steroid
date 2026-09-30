@@ -134,7 +134,8 @@ class InstallPluginCommandTest {
         assertEquals(PluginInstallOutcome.REQUESTED, byPort[63343])
         assertEquals(PluginInstallOutcome.UNREACHABLE, byPort[63344])
         assertTrue(text.contains("could not reach the IDE"), text)
-        assertTrue(text.contains(PLUGIN_REPOSITORY_URL), text)
+        // A clean IDE has no plugin repository yet, so the requirement comes before any dialog is requested.
+        assertTrue(text.indexOf(PLUGIN_REPOSITORY_URL) in 0 until text.indexOf("asking the IDE"), text)
         assertTrue(text.contains("Manage Plugin Repositories"), text)
     }
 

@@ -16,9 +16,12 @@ import com.jonnyzzz.mcpSteroid.server.VisionScreenshotToolHandler
 
 class StubMcpSteroidTools(
     val services: DevrigServices,
+    /** Whether the calls share one IDE session: true for the `devrig mcp` server, false for a one-shot CLI call. */
+    sharedIdeSession: Boolean = true,
 ) : McpSteroidTools() {
     private val bridge by lazy {
-        DevrigToolBridgeClient(httpClient = services.mcpHttpClient)
+        if (sharedIdeSession) DevrigToolBridgeClient(httpClient = services.mcpHttpClient)
+        else DevrigToolBridgeClient(httpClient = services.mcpHttpClient, session = null)
     }
 
     private val listProjects by lazy {

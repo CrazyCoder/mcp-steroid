@@ -17,6 +17,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlin.time.Duration.Companion.seconds
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 
 class NpxBridgeServiceTest : BasePlatformTestCase() {
     fun testBridgeAddsAuthoritativeProvenanceWhenOldDevrigSendsNone() {
@@ -37,6 +41,29 @@ class NpxBridgeServiceTest : BasePlatformTestCase() {
         stream(core, session = "devrig-b")
         assertSame("devrig-a's calls share a session", sessions[0], sessions[1])
         assertNotSame("devrig-b has another", sessions[0], sessions[2])
+        assertNotNull("a call leaves its devrig's session open", core.sessionManager.getSession(sessions[0].id))
+    }
+
+    fun testConcurrentCallsOfOneDevrigSessionEachGetTheirOwnProgress() = timeoutRunBlocking(30.seconds) {
+        val bothStarted = CompletableDeferred<Unit>()
+        val started = AtomicInteger()
+        val core = core {
+            val name = it.params.arguments?.get("name")?.jsonPrimitive?.content ?: "?"
+            if (started.incrementAndGet() == 2) bothStarted.complete(Unit)
+            bothStarted.await()
+            it.mcpProgressReporter.report("from $name")
+            ToolCallResult.successTextResult(name)
+        }
+        val (a, b) = listOf("a", "b").map { name ->
+            async {
+                val events = mutableListOf<JsonObject>()
+                val request = NpxBridgeToolCallRequest(name = "t", arguments = buildJsonObject { put("name", name) }, session = "devrig-a")
+                NpxBridgeService().streamToolCall(core, request) { events += it }
+                events.filter { e -> e["type"]?.jsonPrimitive?.content == "progress" }.mapNotNull { e -> e["message"]?.jsonPrimitive?.content }
+            }
+        }.awaitAll()
+        assertEquals(listOf("Tool call started: t", "from a"), a)
+        assertEquals(listOf("Tool call started: t", "from b"), b)
     }
 
     fun testCallsWithoutADevrigSessionEachGetOneAndLeaveNoneBehind() = timeoutRunBlocking(30.seconds) {

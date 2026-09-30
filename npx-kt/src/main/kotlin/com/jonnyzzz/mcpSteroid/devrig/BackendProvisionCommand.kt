@@ -202,8 +202,8 @@ private fun renderProvisionInstructionsText(result: ProvisionResult, out: PrintS
     out.println()
     out.println("MCP Steroid is not installed in this IDE. To install:")
     out.println()
-    out.println("  (a) From within the IDE")
-    out.println("      → Settings → Plugins → Marketplace → search \"MCP Steroid\" → Install")
+    out.println("  (a) From within the IDE, from the plugin's repository (it is not on JetBrains Marketplace)")
+    printPluginRepositoryHelp(out, indent = "      ")
     out.println("      → restart the IDE.")
     out.println()
     out.println("  (b) Manual file install (advanced)")
@@ -229,8 +229,13 @@ private fun provisionResultJson(result: ProvisionResult): JsonObject = buildJson
     })
     put("instructions", buildJsonArray {
         add(buildJsonObject {
-            put("step", "marketplace")
-            put("description", "Use Settings → Plugins → Marketplace from within the IDE.")
+            put("step", "plugin-repository")
+            put("repository", PLUGIN_REPOSITORY_URL)
+            put(
+                "description",
+                "In the IDE, add the repository under Settings | Plugins, gear icon, Manage Plugin Repositories…, " +
+                    "then install MCP Steroid Plus. The plugin is not on JetBrains Marketplace.",
+            )
         })
         add(buildJsonObject {
             put("step", "files")

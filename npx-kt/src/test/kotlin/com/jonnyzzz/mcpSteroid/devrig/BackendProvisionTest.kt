@@ -327,7 +327,9 @@ class BackendProvisionTest {
         assertEquals(0, exit)
         assertTrue(text.contains("Target: IntelliJ IDEA Ultimate 2026.1.1 (port 63342)"), text)
         assertTrue(text.contains("MCP Steroid is not installed in this IDE. To install:"), text)
-        assertTrue(text.contains("Settings → Plugins → Marketplace → search \"MCP Steroid\" → Install"), text)
+        assertTrue(text.contains("Manage Plugin Repositories…"), text)
+        assertTrue(text.contains(PLUGIN_REPOSITORY_URL), text)
+        assertFalse(text.contains("Plugins → Marketplace"), text)
         assertTrue(text.contains("Plugin source on this machine:\n        ${result.pluginSource}"), text)
         assertTrue(text.contains("Suggested install path:\n        ${result.suggestedDestination}"), text)
         assertTrue(text.contains("the actual plugins folder may differ if the user customised it"), text)
@@ -336,7 +338,7 @@ class BackendProvisionTest {
     }
 
     @Test
-    fun `provision json reports manual instructions with marketplace and files steps`(@TempDir tempDir: Path) {
+    fun `provision json reports manual instructions with plugin-repository and files steps`(@TempDir tempDir: Path) {
         val result = provisionResult(tempDir)
         val buf = ByteArrayOutputStream()
         val exit = runBackendProvisionCommand(
@@ -360,8 +362,9 @@ class BackendProvisionTest {
         assertEquals("63342", target["port"]!!.jsonPrimitive.content)
 
         val instructions = root["instructions"]!!.jsonArray.map { it.jsonObject }
-        assertEquals(listOf("marketplace", "files"), instructions.map { it["step"]!!.jsonPrimitive.content })
-        assertEquals("Use Settings → Plugins → Marketplace from within the IDE.", instructions[0]["description"]!!.jsonPrimitive.content)
+        assertEquals(listOf("plugin-repository", "files"), instructions.map { it["step"]!!.jsonPrimitive.content })
+        assertEquals(PLUGIN_REPOSITORY_URL, instructions[0]["repository"]!!.jsonPrimitive.content)
+        assertTrue(instructions[0]["description"]!!.jsonPrimitive.content.contains("Manage Plugin Repositories…"))
         assertEquals(result.pluginSource.toString(), instructions[1]["pluginSource"]!!.jsonPrimitive.content)
         assertEquals(result.suggestedDestination.toString(), instructions[1]["suggestedDestination"]!!.jsonPrimitive.content)
         assertEquals(

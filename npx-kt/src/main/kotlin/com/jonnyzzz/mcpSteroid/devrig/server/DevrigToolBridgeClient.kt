@@ -32,9 +32,11 @@ class DevrigToolBridgeClient(
     private val httpClient: HttpClient,
     /**
      * Names this devrig's session to each IDE, so its calls share one IDE session there and an IDE notice, such as
-     * a freeze that ended, is told once rather than on every call. One per client, and so one per devrig process.
+     * a freeze that ended, is told once rather than on every call. One per client, and so one per `devrig mcp`
+     * process. Null for a one-shot CLI call: the IDE then opens a session for the call and closes it after, so
+     * CLI calls in a loop do not fill the IDE's list of kept sessions.
      */
-    private val session: String = UUID.randomUUID().toString(),
+    private val session: String? = UUID.randomUUID().toString(),
 ) {
     /** Fetches the live window/background-task snapshot from a single IDE's bridge `/windows` endpoint. */
     suspend fun fetchWindows(ide: DiscoveredIde): NpxBridgeWindowsResponse {
