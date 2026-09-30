@@ -3,6 +3,7 @@ package com.jonnyzzz.mcpSteroid.devrig.server
 
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.UiParams
+import com.jonnyzzz.mcpSteroid.server.ToolOutputContract
 import com.jonnyzzz.mcpSteroid.server.UiToolHandler
 import kotlinx.serialization.json.put
 
@@ -18,10 +19,16 @@ class DevrigUiToolHandler(
             // window_id is unique within the IDE resolved by project_name; forward it as-is.
             params.windowId?.let { put("window_id", it) }
             params.steps?.let { put("steps", it) }
+            params.scenario?.let { put("scenario", it) }
+            params.fromStep?.let { put("from_step", it) }
+            params.toStep?.let { put("to_step", it) }
+            params.runAgeMs?.let { put("run_age_ms", it) }
             params.snapshot?.let { put("snapshot", it.wire) }
             put("max_nodes", params.maxNodes)
             put("trace", params.trace)
+            put("restore", params.restore)
             params.side?.let { put("side", it) }
+            if (params.jsonOutput) put(ToolOutputContract.PARAM, ToolOutputContract.JSON_MODE)
         }
     }
 }

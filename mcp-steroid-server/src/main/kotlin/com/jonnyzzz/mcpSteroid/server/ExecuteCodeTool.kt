@@ -91,6 +91,9 @@ data class ExecCodeParams(
     /** Whether the result is the [ToolOutputContract] envelope rather than text for a model. */
     val jsonOutput: Boolean = false,
 
+    /** The Split Mode side the call asked for. Routing reads it from the raw arguments; devrig passes it on. */
+    val side: String? = null,
+
     @Transient val executionBackend: ExecutionBackendProvenance? = null,
 )
 
@@ -189,7 +192,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
         .withDefaultValue(ModalMode.SMART_NON_MODAL)
         .registerToSchema()
 
-    /** Read by Split Mode routing from the raw arguments, before the handler runs; the handler ignores it. */
+    /** Read by Split Mode routing from the raw arguments, before the handler runs; the plugin's handler ignores it. */
     val side = InputSchemaElement.param("side")
         .description(
             "Split Mode only: where the script runs. 'backend' (default) holds the project model; " +
@@ -218,6 +221,7 @@ class ExecuteCodeToolSpec(val handler: () -> ExecuteCodeToolHandler) : McpToolBa
             timeout = timeout,
             modal = modal,
             jsonOutput = ToolOutputContract.wantsJson(context.params.arguments),
+            side = context[side],
             executionBackend = context.executionBackendProvenance(),
         )
 

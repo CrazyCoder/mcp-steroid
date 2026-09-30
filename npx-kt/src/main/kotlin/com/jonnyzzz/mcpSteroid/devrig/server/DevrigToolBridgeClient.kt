@@ -26,9 +26,15 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.collections.iterator
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.put
+import java.util.UUID
 
 class DevrigToolBridgeClient(
     private val httpClient: HttpClient,
+    /**
+     * Names this devrig's session to each IDE, so its calls share one IDE session there and an IDE notice, such as
+     * a freeze that ended, is told once rather than on every call. One per client, and so one per devrig process.
+     */
+    private val session: String = UUID.randomUUID().toString(),
 ) {
     /** Fetches the live window/background-task snapshot from a single IDE's bridge `/windows` endpoint. */
     suspend fun fetchWindows(ide: DiscoveredIde): NpxBridgeWindowsResponse {
@@ -65,7 +71,7 @@ class DevrigToolBridgeClient(
         val args = buildJsonObject { arguments() }
         val requestBody = McpJson.encodeToString(
             NpxBridgeToolCallRequest.serializer(),
-            NpxBridgeToolCallRequest(name = toolName, arguments = args),
+            NpxBridgeToolCallRequest(name = toolName, arguments = args, session = session),
         )
         val url = "${route.rpcBaseUrl}/tools/call/stream"
         var result: ToolCallResult? = null

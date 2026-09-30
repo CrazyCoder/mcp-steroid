@@ -19,9 +19,10 @@ sealed interface BridgedOutcome {
 }
 
 /**
- * The backend's session for each agent session of the JetBrains Client, by the client's session id, the most recently
- * used [MAX_BRIDGE_SESSIONS] of them. The backend's session manager keeps a session until it is removed, so an evicted
- * one is removed there too; its agent, should it come back, hears the recent notices again.
+ * The IDE's session for each agent session that reaches it through a bridge, by a key the bridge names it with: a
+ * JetBrains Client's session id, or `devrig:<id>` for a devrig session. The most recently used [MAX_BRIDGE_SESSIONS]
+ * are kept. The session manager keeps a session until it is removed, so an evicted one is removed there too; its
+ * agent, should it come back, hears the recent notices again.
  */
 internal class BridgeSessions(private val core: McpServerCore) {
     private val sessions = object : LinkedHashMap<String, McpSession>(16, 0.75f, true) {
@@ -41,6 +42,10 @@ internal const val MAX_BRIDGE_SESSIONS = 32
 
 private val bridgeSessions = Collections.synchronizedMap(WeakHashMap<McpServerCore, BridgeSessions>())
 
+/** The session of [core] for the bridged agent session [key], created on its first call. */
+internal fun bridgeSession(core: McpServerCore, key: String): McpSession =
+    bridgeSessions.getOrPut(core) { BridgeSessions(core) }.forClient(key)
+
 /**
  * Runs one tool call for a Split Mode frontend: its progress lines, then its result.
  * The flow is buffered without limit so that a progress burst never drops a `trySend`.
@@ -50,7 +55,7 @@ private val bridgeSessions = Collections.synchronizedMap(WeakHashMap<McpServerCo
  * and not repeated on each of its forwarded calls.
  */
 fun executeBridgedTool(core: McpServerCore, params: ToolCallParams, clientSessionId: String): Flow<BridgedOutcome> = channelFlow {
-    val session = bridgeSessions.getOrPut(core) { BridgeSessions(core) }.forClient(clientSessionId)
+    val session = bridgeSession(core, clientSessionId)
     val progress = object : McpProgressReporter {
         override fun report(message: String) {
             trySend(BridgedOutcome.Progress(message))

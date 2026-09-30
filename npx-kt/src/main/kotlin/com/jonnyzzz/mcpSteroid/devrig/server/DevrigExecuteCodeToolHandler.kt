@@ -6,6 +6,7 @@ import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
 import com.jonnyzzz.mcpSteroid.server.ExecCodeParams
 import com.jonnyzzz.mcpSteroid.server.ExecuteCodeToolHandler
 import com.jonnyzzz.mcpSteroid.server.McpProgressReporter
+import com.jonnyzzz.mcpSteroid.server.ToolOutputContract
 import kotlinx.serialization.json.put
 
 class DevrigExecuteCodeToolHandler(
@@ -27,6 +28,8 @@ class DevrigExecuteCodeToolHandler(
             put("reason", execCodeParams.reason)
             put("timeout", execCodeParams.timeout)
             put("modal", execCodeParams.modal.wire)
+            execCodeParams.side?.let { put("side", it) }
+            if (execCodeParams.jsonOutput) put(ToolOutputContract.PARAM, ToolOutputContract.JSON_MODE)
         }
         beacon.capture("exec_code", mapOf("result" to if (result.isError) "error" else "success"))
         return result

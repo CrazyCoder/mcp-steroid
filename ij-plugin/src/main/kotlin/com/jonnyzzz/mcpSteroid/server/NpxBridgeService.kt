@@ -6,11 +6,10 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.jonnyzzz.mcpSteroid.mcp.McpJson
-import com.jonnyzzz.mcpSteroid.mcp.McpMethods
 import com.jonnyzzz.mcpSteroid.mcp.McpServerCore
-import com.jonnyzzz.mcpSteroid.mcp.ProgressParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallParams
 import com.jonnyzzz.mcpSteroid.mcp.ToolCallResult
+import com.jonnyzzz.mcpSteroid.server.split.bridgeSession
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration.Companion.seconds
@@ -19,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -27,7 +27,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
@@ -75,7 +74,10 @@ class NpxBridgeService {
         request: NpxBridgeToolCallRequest,
         emit: suspend (JsonObject) -> Unit
     ) {
-        val session = serverCore.sessionManager.createSession()
+        // The calls of one devrig session share an IDE session, so notices are told to it once; a devrig that sends no
+        // session key gets a session per call, removed when the call ends.
+        val devrigSession = request.session?.takeIf { it.isNotBlank() }
+        val session = devrigSession?.let { bridgeSession(serverCore, "devrig:$it") } ?: serverCore.sessionManager.createSession()
         val progressToken = "npx-${UUID.randomUUID()}"
 
         val params = buildToolCallParams(request, progressToken)
@@ -87,14 +89,27 @@ class NpxBridgeService {
                 emit(event)
             }
         }
-        lateinit var progressJob: Job
-        var sessionRemoved = false
-        suspend fun closeSessionAndDrainProgress() {
+        // Progress goes through this call's own channel, not the session's notifications: a shared session carries
+        // the progress of every call of its devrig session.
+        val progressMessages = Channel<String>(Channel.UNLIMITED)
+        val progressCounter = AtomicLong(0)
+        val progress = object : McpProgressReporter {
+            override fun report(message: String) {
+                progressMessages.trySend(message)
+            }
+        }
+        var sessionRemoved = devrigSession != null
+        fun removeSession() {
             if (!sessionRemoved) {
                 serverCore.sessionManager.removeSession(session.id)
                 sessionRemoved = true
             }
+        }
+        lateinit var progressJob: Job
+        suspend fun closeSessionAndDrainProgress() {
+            progressMessages.close()
             progressJob.join()
+            removeSession()
         }
         val heartbeatJob = scope.launch {
             while (isActive) {
@@ -110,21 +125,14 @@ class NpxBridgeService {
             }
         }
         progressJob = scope.launch {
-            session.notifications().collect { notification ->
-                if (notification.method != McpMethods.PROGRESS) return@collect
-                val paramsElement = notification.params ?: return@collect
-                val progress = runCatching { McpJson.decodeFromJsonElement(ProgressParams.serializer(), paramsElement) }.getOrNull()
-                    ?: return@collect
-                if (progress.progressToken.jsonPrimitive.content != progressToken) return@collect
-
+            for (message in progressMessages) {
                 emitEvent(
                     buildJsonObject {
                         put("type", "progress")
                         put("instanceId", instanceId)
                         put("seq", seqCounter.incrementAndGet())
-                        put("progress", progress.progress)
-                        progress.total?.let { put("total", it) }
-                        progress.message?.let { put("message", it) }
+                        put("progress", progressCounter.incrementAndGet().toDouble())
+                        put("message", message)
                         put("updatedAt", nowIso())
                     }
                 )
@@ -143,7 +151,7 @@ class NpxBridgeService {
                 }
             )
 
-            val result = serverCore.toolRegistry.callTool(params, session)
+            val result = serverCore.toolRegistry.callTool(params, session, progress)
             heartbeatJob.cancel()
             closeSessionAndDrainProgress()
             emitEvent(
@@ -172,9 +180,7 @@ class NpxBridgeService {
             heartbeatJob.cancel()
             progressJob.cancel()
             scope.cancel()
-            if (!sessionRemoved) {
-                serverCore.sessionManager.removeSession(session.id)
-            }
+            removeSession()
         }
     }
 
