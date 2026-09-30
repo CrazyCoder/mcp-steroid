@@ -139,6 +139,12 @@ class InstallerPs1ExecutionTest {
                     message = "install.ps1 must delegate to `devrig install devrig`",
                 )
                 .assertOutputContains("devrig binary is ready", "devrig install", message = "must report ready + how to register with agents")
+                // devrig takes its home from the JVM's user.home; the handoff runs with the home the script
+                // installed into, so its launcher lands there and not in the account's real home.
+                .assertOutputContains(
+                    "-Duser.home=\"${fakeHome.absolutePathString()}\"",
+                    message = "the devrig handoff must run with the installer's home",
+                )
             // Regression guard for jonnyzzz/mcp-steroid#273: RuntimeInformation lookup must not
             // surface as a strict-mode abort on Windows PowerShell 5.1.
             run1.assertNoMessageInOutput("The property 'OSArchitecture' cannot be found")
@@ -206,6 +212,7 @@ class InstallerPs1ExecutionTest {
             appendLine("@echo off")
             appendLine("if /I \"%~1\"==\"install\" if /I \"%~2\"==\"devrig\" (")
             appendLine("  echo DEVRIG_INSTALL_DEVRIG %*")
+            appendLine("  echo DEVRIG_OPTS=%DEVRIG_OPTS%")
             appendLine("  exit /b 0")
             appendLine(")")
             appendLine("if /I \"%~1\"==\"install\" (")

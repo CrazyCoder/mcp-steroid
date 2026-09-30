@@ -148,9 +148,15 @@ if (-not (Test-Path (Join-Path $jdkHome 'bin\java.exe'))) {
 # variable, honored by the dist launcher) makes this one invocation run under the bundled JDK, which
 # devrig then pins into the launcher. `irm | iex` runs in the caller's session, so the variable is
 # restored right after the call and the user's JAVA_HOME is never touched.
+# devrig takes its home from the JVM's user.home, which follows the account's profile, not USERPROFILE. It
+# runs with -Duser.home set to $InstallRoot, through DEVRIG_OPTS (JVM options the dist launcher passes on),
+# so the launcher it writes lands in the home this script installed into, and is the same as before when
+# the two agree. Restored with DEVRIG_JAVA_HOME below.
 Write-Log "registering devrig (devrig install devrig)..."
 $SteroidPrevDevrigJavaHome = $env:DEVRIG_JAVA_HOME
+$SteroidPrevDevrigOpts = $env:DEVRIG_OPTS
 $env:DEVRIG_JAVA_HOME = $jdkHome
+$env:DEVRIG_OPTS = ("$SteroidPrevDevrigOpts -Duser.home=`"$InstallRoot`"").Trim()
 # Pipe $null so the launcher's child process gets an empty stdin that reads EOF immediately. `irm | iex`
 # is a PowerShell OBJECT pipeline (not a POSIX stdin pipe), so the script runs inside the caller's PS
 # host and a native child would otherwise inherit THAT host's stdin handle - an interactive console, or
@@ -160,6 +166,7 @@ $env:DEVRIG_JAVA_HOME = $jdkHome
 $null | & $launcher install devrig "--install-script=$launcher" "--jdk-home=$jdkHome"
 $devrigExit = $LASTEXITCODE
 $env:DEVRIG_JAVA_HOME = $SteroidPrevDevrigJavaHome
+$env:DEVRIG_OPTS = $SteroidPrevDevrigOpts
 if ($devrigExit -ne 0) { Fail "'devrig install devrig' failed (exit $devrigExit) - the launcher could not register itself" }
 
 # -- done. We do NOT auto-register devrig with agents or install the IDE plugin - both edit state

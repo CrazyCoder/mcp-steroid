@@ -161,8 +161,12 @@ class InstallerGeneratorTest {
             assertTrue(script.contains("--jdk-home="), "$name must send --jdk-home")
         }
         assertTrue(
-            scripts.sh.contains("DEVRIG_JAVA_HOME=\"\$jdk_home\" \"\$launcher\" install devrig"),
-            "install.sh must scope DEVRIG_JAVA_HOME to the handoff invocation",
+            scripts.sh.contains("DEVRIG_JAVA_HOME=\"\$jdk_home\" DEVRIG_OPTS=\"\${DEVRIG_OPTS:-} -Duser.home=\\\"\$HOME\\\"\" \\\n    \"\$launcher\" install devrig"),
+            "install.sh must scope DEVRIG_JAVA_HOME and the installer's home to the handoff invocation",
+        )
+        assertTrue(
+            scripts.ps.contains("\$env:DEVRIG_OPTS = \$SteroidPrevDevrigOpts"),
+            "install.ps1 runs in the caller's session and must restore DEVRIG_OPTS after the handoff",
         )
         // Anchored: a plain-substring check would trip over DEVRIG_JAVA_HOME= containing JAVA_HOME=.
         assertTrue(

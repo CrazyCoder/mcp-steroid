@@ -179,8 +179,13 @@ main() {
   # ran curl. A devrig subprocess that read stdin (or waited on a prompt) would hang forever with no
   # user recourse. `< /dev/null` gives it an already-closed stdin - `devrig install devrig` is
   # contractually non-interactive (see runInstallDevrigCommand; mirrors the install.ps1 `$null |`).
+  # devrig takes its home from the JVM's user.home, which follows the account's passwd entry, not $HOME. It
+  # runs with -Duser.home set to $HOME, through DEVRIG_OPTS (JVM options the dist launcher passes on), so the
+  # launcher it writes lands in the home this script installed into, and is the same as before when the two
+  # agree.
   log "registering devrig (devrig install devrig)..."
-  DEVRIG_JAVA_HOME="$jdk_home" "$launcher" install devrig --install-script="$launcher" --jdk-home="$jdk_home" < /dev/null \
+  DEVRIG_JAVA_HOME="$jdk_home" DEVRIG_OPTS="${DEVRIG_OPTS:-} -Duser.home=\"$HOME\"" \
+    "$launcher" install devrig --install-script="$launcher" --jdk-home="$jdk_home" < /dev/null \
     || fail "'devrig install devrig' failed - the launcher could not register itself"
 
   # -- done. We do NOT auto-register devrig with agents or install the IDE plugin - both edit state
