@@ -111,7 +111,7 @@ The script does exactly two things: it installs the `devrig` CLI of the latest r
 
 devrig updates itself: a running devrig checks `version.json` of the latest release and installs a newer release in the background.
 
-**Switching from the upstream devrig.** A devrig installed from `devrig.dev` keeps updating from there, and lacks the tools this repository adds (`steroid_ui`, `steroid_refactor`). Run the command above once: it installs this repository's devrig over it, and from then on devrig updates from this repository's releases. Then restart your agent sessions: a devrig process that is still running keeps its own update check on `devrig.dev`. `devrig --version` then prints `<release>.0-r-<hash>`, such as `0.125.0-r-1a2b3c4d` for release 0.125.
+**Switching from the upstream devrig.** A devrig installed from `devrig.dev` keeps updating from there, and lacks the tools this repository adds (`steroid_ui`, `steroid_refactor`). Run the command above once: it installs this repository's devrig over it, and from then on devrig updates from this repository's releases. Then restart your agent sessions: a devrig process that is still running keeps its own update check on `devrig.dev`. `devrig --version` then prints `<release>.0-r-<hash>`, such as `0.125.0-r-1a2b3c4` for release 0.125.
 
 ### 2. Register your AI agent
 
