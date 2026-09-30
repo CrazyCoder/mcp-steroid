@@ -4,7 +4,6 @@ package com.jonnyzzz.mcpSteroid.onboarding
 import com.intellij.ide.BrowserUtil
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
-import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -22,8 +21,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 import kotlin.time.Duration
@@ -106,7 +103,7 @@ class DevrigPromotion(private val scope: CoroutineScope) {
                     project,
                     mapOf("action" to "website"),
                 )
-                BrowserUtil.browse(installOfferSiteUrl())
+                BrowserUtil.browse(McpSteroidConfigurable.DEVRIG_SITE_URL)
             },
         )
         analyticsBeacon.capture("devrig_onboarding_offered", project, emptyMap())
@@ -132,24 +129,6 @@ class DevrigPromotion(private val scope: CoroutineScope) {
         fun devrigInstallOfferBody(): String =
             "devrig is the CLI and MCP tooling for your AI agents — one command connects Claude Code, " +
                 "Codex, or Gemini to this IDE: run, debug, refactor and inspect, not just text edits."
-
-        /**
-         * Query parameter carrying the IDE build on the balloon's "What is devrig?" link. Deliberately
-         * distinct from the settings page's [McpSteroidConfigurable.FROM_INTELLIJ_PARAM]
-         * (`?fromIntelliJ=`) so the site can tell the balloon apart from the settings link.
-         */
-        const val FROM_INTELLIJ_INSTALL_ACTION_PARAM = "fromIntelliJInstallAction"
-
-        /**
-         * The balloon's website link target: [McpSteroidConfigurable.DEVRIG_SITE_URL] (the site ROOT —
-         * the pitch is the front page) plus the IDE build under [FROM_INTELLIJ_INSTALL_ACTION_PARAM].
-         * [ideBuild] is injectable so tests can pin the exact URL shape; production callers take the
-         * default — the running IDE's own build.
-         */
-        fun installOfferSiteUrl(
-            ideBuild: String = ApplicationInfo.getInstance().build.asString(),
-        ): String = McpSteroidConfigurable.DEVRIG_SITE_URL + "?" + FROM_INTELLIJ_INSTALL_ACTION_PARAM +
-            "=" + URLEncoder.encode(ideBuild, StandardCharsets.UTF_8)
 
         /**
          * The range the per-run promotion delay is drawn from, uniformly at random (owner-specified:

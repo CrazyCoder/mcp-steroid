@@ -400,13 +400,13 @@ class InstallerGeneratorTest {
             z.putNextEntry(ZipEntry("devrig-0.101-abc1234/bin/devrig")); z.write("#!/bin/sh".encodeToByteArray()); z.closeEntry()
             z.putNextEntry(ZipEntry("devrig-0.101-abc1234/bin/devrig.bat")); z.write("@echo off".encodeToByteArray()); z.closeEntry()
         }
-        val zipUrl = "https://github.com/jonnyzzz/mcp-steroid/releases/download/v0.101/devrig-0.101-abc1234.zip"
+        val zipUrl = "https://github.com/$RELEASES_REPOSITORY/releases/download/v0.101/devrig-0.101-abc1234.zip"
         // Fake GitHub: the v<version> tag release serves a devrig-<version>-<hash>.zip asset; getBytes on the
         // asset URL returns the synthetic zip bytes. No bare-tag fallback is needed (the v-tag resolves).
         val fakeGh = object : HttpFetcher {
             override fun head(url: String) = error("no head expected")
             override fun getBytes(url: String): ByteArray = when {
-                url == "https://api.github.com/repos/jonnyzzz/mcp-steroid/releases/tags/v0.101" ->
+                url == "https://api.github.com/repos/$RELEASES_REPOSITORY/releases/tags/v0.101" ->
                     """{"assets":[{"name":"devrig-0.101-abc1234.zip","browser_download_url":"$zipUrl"}]}""".encodeToByteArray()
                 url == zipUrl -> Files.readAllBytes(zip)
                 else -> error("unexpected url: $url")

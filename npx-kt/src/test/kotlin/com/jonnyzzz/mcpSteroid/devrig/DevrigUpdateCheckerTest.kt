@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 
 class DevrigUpdateCheckerTest {
     /**
-     * Hits the LIVE `https://devrig.dev/version.json`, so it belongs in the opt-in lane
+     * Hits the LIVE [DEVRIG_VERSION_JSON_URL], so it belongs in the opt-in lane
      * (`./gradlew :npx-kt:liveNetworkTest`) that the root CLAUDE.md reserves for vendor-feed coverage:
      * "a Google/JetBrains/GitHub outage can never redden a normal build". It was in the default unit
      * suite instead, where `fetchVersionInfo()`'s catch-all — it returns null for a DNS blip, a >10 s

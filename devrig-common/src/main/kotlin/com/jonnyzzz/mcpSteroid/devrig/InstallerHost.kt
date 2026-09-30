@@ -10,17 +10,37 @@ import java.nio.file.Path
 import java.time.Duration
 import kotlin.io.path.exists
 
+/** The GitHub repository whose releases publish devrig, its installers, its update feed and the plugin. */
+const val RELEASES_REPOSITORY = "CrazyCoder/mcp-steroid"
+
+/** The releases page: each release's notes and assets. */
+const val RELEASES_URL = "https://github.com/$RELEASES_REPOSITORY/releases"
+
+/** The project page, which documents devrig and the plugin. */
+const val PROJECT_URL = "https://github.com/$RELEASES_REPOSITORY"
+
+/** GitHub redirects `<this>/<asset>` to that asset of the latest release. */
+private const val LATEST_RELEASE_DOWNLOAD_URL = "$RELEASES_URL/latest/download"
+
 /** The published installers. Both halves of the product install devrig by running exactly these. */
-const val DEVRIG_INSTALL_SH_URL = "https://devrig.dev/install.sh"
-const val DEVRIG_INSTALL_PS1_URL = "https://devrig.dev/install.ps1"
+const val DEVRIG_INSTALL_SH_URL = "$LATEST_RELEASE_DOWNLOAD_URL/install.sh"
+const val DEVRIG_INSTALL_PS1_URL = "$LATEST_RELEASE_DOWNLOAD_URL/install.ps1"
+
+/** `{"version-base": "<VERSION>"}` of the latest release, which devrig's updater compares its own version with. */
+const val DEVRIG_VERSION_JSON_URL = "$LATEST_RELEASE_DOWNLOAD_URL/version.json"
+
+/**
+ * The custom plugin repository of the latest release: one `<plugin>` entry with the version and zip URL of that
+ * release. An IDE installs and updates the plugin from it, as the plugin is not on JetBrains Marketplace.
+ */
+const val PLUGIN_REPOSITORY_URL = "$LATEST_RELEASE_DOWNLOAD_URL/updatePlugins.xml"
 
 /** The installer to fetch for this OS. */
 fun devrigInstallerUrl(isWin: Boolean): String = if (isWin) DEVRIG_INSTALL_PS1_URL else DEVRIG_INSTALL_SH_URL
 
 /**
- * The canonical install one-liner for this OS, VERBATIM as the website publishes it
- * (`website/layouts/partials/install-cta.html`, the header comments of `install.sh.tmpl` /
- * `install.ps1.tmpl`, README). Everywhere the product shows a user "how to install devrig" — the
+ * The canonical install one-liner for this OS, VERBATIM as the README publishes it (and the header
+ * comments of `install.sh.tmpl` / `install.ps1.tmpl`). Everywhere the product shows a user "how to install devrig" — the
  * IDE settings page, docs, prompts — must show exactly this string, so what a user copies from any
  * surface is the same command the docs promote, running the same [devrigInstallerUrl] script the
  * IDE's own Install button fetches through [downloadInstallerScript].

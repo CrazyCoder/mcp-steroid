@@ -34,9 +34,9 @@ suspend fun fetchVersionInfo(): DevrigVersionInfo? {
     }
 
     return try {
-        // Cache-buster: each periodic re-check must see the CURRENT promotion, not Cloudflare's
-        // cached copy (query strings bypass the edge cache).
-        val response = client.get("https://devrig.dev/version.json?_=${System.currentTimeMillis()}") {
+        // Cache-buster: each periodic re-check must see the CURRENT promotion, not a cached copy of
+        // the redirect to the latest release's asset.
+        val response = client.get("$DEVRIG_VERSION_JSON_URL?_=${System.currentTimeMillis()}") {
             header("Accept", "application/json")
             header("User-Agent", "devrig/${DevrigVersionMetadata.getDevrigVersion()}")
             header("Cache-Control", "no-cache")
@@ -83,7 +83,7 @@ suspend fun checkForUpdates(homePaths: HomePaths? = null, onNotice: (String) -> 
         PassiveUpdateNotice.DOWNLOAD_BANNER -> buildString {
             appendLine()
             appendLine("A new version of devrig is available: $newVersion (current: $currentVersion)")
-            appendLine("Download update from: https://devrig.dev/releases/")
+            appendLine("Download update from: $RELEASES_URL")
             appendLine()
         }
     }

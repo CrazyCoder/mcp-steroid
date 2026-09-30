@@ -2,7 +2,6 @@
 package com.jonnyzzz.mcpSteroid.settings
 
 import com.intellij.icons.AllIcons
-import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.options.BoundConfigurable
@@ -30,6 +29,7 @@ import com.jonnyzzz.mcpSteroid.aiAgents.AiAgentCli
 import com.jonnyzzz.mcpSteroid.aiAgents.McpConnectionInfo
 import com.jonnyzzz.mcpSteroid.aiAgents.stdioMcpServersJson
 import com.jonnyzzz.mcpSteroid.devrig.DevrigUserLauncher
+import com.jonnyzzz.mcpSteroid.devrig.PROJECT_URL
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallAgentCommandLine
 import com.jonnyzzz.mcpSteroid.devrig.devrigInstallOneLiner
 import com.jonnyzzz.mcpSteroid.devrig.devrigMcpCommandLine
@@ -43,8 +43,6 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.datatransfer.StringSelection
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import javax.swing.JComponent
 
@@ -125,7 +123,7 @@ class McpSteroidConfigurable internal constructor(
                         )
                     }
                     row {
-                        browserLink("What is devrig?", whatIsDevrigUrl())
+                        browserLink("What is devrig?", DEVRIG_SITE_URL)
                     }
 
                     // A placeholder, not a plain row: the state is computed off the EDT after the page is
@@ -484,26 +482,12 @@ class McpSteroidConfigurable internal constructor(
         const val STATUS_FIELD_COLUMNS = COLUMNS_MEDIUM
 
         /**
-         * Where every "What is devrig?" / "Learn more" link in the plugin UI goes: the site ROOT —
-         * the pitch is the front page, not a doc path (owner click-testing feedback: the old
-         * `/docs/devrig/` target dropped visitors into reference material).
+         * Where every "What is devrig?" link in the plugin UI goes: the README section that says what devrig
+         * is, rather than reference material.
          */
-        const val DEVRIG_SITE_URL = "https://devrig.dev/"
+        const val DEVRIG_SITE_URL = "$PROJECT_URL#what-is-devrig"
 
-        /** Query parameter carrying which IDE build sent the visitor, e.g. `fromIntelliJ=IU-261.25134.95`. */
-        const val FROM_INTELLIJ_PARAM = "fromIntelliJ"
-
-        /**
-         * The full link target: site root plus the IDE build as a query parameter, so the site can tell
-         * (and tailor for) visits coming from inside an IDE. [ideBuild] is injectable so tests can pin
-         * the exact URL shape; production callers take the default — the running IDE's own build.
-         */
-        fun whatIsDevrigUrl(
-            ideBuild: String = ApplicationInfo.getInstance().build.asString(),
-        ): String = DEVRIG_SITE_URL + "?" + FROM_INTELLIJ_PARAM + "=" +
-            URLEncoder.encode(ideBuild, StandardCharsets.UTF_8)
-
-        const val FEEDBACK_URL = "https://github.com/CrazyCoder/mcp-steroid/issues"
+        const val FEEDBACK_URL = "$PROJECT_URL/issues"
 
         /** What the confirmation says. Short on purpose: it is a receipt, not a message. */
         const val COPIED_HINT = "Copied"

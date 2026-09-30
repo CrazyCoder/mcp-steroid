@@ -49,8 +49,6 @@ enum class PluginInstallOutcome {
     WOULD_REQUEST,
     /** The IDE already has the MCP Steroid plugin (matched via a `~/.mcp-steroid` marker). */
     ALREADY_INSTALLED,
-    /** Marketplace has no build of the plugin compatible with this IDE. */
-    INCOMPATIBLE,
     /** The IDE did not answer the compatibility probe (not reachable / not the expected server). */
     UNREACHABLE,
     /** The IDE was reached but rejected the install request. */
@@ -69,8 +67,9 @@ data class PluginInstallReport(
 interface PluginRestClient {
     /**
      * `action=checkCompatibility` — a pure Marketplace query (no dialog, no install). Returns whether
-     * a compatible build exists, or `null` when the IDE could not be reached / did not answer with the
-     * expected JSON.
+     * Marketplace has a compatible build, or `null` when the IDE could not be reached / did not answer with
+     * the expected JSON. The plugin is not on Marketplace, so a reachable IDE answers `false`; the answer
+     * serves as the reachability probe.
      */
     suspend fun checkCompatibility(baseUrl: String, pluginId: String): Boolean?
 
@@ -181,7 +180,8 @@ suspend fun installPluginIntoRunningIdes(
             out.println("No running JetBrains IDE answered on the scanned ports " +
                 "(${describePortRanges(IntelliJPortDiscovery.DEFAULT_PORT_RANGES)}).")
             out.println("If an IDE is running, it may use a non-default port. Open it and retry, or install")
-            out.println("from Settings -> Plugins -> Marketplace -> search \"MCP Steroid\" -> Install.")
+            out.println("the plugin in the IDE yourself:")
+            printPluginRepositoryHelp(out)
             return emptyList()
         }
         out.println("Every running IDE already has the MCP Steroid plugin — nothing to install:")
@@ -222,6 +222,11 @@ suspend fun installPluginIntoRunningIdes(
             out.println("No install dialog could be opened. See the per-IDE notes above.")
         }
     }
+    out.println()
+    out.println("MCP Steroid Plus is not on JetBrains Marketplace: an IDE finds it only in its plugin")
+    out.println("repository. If the IDE's dialog does not list the plugin, add the repository and run")
+    out.println("'devrig install plugin' again:")
+    printPluginRepositoryHelp(out)
 
     return reports + already.map { PluginInstallReport(it.ide, PluginInstallOutcome.ALREADY_INSTALLED) }
 }
@@ -241,21 +246,19 @@ private suspend fun processTarget(
         err.println("[mcp-steroid] $label: compatibility check failed: ${e.message ?: e::class.simpleName}")
         null
     }
+    // Any answer means the IDE is reachable. Marketplace has no build of the plugin, but the IDE's install also
+    // reads the custom plugin repositories, where the plugin is.
     return when (compatible) {
         null -> {
             out.println("  - $label: could not reach the IDE — skipped.")
             PluginInstallReport(target.ide, PluginInstallOutcome.UNREACHABLE)
         }
-        false -> {
-            out.println("  - $label: Marketplace has no compatible MCP Steroid build for this IDE — skipped.")
-            PluginInstallReport(target.ide, PluginInstallOutcome.INCOMPATIBLE)
-        }
-        true -> {
+        else -> {
             if (check) {
-                out.println("  - $label: compatible — would open the IDE's install dialog.")
+                out.println("  - $label: reachable — would open the IDE's install dialog.")
                 return PluginInstallReport(target.ide, PluginInstallOutcome.WOULD_REQUEST)
             }
-            out.println("  - $label: compatible -> asking the IDE to open its install dialog now…")
+            out.println("  - $label: asking the IDE to open its install dialog now…")
             val accepted = try {
                 client.requestInstall(target.ide.baseUrl, pluginId)
             } catch (e: Exception) {
@@ -276,15 +279,14 @@ private suspend fun processTarget(
 private fun printPreamble(out: PrintStream, check: Boolean) {
     if (check) {
         out.println("Checking which running IDEs could receive the MCP Steroid plugin.")
-        out.println("Read-only: no install dialog is shown — devrig only asks each IDE / Marketplace")
-        out.println("about compatibility.")
+        out.println("Read-only: no install dialog is shown — devrig only checks that each IDE answers.")
         out.println()
         return
     }
     out.println("Installing the MCP Steroid plugin into your running JetBrains IDE(s).")
     out.println()
     out.println("What will happen (this is NOT a silent install):")
-    out.println("  - For each compatible IDE, devrig asks it — over that IDE's own local REST server —")
+    out.println("  - For each IDE, devrig asks it — over that IDE's own local REST server —")
     out.println("    to install the plugin.")
     out.println("  - The IDE then shows its OWN native plugin dialog — the standard JetBrains")
     out.println("    \"Choose Plugins to Install or Enable\" window, exactly like installing from")
@@ -292,6 +294,16 @@ private fun printPreamble(out: PrintStream, check: Boolean) {
     out.println("  - Nothing is installed until you approve that dialog. Restart the IDE if it asks.")
     out.println("  - devrig never installs silently and never restarts your IDE for you.")
     out.println()
+}
+
+/** How to install the plugin in an IDE by hand: its repository, or its ZIP from disk. */
+private fun printPluginRepositoryHelp(out: PrintStream) {
+    out.println("  1. In the IDE, open Settings | Plugins, click the gear icon, choose")
+    out.println("     'Manage Plugin Repositories…' and add:")
+    out.println("       $PLUGIN_REPOSITORY_URL")
+    out.println("  2. Search for \"MCP Steroid Plus\" and install it.")
+    out.println("  Or download the plugin ZIP from $RELEASES_URL and choose 'Install Plugin from Disk'")
+    out.println("  in the same gear menu.")
 }
 
 private fun describeTarget(target: ProvisionTarget): String =

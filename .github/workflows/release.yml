@@ -28,7 +28,7 @@ jobs:
       - name: Build Docker build image
         run: docker build -t mcp-steroid-build:ci docker/build
 
-      - name: Build plugin (Docker)
+      - name: Build plugin and devrig (Docker)
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/.gradle-home"
@@ -40,7 +40,7 @@ jobs:
             -v "$GITHUB_WORKSPACE:/build" \
             -w /build \
             mcp-steroid-build:ci \
-            ./gradlew :ij-plugin:buildPlugin -Pmcp.release.build=true --no-daemon --stacktrace
+            ./gradlew :ij-plugin:buildPlugin :npx-kt:distZip -Pmcp.release.build=true --no-daemon --stacktrace
 
       - name: Assemble release assets
         run: |
@@ -56,6 +56,33 @@ jobs:
           zip_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$zip"
           release/scripts/make-update-plugins-xml.sh "out/$zip" "$zip_url" > out/updatePlugins.xml
           cat out/updatePlugins.xml
+          # devrig keeps the name distZip gives it, devrig-<version>.zip, whose version carries the build hash.
+          devrig_src="$(ls npx-kt/build/distributions/devrig-"$base".*.zip | head -1)"
+          devrig_zip="$(basename "$devrig_src")"
+          cp "$devrig_src" "out/$devrig_zip"
+          (cd out && sha256sum "$devrig_zip" > "$devrig_zip.sha256")
+          echo "DEVRIG_ZIP=$devrig_zip" >> "$GITHUB_ENV"
+          # devrig's updater installs a release newer than itself, read from the latest release's version.json.
+          printf '{"version-base":"%s"}\n' "$base" > out/version.json
+
+      - name: Generate devrig installers (Docker)
+        run: |
+          set -euo pipefail
+          # install.sh and install.ps1 bake in the devrig zip's URL on this release and its SHA-256, and a
+          # JDK 25 per platform, downloaded and PGP-verified from the vendors.
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -e GRADLE_USER_HOME=/build/.gradle-home \
+            -e CI \
+            -v "$GITHUB_WORKSPACE:/build" \
+            -w /build \
+            mcp-steroid-build:ci \
+            ./gradlew :installer-gen:generateInstaller --no-daemon --stacktrace \
+              -Pinstaller.outDir=/build/out \
+              -Pinstaller.devrigZip="/build/out/$DEVRIG_ZIP" \
+              -Pinstaller.devrigUrl="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$DEVRIG_ZIP"
+          ls -la out
 
       - name: Create GitHub release
         env:

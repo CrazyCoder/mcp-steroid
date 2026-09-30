@@ -31,7 +31,7 @@ The devrig block shows **exactly one of two states**, because only one of them i
 
 | devrig | What the block shows |
 |---|---|
-| missing | one row, only the install action: **To install:** + a read-only copyable field with the canonical one-liner the website publishes (`curl -fsSL https://devrig.dev/install.sh \| sh` on POSIX, `irm https://devrig.dev/install.ps1 \| iex` on Windows; built by `:devrig-common`'s `devrigInstallOneLiner`, pinned verbatim in `InstallerHostTest`) + an **Install** button beside it that visibly does the same thing the text shows — fetch that script and run it under the existing progress task |
+| missing | one row, only the install action: **To install:** + a read-only copyable field with the canonical one-liner the README publishes (`curl -fsSL https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.sh \| sh` on POSIX, `irm https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.ps1 \| iex` on Windows; built by `:devrig-common`'s `devrigInstallOneLiner`, pinned verbatim in `InstallerHostTest`) + an **Install** button beside it that visibly does the same thing the text shows — fetch that script and run it under the existing progress task |
 | installed | "Installed", then the next step — one long read-only **copyable command per agent** (Claude, Codex, Gemini): the absolute stable launcher plus devrig's canonical `install <agent>` verb, for the user to run in a terminal |
 
 The agent rows are **display-only** (owner direction, 2026-08-06). An earlier revision checked each
@@ -81,9 +81,8 @@ callback (never a constructor side effect), it waits out a random 12–35 s dela
 project-open moment), probes for devrig off the EDT, and — only when devrig is missing — shows one
 non-sticky balloon. Its body says what devrig is in the website's own framing (no sizes, no paths — the
 balloon computes no machine state for copy), and it carries **two actions**: **Install devrig**, the
-existing install flow, and a non-expiring **What is devrig?** link to the site root with the IDE build
-attached as `?fromIntelliJInstallAction=<build>` — deliberately distinct from the settings page's
-`?fromIntelliJ=<build>`, so the site can tell the balloon apart from the settings link. If the balloon
+existing install flow, and a non-expiring **What is devrig?** link to the README's "What is devrig?"
+section, the same target as the settings page's link. If the balloon
 auto-hides unseen, nothing is lost: the offer lives on the settings page, and the message stays in the
 Notifications tool window. There is nothing to snooze and nothing to monitor.
 
@@ -96,7 +95,7 @@ call): a balloon is a nudge, and anything missed stays reachable in the Notifica
 
 | Kind | When | Actions |
 |---|---|---|
-| `DEVRIG_INSTALL_OFFER` | the once-per-run promotion (key on, devrig missing): what devrig is, in the website's framing | **Install devrig**; **What is devrig?** (non-expiring; the site root + `?fromIntelliJInstallAction=<build>`) |
+| `DEVRIG_INSTALL_OFFER` | the once-per-run promotion (key on, devrig missing): what devrig is, in the website's framing | **Install devrig**; **What is devrig?** (non-expiring; the README's "What is devrig?" section) |
 | `DEVRIG_INSTALL` | the outcome of an install the user started: installed, already being installed by another process, or failed | **Open settings**; **Retry** on failure, carrying the installer's own reason |
 
 Cancelling an install produces **no** notification — it is a choice, not a failure, and the user already
@@ -141,9 +140,9 @@ bar instead of a static label: the phase as text, and a real fraction from the b
 | `ERROR: …` | reported as the failure reason (and written to the marker below) |
 
 **The fraction depends on the installer that is published**, not on the template in this repository: the
-button downloads the live `https://devrig.dev/install.sh`. The size and retry lines above arrive with
-[#363](https://github.com/jonnyzzz/mcp-steroid/pull/363) and reach users only once a release republishes the
-website; until then the published script prints `downloading <kind> (<url>)...`, those two rows never match,
+button downloads the live `install.sh` of the latest release. The size and retry lines above arrive with
+[#363](https://github.com/jonnyzzz/mcp-steroid/pull/363) and reach users only once a release publishes an
+installer with them; until then the published script prints `downloading <kind> (<url>)...`, those two rows never match,
 and the bar stays indeterminate while still naming each step from the other lines. Expected degradation, not
 a defect.
 

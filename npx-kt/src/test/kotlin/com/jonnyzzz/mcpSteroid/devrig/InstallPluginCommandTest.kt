@@ -110,32 +110,43 @@ class InstallPluginCommandTest {
         assertTrue(text.contains("already has the MCP Steroid plugin"), text)
     }
 
+    /**
+     * The plugin is not on JetBrains Marketplace, so the IDE's compatibility check, which asks only Marketplace,
+     * says false. The IDE's install still reads the custom plugin repositories, so devrig asks it anyway and says
+     * which repository to add.
+     */
     @Test
-    fun `install reports incompatible and unreachable IDEs without firing a dialog`() {
-        val compatible = portTarget(63342)
-        val incompatible = portTarget(63343)
+    fun `install asks an IDE that Marketplace knows no build for, and skips an unreachable one`() {
+        val notOnMarketplace = portTarget(63343)
         val unreachable = portTarget(63344)
         val fake = FakePluginRestClient(compatibility = { baseUrl ->
-            when (baseUrl) {
-                "http://127.0.0.1:63342" -> true
-                "http://127.0.0.1:63343" -> false
-                else -> null
-            }
+            if (baseUrl == "http://127.0.0.1:63343") false else null
         })
 
         val (text, reports) = orchestrate(
             check = false,
-            targets = listOf(compatible, incompatible, unreachable),
+            targets = listOf(notOnMarketplace, unreachable),
             client = fake,
         )
 
-        assertEquals(listOf("http://127.0.0.1:63342"), fake.installCalls)
+        assertEquals(listOf("http://127.0.0.1:63343"), fake.installCalls)
         val byPort = reports.associate { it.ide.port to it.outcome }
-        assertEquals(PluginInstallOutcome.REQUESTED, byPort[63342])
-        assertEquals(PluginInstallOutcome.INCOMPATIBLE, byPort[63343])
+        assertEquals(PluginInstallOutcome.REQUESTED, byPort[63343])
         assertEquals(PluginInstallOutcome.UNREACHABLE, byPort[63344])
-        assertTrue(text.contains("no compatible MCP Steroid build"), text)
         assertTrue(text.contains("could not reach the IDE"), text)
+        assertTrue(text.contains(PLUGIN_REPOSITORY_URL), text)
+        assertTrue(text.contains("Manage Plugin Repositories"), text)
+    }
+
+    @Test
+    fun `check mode counts an IDE that Marketplace knows no build for as ready`() {
+        val fake = FakePluginRestClient(compatibility = { false })
+
+        val (text, reports) = orchestrate(check = true, targets = listOf(portTarget(63342)), client = fake)
+
+        assertTrue(fake.installCalls.isEmpty(), "--check must be read-only")
+        assertEquals(PluginInstallOutcome.WOULD_REQUEST, reports.single().outcome)
+        assertTrue(text.contains(PLUGIN_REPOSITORY_URL), text)
     }
 
     @Test
@@ -160,7 +171,9 @@ class InstallPluginCommandTest {
 
         assertTrue(reports.isEmpty())
         assertTrue(text.contains("No running JetBrains IDE answered"), text)
-        assertTrue(text.contains("Settings -> Plugins -> Marketplace"), text)
+        assertTrue(text.contains(PLUGIN_REPOSITORY_URL), text)
+        assertTrue(text.contains("Install Plugin from Disk"), text)
+        assertFalse(text.contains("Marketplace"), text)
     }
 
     // --- helpers ----------------------------------------------------------------------------------

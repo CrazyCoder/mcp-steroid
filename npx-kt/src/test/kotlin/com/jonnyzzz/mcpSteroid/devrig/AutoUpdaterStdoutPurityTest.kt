@@ -131,7 +131,7 @@ class AutoUpdaterStdoutPurityTest {
 
         assertStdoutEmpty()
         assertTrue(stderr().contains("could not download"), stderr())
-        assertTrue(stderr().contains("https://devrig.dev/install.sh"), stderr())
+        assertTrue(stderr().contains(DEVRIG_INSTALL_SH_URL), stderr())
         assertEquals(0, f.notices.size)
     }
 

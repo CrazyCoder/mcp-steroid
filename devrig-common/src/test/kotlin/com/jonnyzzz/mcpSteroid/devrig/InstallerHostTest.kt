@@ -14,37 +14,48 @@ import org.junit.jupiter.api.Test
 class InstallerHostTest {
 
     @Test
-    fun `the installer URLs are the published ones`() {
-        assertEquals("https://devrig.dev/install.sh", devrigInstallerUrl(isWin = false))
-        assertEquals("https://devrig.dev/install.ps1", devrigInstallerUrl(isWin = true))
+    fun `the installer URLs are the latest release's assets`() {
+        assertEquals(
+            "https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.sh",
+            devrigInstallerUrl(isWin = false),
+        )
+        assertEquals(
+            "https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.ps1",
+            devrigInstallerUrl(isWin = true),
+        )
     }
 
     /**
-     * The exact strings `website/layouts/partials/install-cta.html` publishes and the installer
-     * templates carry in their headers. A drift here means the IDE settings page shows a command the
-     * docs never promoted — change the website and the templates together with this pin, or not at all.
+     * The exact strings the README publishes and the installer templates carry in their headers. A drift
+     * here means the IDE settings page shows a command the docs never promoted — change the README and the
+     * templates together with this pin, or not at all.
      */
     @Test
-    fun `the install one-liner matches the website, verbatim, per OS`() {
-        assertEquals("curl -fsSL https://devrig.dev/install.sh | sh", devrigInstallOneLiner(isWin = false))
-        assertEquals("irm https://devrig.dev/install.ps1 | iex", devrigInstallOneLiner(isWin = true))
+    fun `the install one-liner matches the README, verbatim, per OS`() {
+        assertEquals(
+            "curl -fsSL https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.sh | sh",
+            devrigInstallOneLiner(isWin = false),
+        )
+        assertEquals(
+            "irm https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.ps1 | iex",
+            devrigInstallOneLiner(isWin = true),
+        )
     }
 
     /**
      * The mechanical half of the verbatim pin: the literals above say what the strings ARE, this reads
-     * the published sources and proves they still SAY it — so a website-only or template-only edit
+     * the published sources and proves they still SAY it — so a README-only or template-only edit
      * (say, `| sh` → `| bash`) fails here instead of drifting silently past the settings page. Same
      * lint-test pattern as `BuildScriptIncrementalInputsTest` (walk up to the repo root, read the
      * source file); the files are checked into this repo, so a missing one is a real breakage, not a
      * condition to skip on.
      */
     @Test
-    fun `the published website CTA and installer templates carry the same one-liners`() {
+    fun `the README and installer templates carry the same one-liners`() {
         val posix = devrigInstallOneLiner(isWin = false)
         val windows = devrigInstallOneLiner(isWin = true)
         val published = mapOf(
             "README.md" to listOf(posix, windows),
-            "website/layouts/partials/install-cta.html" to listOf(posix, windows),
             "installer-gen/src/main/resources/templates/install.sh.tmpl" to listOf(posix),
             "installer-gen/src/main/resources/templates/install.ps1.tmpl" to listOf(windows),
         )
@@ -60,6 +71,17 @@ class InstallerHostTest {
                 )
             }
         }
+    }
+
+    /**
+     * `:installer-gen` bakes the devrig zip of a release into the scripts these URLs serve, and does not depend
+     * on this module, so it names the repository in a constant of its own. Both must name the same one.
+     */
+    @Test
+    fun `the installer generator reads the releases of the same repository`() {
+        val generator = repoRoot().resolve("installer-gen/src/main/kotlin/com/jonnyzzz/mcpSteroid/installer/InstallerGenerator.kt")
+        val declared = Regex("""const val RELEASES_REPOSITORY = "([^"]+)"""").find(Files.readString(generator))?.groupValues?.get(1)
+        assertEquals(RELEASES_REPOSITORY, declared, "$generator must declare RELEASES_REPOSITORY = \"$RELEASES_REPOSITORY\"")
     }
 
     private fun repoRoot(): Path {

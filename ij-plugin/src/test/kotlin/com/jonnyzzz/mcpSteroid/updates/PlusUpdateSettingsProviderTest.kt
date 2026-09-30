@@ -3,16 +3,17 @@ package com.jonnyzzz.mcpSteroid.updates
 
 import com.intellij.ide.plugins.RepositoryHelper
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import com.jonnyzzz.mcpSteroid.devrig.PLUGIN_REPOSITORY_URL
 
 class PlusUpdateSettingsProviderTest : BasePlatformTestCase() {
     fun `test the IDE checks the release feed for plugin updates`() {
         assertTrue(
-            "the custom plugin repositories must include $UPDATE_PLUGINS_URL",
-            RepositoryHelper.getCustomPluginRepositoryHosts().contains(UPDATE_PLUGINS_URL),
+            "the custom plugin repositories must include $PLUGIN_REPOSITORY_URL",
+            RepositoryHelper.getCustomPluginRepositoryHosts().contains(PLUGIN_REPOSITORY_URL),
         )
     }
 
     fun `test the feed is the updatePlugins xml of the latest release`() {
-        assertEquals("https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/updatePlugins.xml", UPDATE_PLUGINS_URL)
+        assertEquals("https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/updatePlugins.xml", PLUGIN_REPOSITORY_URL)
     }
 }

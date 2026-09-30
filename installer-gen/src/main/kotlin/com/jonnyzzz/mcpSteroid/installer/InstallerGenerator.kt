@@ -21,6 +21,12 @@ import kotlin.io.path.writeText
  * #360) so a mismatch fails generation instead of shipping silently.
  */
 
+/**
+ * The GitHub repository whose releases carry the devrig zip, the plugin zip and the scripts this generates.
+ * `devrig-common`'s `RELEASES_REPOSITORY` names the same one; `InstallerHostTest` holds the two together.
+ */
+const val RELEASES_REPOSITORY = "CrazyCoder/mcp-steroid"
+
 /** The five supported platforms, keyed `<os>-<cpu>`. The script split is by OS. */
 val POSIX_PLATFORMS = listOf("macos-arm64", "linux-arm64", "linux-x64")
 val WINDOWS_PLATFORMS = listOf("windows-x64", "windows-arm64")
@@ -189,7 +195,7 @@ private fun parseFlags(argv: Array<String>): Map<String, MutableList<String>> {
 private fun resolveDevrigZipUrlForRelease(version: String, http: HttpFetcher): String {
     for (tag in listOf("v$version", version)) {
         val body = try {
-            http.getBytes("https://api.github.com/repos/jonnyzzz/mcp-steroid/releases/tags/$tag").decodeToString()
+            http.getBytes("https://api.github.com/repos/$RELEASES_REPOSITORY/releases/tags/$tag").decodeToString()
         } catch (e: Exception) {
             System.err.println("[installer-gen] devrig release lookup for tag '$tag' failed: ${e.message}")
             continue
@@ -198,7 +204,7 @@ private fun resolveDevrigZipUrlForRelease(version: String, http: HttpFetcher): S
             .firstOrNull { it.name.startsWith("devrig") && it.name.endsWith(".zip") }
         if (asset != null) return asset.browser_download_url
     }
-    error("no devrig-*.zip asset found for release v$version (or $version) on jonnyzzz/mcp-steroid")
+    error("no devrig-*.zip asset found for release v$version (or $version) on $RELEASES_REPOSITORY")
 }
 
 /**
@@ -222,7 +228,7 @@ internal fun resolveDevrig(flags: Map<String, List<String>>, http: HttpFetcher, 
             // the generator computes from THIS download — so a repointed URL would silently embed the
             // wrong artifact. Restrict to release-tag-safe characters.
             require(pinned.matches(Regex("[A-Za-z0-9._+-]+"))) { "--devrig-version has unsafe characters: '$pinned'" }
-            "https://github.com/jonnyzzz/mcp-steroid/releases/download/v$pinned/devrig-$pinned.zip"
+            "https://github.com/$RELEASES_REPOSITORY/releases/download/v$pinned/devrig-$pinned.zip"
         } else {
             // Default: the devrig zip on the v<version> release — tied to --version, so it cannot drift
             // ahead/behind VERSION the way the old "latest release" lookup could.

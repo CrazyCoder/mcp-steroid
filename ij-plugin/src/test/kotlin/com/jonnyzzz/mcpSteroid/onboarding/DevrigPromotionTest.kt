@@ -1,7 +1,6 @@
 /* Copyright 2025-2026 Eugene Petrenko (mcp@jonnyzzz.com); Copyright 2025-2026 JetBrains. Use of this source code is governed by the Apache 2.0 license. */
 package com.jonnyzzz.mcpSteroid.onboarding
 
-import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.seconds
@@ -66,36 +65,4 @@ class DevrigPromotionTest : BasePlatformTestCase() {
         assertFalse("no home path: $body", body.contains("/home/") || body.contains("\\Users\\"))
     }
 
-    /**
-     * The balloon's "What is devrig?" link goes to the site ROOT with the IDE build under a parameter
-     * of its own — `fromIntelliJInstallAction`, distinct from the settings page's `fromIntelliJ` — so
-     * the site can tell the balloon apart from the settings link. The build is injectable precisely
-     * so this test can pin the exact shape.
-     */
-    fun `test the install offer site link targets the site root with its own query param`() {
-        assertEquals(
-            "https://devrig.dev/?fromIntelliJInstallAction=IU-261.25134.95",
-            DevrigPromotion.installOfferSiteUrl("IU-261.25134.95"),
-        )
-
-        // The parameter name stays pinned on its own: the site keys its attribution on it.
-        assertEquals("fromIntelliJInstallAction", DevrigPromotion.FROM_INTELLIJ_INSTALL_ACTION_PARAM)
-
-        // The build value is URL-encoded, so an unexpected build string cannot corrupt the query.
-        assertEquals(
-            "https://devrig.dev/?fromIntelliJInstallAction=IU-261%2F95%26x",
-            DevrigPromotion.installOfferSiteUrl("IU-261/95&x"),
-        )
-
-        // Production callers take the default — the running IDE's own build.
-        val build = ApplicationInfo.getInstance().build.asString()
-        assertEquals(
-            DevrigPromotion.installOfferSiteUrl(build),
-            DevrigPromotion.installOfferSiteUrl(),
-        )
-        assertTrue(
-            "the default URL must start with the root + param prefix; got '${DevrigPromotion.installOfferSiteUrl()}'",
-            DevrigPromotion.installOfferSiteUrl().startsWith("https://devrig.dev/?fromIntelliJInstallAction="),
-        )
-    }
 }

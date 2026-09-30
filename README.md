@@ -4,8 +4,10 @@ A maintained continuation of [MCP Steroid](https://github.com/jonnyzzz/mcp-stero
 with fixes for current IntelliJ Platform builds. Plugin ID
 `io.github.crazycoder.mcp-steroid`. It installs into `plugins/mcp-steroid-plus`
 and disables the upstream `com.jonnyzzz.mcp-steroid` plugin when both are
-present. Download releases from
-[GitHub Releases](https://github.com/CrazyCoder/mcp-steroid/releases).
+present. Each release on
+[GitHub Releases](https://github.com/CrazyCoder/mcp-steroid/releases) carries
+the plugin, the `devrig` CLI built from the same commit, and the devrig
+installers, so the two always match. [Install](#install) shows how to get both.
 
 ## MCP Steroid
 
@@ -19,13 +21,12 @@ present. Download releases from
 </p>
 
 <p align="center">
-  <a href="https://github.com/jonnyzzz/mcp-steroid/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://plugins.jetbrains.com/plugin/30019-mcp-steroid"><img src="https://img.shields.io/badge/JetBrains-Marketplace-orange.svg" alt="JetBrains Marketplace"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
   <a href="https://discord.gg/e9qgQ7NeTC"><img src="https://img.shields.io/badge/Discord-Community-5865F2.svg" alt="Discord"></a>
 </p>
 
 <p align="center">
-  <a href="https://devrig.dev">Website</a> &bull;
+  <a href="https://github.com/CrazyCoder/mcp-steroid/releases">Releases</a> &bull;
   <a href="https://www.youtube.com/playlist?list=PLitZWClhc4Qgz3w8qrtctMR_lpIc81n0f">Demo Videos</a> &bull;
   <a href="https://jonnyzzz.com/blog/2026/04/07/mcp-steroid-open-source/">Blog Post</a> &bull;
   <a href="https://discord.gg/e9qgQ7NeTC">Discord</a>
@@ -35,7 +36,7 @@ present. Download releases from
 
 ## What is devrig?
 
-**[`devrig`](https://devrig.dev/docs/devrig/)** is the product you install: a small command-line
+**[`devrig`](#install)** is the product you install: a small command-line
 tool that connects your AI coding agent (Claude Code, Codex, or Gemini) to a real JetBrains IDE.
 It brings **its own runtime**, registers itself with your agent, and bridges the agent's calls to
 the IDE — no manual MCP wiring.
@@ -67,8 +68,8 @@ your machine at once — each open on a different project — and can download a
 - **Kotlin scripting** — full platform access at runtime via `steroid_execute_code`
 - **Standard MCP protocol** — connects to MCP-compatible AI agents
 
-We continuously measure IDE-access vs plain-shell agents on real codebases. See the
-[experiment findings](https://devrig.dev/docs/experiment-findings/) for the evidence-based results.
+The upstream project measured IDE-access vs plain-shell agents on real codebases. See its
+[experiment findings](https://devrig.dev/docs/experiment-findings/) for the results.
 
 ### Explore the CLI
 
@@ -86,8 +87,7 @@ devrig prompt mcp-steroid://prompt/skill --project_name="PROJECT_NAME_FROM_LIST_
 `list_projects` is canonical (`projects` and `project` are compatibility aliases). Human output is
 readable and may use terminal color; commands that advertise `--json` emit one ANSI-free document for
 agents and scripts. Incomplete commands print focused help with every missing value. See the
-[devrig CLI guide](https://devrig.dev/docs/devrig/) or the contributor
-[CLI contract](docs/devrig-cli-contract.md).
+contributor [CLI contract](docs/devrig-cli-contract.md).
 
 ---
 
@@ -98,16 +98,20 @@ agents and scripts. Incomplete commands print focused help with every missing va
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://devrig.dev/install.sh | sh
+curl -fsSL https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.sh | sh
 ```
 
 **Windows**
 
 ```powershell
-irm https://devrig.dev/install.ps1 | iex
+irm https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.ps1 | iex
 ```
 
-The script does exactly two things: it installs the `devrig` CLI with its own bundled runtime into `~/.mcp-steroid`, and it registers the stable `devrig` launcher on your `PATH` (if `devrig` is not found afterwards, open a new terminal or add `~/.mcp-steroid/bin` to `PATH`). It never touches your agent configs or your IDEs — it finishes by printing the explicit next-step commands (steps 2 and 3 below). Installation is idempotent; re-run it any time to update.
+The script does exactly two things: it installs the `devrig` CLI of the latest release with its own bundled runtime into `~/.mcp-steroid`, and it registers the stable `devrig` launcher on your `PATH` (if `devrig` is not found afterwards, open a new terminal or add `~/.mcp-steroid/bin` to `PATH`). It never touches your agent configs or your IDEs — it finishes by printing the explicit next-step commands (steps 2 and 3 below). Installation is idempotent; re-run it any time to update.
+
+devrig updates itself: a running devrig checks `version.json` of the latest release and installs a newer release in the background.
+
+**Switching from the upstream devrig.** A devrig installed from `devrig.dev` keeps updating from there, and lacks the tools this repository adds (`steroid_ui`, `steroid_refactor`). Run the command above once: it installs this repository's devrig over it, and from then on devrig updates from this repository's releases. `devrig --version` then prints the same version as the plugin's release.
 
 ### 2. Register your AI agent
 
@@ -117,15 +121,22 @@ devrig install codex
 devrig install gemini
 ```
 
-`devrig install <agent>` registers devrig as the `mcp-steroid` MCP server in Claude Code, Codex, or Gemini (one of `claude`, `codex`, `gemini`). The entry lands in the user-scope config, so it is visible from every project. For any other MCP client, `devrig install config` prints the manual `mcp.json` snippet to paste. See the [devrig CLI guide](https://devrig.dev/docs/devrig/) for the full command set.
+`devrig install <agent>` registers devrig as the `mcp-steroid` MCP server in Claude Code, Codex, or Gemini (one of `claude`, `codex`, `gemini`). The entry lands in the user-scope config, so it is visible from every project. For any other MCP client, `devrig install config` prints the manual `mcp.json` snippet to paste. `devrig --help` lists the full command set.
 
-### 3. Install the MCP Steroid plugin
+### 3. Install the MCP Steroid Plus plugin
 
-```bash
-devrig install plugin
+MCP Steroid Plus is not on JetBrains Marketplace. An IDE installs it from the plugin repository of the latest release:
+
+```
+https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/updatePlugins.xml
 ```
 
-`devrig install plugin` installs (or updates) the MCP Steroid plugin into every JetBrains IDE currently running on your machine — each IDE asks for your confirmation with its own native install dialog, so nothing is installed silently. Alternatively, install **MCP Steroid** from the [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/30019-mcp-steroid) (search **MCP Steroid** in **Settings > Plugins > Marketplace**).
+1. In the IDE, open **Settings | Plugins**, click the gear icon, choose **Manage Plugin Repositories…** and add the URL above.
+2. Run `devrig install plugin`, or search for **MCP Steroid Plus** in **Settings | Plugins** and install it.
+
+`devrig install plugin` asks every JetBrains IDE running on your machine to install the plugin — each IDE asks for your confirmation with its own native install dialog, so nothing is installed silently. An IDE finds the plugin only after step 1.
+
+Instead of the repository, you can download `mcp-steroid-plus-<version>.zip` from [GitHub Releases](https://github.com/CrazyCoder/mcp-steroid/releases) and choose **Install Plugin from Disk** in the same gear menu.
 
 **Requirements**
 
@@ -133,9 +144,9 @@ devrig install plugin
 - A standard desktop IDE runs with a real display: the normal GUI on macOS/Windows, or under **Xvfb** (a virtual X display) on Linux/CI. Plain non-backend headless mode is unsupported (best-effort, see [#177](https://github.com/jonnyzzz/mcp-steroid/issues/177)); a frontendless Remote Development backend is supported. Backend product mode, not the presence of a client window or the raw AWT-headless flag alone, determines that distinction — see [Running devrig in CI](https://devrig.dev/docs/running-on-ci/).
 - An MCP-compatible AI agent (Claude Code, Codex, or Gemini).
 
-For a clean machine with no IDE running, an agent can discover the download catalog with `devrig backend download --json`, install IDEA Ultimate 2026.2, and call `steroid_open_project`. The managed IU-262 backend starts on demand as a frontendless Remote Development backend with MCP Steroid included; no separate start command or client window is required. Readiness is the project path plus Maven/Gradle import, not a screenshot. See the [devrig CLI guide](https://devrig.dev/docs/devrig/#frontendless-intellij-idea-ultimate-20262).
+For a clean machine with no IDE running, an agent can discover the download catalog with `devrig backend download --json`, install IDEA Ultimate 2026.2, and call `steroid_open_project`. The managed IU-262 backend starts on demand as a frontendless Remote Development backend with MCP Steroid included; no separate start command or client window is required. Readiness is the project path plus Maven/Gradle import, not a screenshot. A managed backend gets the plugin bundled in devrig, so it needs no plugin repository.
 
-**Faster plugin updates (optional):** add `https://devrig.dev/updatePlugins.xml` in **Settings > Plugins > Gear icon > Manage Plugin Repositories...**. Or install a ZIP from [GitHub Releases](https://github.com/jonnyzzz/mcp-steroid/releases) via **Install Plugin from Disk**.
+**Plugin updates:** the installed plugin adds the plugin repository above to the IDE's own update check, so the IDE offers each new release like a Marketplace update, even when the repository is not in its list.
 
 ### Verify the connection
 
@@ -184,7 +195,7 @@ Both tasks fail loudly instead of half-deploying: `deployDevrig` fails when `dev
 - **Codex** CLI
 - **Gemini** CLI
 
-MCP Steroid speaks the standard Model Context Protocol, so other MCP-capable clients can also connect to the plugin's server directly — see [How it works](https://devrig.dev/docs/how-it-works/).
+MCP Steroid speaks the standard Model Context Protocol, so other MCP-capable clients can also connect to the plugin's server directly — see [How it works](https://devrig.dev/docs/how-it-works/) on the upstream site.
 
 ---
 
@@ -254,7 +265,7 @@ MCP Steroid can be configured via IntelliJ's Registry (`Help > Find Action > Reg
 | `mcp.steroid.server.host` | 127.0.0.1 | Bind address (use 0.0.0.0 for Docker) |
 | `mcp.steroid.storage.path` | (empty) | Custom storage path (default: `~/.mcp-steroid/runs/`) |
 
-See the full [Configuration Documentation](https://devrig.dev/docs/configuration/) on the website.
+See the full [Configuration Documentation](https://devrig.dev/docs/configuration/) on the upstream site.
 
 ---
 
@@ -300,10 +311,10 @@ MCP Steroid is open-source software licensed under the [Apache License 2.0](LICE
 
 ## Links
 
-- **Website:** [devrig.dev](https://devrig.dev)
-- **JetBrains Marketplace:** [plugins.jetbrains.com](https://plugins.jetbrains.com/plugin/30019-mcp-steroid)
+- **Releases:** [github.com/CrazyCoder/mcp-steroid/releases](https://github.com/CrazyCoder/mcp-steroid/releases)
+- **GitHub Issues:** [github.com/CrazyCoder/mcp-steroid/issues](https://github.com/CrazyCoder/mcp-steroid/issues)
+- **Upstream website:** [devrig.dev](https://devrig.dev)
 - **Discord:** [discord.gg/e9qgQ7NeTC](https://discord.gg/e9qgQ7NeTC)
-- **GitHub Issues:** [github.com/jonnyzzz/mcp-steroid/issues](https://github.com/jonnyzzz/mcp-steroid/issues)
 - **GitHub Sponsors:** [github.com/sponsors/jonnyzzz](https://github.com/sponsors/jonnyzzz)
 - **Blog:** [jonnyzzz.com](https://jonnyzzz.com)
 - **YouTube:** [@jonnyzzz](https://youtube.com/@jonnyzzz)

@@ -6,10 +6,10 @@ Owner: devrig CLI (`npx-kt`); coordination files under `~/.mcp-steroid/update/`.
 
 ## Goal
 
-When `https://devrig.dev/version.json` promotes a version newer than the running
+When `https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/version.json` (the latest release's) promotes a version newer than the running
 devrig, devrig updates **itself** by downloading and running the official install
 script (`install.sh` on POSIX, `install.ps1` on Windows) — the exact same script a
-user would run via `curl -fsSL https://devrig.dev/install.sh | sh`. No new update
+user would run via `curl -fsSL https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.sh | sh`. No new update
 channel, no new artifact format, and **no new obligations on the script**: its
 contract stays exactly what it is today — download, verify, unpack, then call
 `devrig install devrig`, which updates the launcher automatically.
@@ -123,7 +123,7 @@ Each tick:
    runs after ours sees our lower pid and yields the same way). The residual
    double-run window is only the announce↔recheck race itself (see
    Tradeoff 1).
-9. **Download the script** (`https://devrig.dev/install.sh` or `/install.ps1`)
+9. **Download the script** (`https://github.com/CrazyCoder/mcp-steroid/releases/latest/download/install.sh` or `/install.ps1`)
    → `update/install-<ownPid>.sh|.ps1` — freshly on every attempt (the file is
    deleted after each run, and the GET carries the same cache-buster), so a
    retry picks up a server-side fix made during the wait. A failed download
@@ -377,7 +377,7 @@ machinery:
 
 ## Security considerations
 
-Auto-update executes a script fetched over TLS from `devrig.dev` — the same
+Auto-update executes a script fetched over TLS from GitHub Releases — the same
 trust root as the documented manual `curl | sh`; the script SHA-256-pins every
 artifact it downloads. Auto-update raises blast radius (a compromised origin
 reaches all auto-updating installs on their next tick); the designed hardening

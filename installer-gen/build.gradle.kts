@@ -122,15 +122,27 @@ val generateInstaller = tasks.register<JavaExec>("generateInstaller") {
     // Always re-run: the published devrig release + the live JDK builds can change without VERSION changing.
     outputs.upToDateWhen { false }
 
+    // The release workflow generates the scripts before the release exists: it passes the devrig zip it built
+    // and the URL that zip will have on the release, and an output dir of its own.
+    val outDirOverride = providers.gradleProperty("installer.outDir")
+    val devrigZip = providers.gradleProperty("installer.devrigZip")
+    val devrigUrl = providers.gradleProperty("installer.devrigUrl")
+
     doFirst {
         val version = versionFile.asFile.readText().trim()
         require(version.isNotEmpty()) { "VERSION file (${versionFile.asFile}) is empty" }
-        outDir.asFile.mkdirs()
+        val out = outDirOverride.map { file(it) }.getOrElse(outDir.asFile)
+        out.mkdirs()
         jdkDownloadCacheDir.mkdirs()
+        val devrig = if (devrigZip.isPresent) {
+            listOf("--devrig-zip", file(devrigZip.get()).absolutePath, "--devrig-url", devrigUrl.get())
+        } else {
+            emptyList()
+        }
         args = listOf(
-            "--out-dir", outDir.asFile.absolutePath,
+            "--out-dir", out.absolutePath,
             "--version", version,
             "--cache-dir", jdkDownloadCacheDir.absolutePath,
-        )
+        ) + devrig
     }
 }
