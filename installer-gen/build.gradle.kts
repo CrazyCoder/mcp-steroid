@@ -1,3 +1,5 @@
+import org.gradle.api.attributes.Usage
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
@@ -11,7 +13,8 @@ repositories {
 
 dependencies {
     // JDK detection (the data model) + installer-script generation. NO project() dependencies on
-    // purpose: the generator tasks compile only this module, never the rest of the build.
+    // purpose: the generator tasks compile only this module, never the rest of the build. A release run
+    // of generateInstaller adds :npx-kt to devrigPackage below, for the devrig zip; it is not on any classpath.
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("io.ktor:ktor-client-core:3.3.2")
@@ -78,6 +81,26 @@ tasks.named("check") { dependsOn(installerIntegrationTestSourceSet.classesTaskNa
 // path is computed here and handed to the generator via --cache-dir (the generator never guesses it).
 val jdkDownloadCacheDir: java.io.File = gradle.gradleUserHomeDir.resolve("caches/mcp-steroid/installer-gen-jdk")
 
+val jdkModelFile = layout.buildDirectory.file("jdk-model/jdk-model.json")
+
+// Resolvable: the devrig distribution zip that :npx-kt's distZip builds, through its "devrig-package"
+// Usage. Only a release run of generateInstaller adds the dependency, so no other run builds devrig.
+val devrigPackage = configurations.create("devrigPackage") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    attributes {
+        attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage::class, "devrig-package"))
+    }
+}
+
+// A release run: the base URL of the release the scripts are for, such as
+// https://github.com/<owner>/<repo>/releases/download/v<VERSION>. The scripts then bake in the devrig zip
+// this build makes and its URL under that base, before the release exists.
+val devrigUrlBase = providers.gradleProperty("installer.devrigUrlBase")
+if (devrigUrlBase.isPresent) {
+    dependencies { devrigPackage(project(":npx-kt")) }
+}
+
 // Resolve all JDK builds (Amazon Corretto 25 + Azul Zulu 25) into the version-pinned data model JSON.
 // Vendor-natural validation (detached OpenPGP signatures) happens inside the generator; downloads are
 // cached in jdkDownloadCacheDir. No project() deps — compiles only this module.
@@ -89,7 +112,7 @@ val generateJdkModel = tasks.register<JavaExec>("generateJdkModel") {
     // JDK archives are read fully into memory (one ~230 MB array at a time) to hash + scan them.
     maxHeapSize = "2g"
 
-    val outFile = layout.buildDirectory.file("jdk-model/jdk-model.json")
+    val outFile = jdkModelFile
     outputs.file(outFile)
     // The live vendor sources can publish a new build at any time, so never treat this as up-to-date.
     outputs.upToDateWhen { false }
@@ -122,11 +145,14 @@ val generateInstaller = tasks.register<JavaExec>("generateInstaller") {
     // Always re-run: the published devrig release + the live JDK builds can change without VERSION changing.
     outputs.upToDateWhen { false }
 
-    // The release workflow generates the scripts before the release exists: it passes the devrig zip it built
-    // and the URL that zip will have on the release, and an output dir of its own.
+    // A release run writes where the workflow collects the release assets.
     val outDirOverride = providers.gradleProperty("installer.outDir")
-    val devrigZip = providers.gradleProperty("installer.devrigZip")
-    val devrigUrl = providers.gradleProperty("installer.devrigUrl")
+    // A release run reads the JDK model generateJdkModel resolves, which a parallel build runs while the
+    // plugin and devrig compile, and the devrig zip distZip builds.
+    if (devrigUrlBase.isPresent) {
+        dependsOn(generateJdkModel)
+        inputs.files(devrigPackage)
+    }
 
     doFirst {
         val version = versionFile.asFile.readText().trim()
@@ -134,8 +160,13 @@ val generateInstaller = tasks.register<JavaExec>("generateInstaller") {
         val out = outDirOverride.map { file(it) }.getOrElse(outDir.asFile)
         out.mkdirs()
         jdkDownloadCacheDir.mkdirs()
-        val devrig = if (devrigZip.isPresent) {
-            listOf("--devrig-zip", file(devrigZip.get()).absolutePath, "--devrig-url", devrigUrl.get())
+        val release = if (devrigUrlBase.isPresent) {
+            val zip = devrigPackage.singleFile
+            listOf(
+                "--devrig-zip", zip.absolutePath,
+                "--devrig-url", devrigUrlBase.get().trimEnd('/') + "/" + zip.name,
+                "--jdk-model", jdkModelFile.get().asFile.absolutePath,
+            )
         } else {
             emptyList()
         }
@@ -143,6 +174,6 @@ val generateInstaller = tasks.register<JavaExec>("generateInstaller") {
             "--out-dir", out.absolutePath,
             "--version", version,
             "--cache-dir", jdkDownloadCacheDir.absolutePath,
-        ) + devrig
+        ) + release
     }
 }

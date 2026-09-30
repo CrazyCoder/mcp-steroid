@@ -10,6 +10,7 @@ import java.util.zip.ZipOutputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
+import kotlinx.serialization.json.Json
 
 class InstallerGeneratorTest {
     // ── platform-key adapter ─────────────────────────────────────────────────────────────────────
@@ -40,6 +41,18 @@ class InstallerGeneratorTest {
             art(JdkPlatform(JdkOs.WINDOWS, JdkArch.AARCH64), ArchiveType.ZIP, "zulu-win"),
         )
     )
+
+    @Test
+    fun `a JDK model file written by generateJdkModel is read back without the network`(@TempDir dir: Path) {
+        val file = dir.resolve("jdk-model.json")
+        Files.writeString(file, Json.encodeToString(JdkModel.serializer(), fullModel()))
+        val noNetwork = object : HttpFetcher {
+            override fun head(url: String) = error("no network expected, got HEAD $url")
+            override fun getBytes(url: String) = error("no network expected, got GET $url")
+        }
+
+        assertEquals(fullModel(), loadJdkModel(mapOf("jdk-model" to listOf(file.toString())), Cache.onDisk(dir.resolve("cache")), noNetwork))
+    }
 
     @Test
     fun `jdkScriptTable accepts exactly the 5 platforms`() {

@@ -260,6 +260,15 @@ private fun devrigLaunchers(zipBytes: ByteArray): Pair<String, String> {
     return find("devrig") to find("devrig.bat")
 }
 
+/**
+ * The JDK model: read from `--jdk-model <file>`, the JSON `generateJdkModel` writes, when given, so the
+ * release build can resolve the JDKs in parallel with compiling; otherwise resolved here.
+ */
+internal fun loadJdkModel(flags: Map<String, List<String>>, cache: Cache, http: HttpFetcher): JdkModel =
+    flags["jdk-model"]?.firstOrNull()
+        ?.let { ghJson.decodeFromString(JdkModel.serializer(), Files.readString(Path.of(it))) }
+        ?: resolveAllJdks(cache, http)
+
 fun main(argv: Array<String>) {
     val flags = parseFlags(argv)
     fun req(k: String) = flags[k]?.firstOrNull() ?: error("required --$k not provided")
@@ -268,7 +277,7 @@ fun main(argv: Array<String>) {
     val cacheDir = Path.of(req("cache-dir"))
 
     KtorHttpFetcher.use { http ->
-        val model = resolveAllJdks(Cache.onDisk(cacheDir), http)
+        val model = loadJdkModel(flags, Cache.onDisk(cacheDir), http)
         val devrig = resolveDevrig(flags, http, version)
         writeInstallerScripts(outDir, jdkScriptTable(model), devrig, version)
         System.err.println("[installer-gen] wrote install.sh + install.ps1 to $outDir (version $version, devrig ${devrig.url})")

@@ -3,6 +3,9 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # A dry run: builds and assembles every asset for v<VERSION> from the chosen branch, uploads the small ones
+  # as a workflow artifact, and publishes nothing. Use it to time a release or to check a workflow change.
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -23,15 +26,22 @@ jobs:
         run: |
           set -euo pipefail
           base="$(tr -d '[:space:]' < VERSION)"
-          [ "v$base" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match VERSION $base"; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            [ "v$base" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match VERSION $base"; exit 1; }
+          fi
+          # A dry run builds the assets of the release VERSION names.
+          echo "TAG=v$base" >> "$GITHUB_ENV"
 
       - name: Build Docker build image
         run: docker build -t mcp-steroid-build:ci docker/build
 
-      - name: Build plugin and devrig (Docker)
+      # One parallel Gradle run: generateJdkModel downloads and verifies the installers' JDKs while the
+      # plugin and devrig compile, then generateInstaller bakes devrig's zip and its release URL into
+      # install.sh and install.ps1.
+      - name: Build plugin, devrig and installers (Docker)
         run: |
           set -euo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/.gradle-home"
+          mkdir -p "$GITHUB_WORKSPACE/.gradle-home" "$GITHUB_WORKSPACE/out"
           docker run --rm \
             -u "$(id -u):$(id -g)" \
             -e HOME=/tmp \
@@ -40,7 +50,11 @@ jobs:
             -v "$GITHUB_WORKSPACE:/build" \
             -w /build \
             mcp-steroid-build:ci \
-            ./gradlew :ij-plugin:buildPlugin :npx-kt:distZip -Pmcp.release.build=true --no-daemon --stacktrace
+            ./gradlew :ij-plugin:buildPlugin :npx-kt:distZip :installer-gen:generateInstaller \
+              -Pmcp.release.build=true \
+              -Pinstaller.outDir=/build/out \
+              -Pinstaller.devrigUrlBase="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" \
+              --parallel --no-daemon --stacktrace
 
       - name: Assemble release assets
         run: |
@@ -53,38 +67,36 @@ jobs:
           (cd out && sha256sum "$zip" > "$zip.sha256")
           release/scripts/make-release-json.sh "out/$zip" "$base" > out/release.json
           cat out/release.json
-          zip_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$zip"
+          zip_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$zip"
           release/scripts/make-update-plugins-xml.sh "out/$zip" "$zip_url" > out/updatePlugins.xml
           cat out/updatePlugins.xml
-          # devrig keeps the name distZip gives it, devrig-<version>.zip, whose version carries the build hash.
+          # devrig keeps the name distZip gives it, devrig-<version>.zip, whose version carries the build hash;
+          # install.sh and install.ps1 already name it.
           devrig_src="$(ls npx-kt/build/distributions/devrig-"$base".*.zip | head -1)"
           devrig_zip="$(basename "$devrig_src")"
           cp "$devrig_src" "out/$devrig_zip"
           (cd out && sha256sum "$devrig_zip" > "$devrig_zip.sha256")
-          echo "DEVRIG_ZIP=$devrig_zip" >> "$GITHUB_ENV"
+          grep -q "$devrig_zip" out/install.sh || { echo "install.sh does not name $devrig_zip"; exit 1; }
           # devrig's updater installs a release newer than itself, read from the latest release's version.json.
           printf '{"version-base":"%s"}\n' "$base" > out/version.json
-
-      - name: Generate devrig installers (Docker)
-        run: |
-          set -euo pipefail
-          # install.sh and install.ps1 bake in the devrig zip's URL on this release and its SHA-256, and a
-          # JDK 25 per platform, downloaded and PGP-verified from the vendors.
-          docker run --rm \
-            -u "$(id -u):$(id -g)" \
-            -e HOME=/tmp \
-            -e GRADLE_USER_HOME=/build/.gradle-home \
-            -e CI \
-            -v "$GITHUB_WORKSPACE:/build" \
-            -w /build \
-            mcp-steroid-build:ci \
-            ./gradlew :installer-gen:generateInstaller --no-daemon --stacktrace \
-              -Pinstaller.outDir=/build/out \
-              -Pinstaller.devrigZip="/build/out/$DEVRIG_ZIP" \
-              -Pinstaller.devrigUrl="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME/$DEVRIG_ZIP"
           ls -la out
 
+      - name: Upload the dry run's small assets
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          retention-days: 7
+          path: |
+            out/*.sha256
+            out/release.json
+            out/updatePlugins.xml
+            out/version.json
+            out/install.sh
+            out/install.ps1
+
       - name: Create GitHub release
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
