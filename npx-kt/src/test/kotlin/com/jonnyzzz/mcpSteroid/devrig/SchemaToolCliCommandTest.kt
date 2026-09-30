@@ -13,6 +13,7 @@ import com.jonnyzzz.mcpSteroid.mcp.param
 import com.jonnyzzz.mcpSteroid.mcp.string
 import com.jonnyzzz.mcpSteroid.server.McpSteroidTools
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
@@ -327,6 +328,17 @@ class SchemaToolCliCommandTest {
         )
 
         assertTrue("--help" in error.text, "the refusal must name the offending flag; got:\n${error.text}")
+    }
+
+    @Test
+    fun `a boolean flag takes no value, so the flag after it is its own`() {
+        // `--restore --snapshot=none`: a boolean flag consumes no token, so --snapshot is parsed as a flag.
+        val run = assertIs<GeneratedToolInvocation>(
+            parse("ui", "--project_name=key", "--task_id=t", "--reason=r", "--steps=[]", "--restore", "--snapshot=none"),
+        )
+
+        assertEquals(JsonPrimitive(true), run.arguments["restore"])
+        assertEquals(JsonPrimitive("none"), run.arguments["snapshot"])
     }
 
     @Test

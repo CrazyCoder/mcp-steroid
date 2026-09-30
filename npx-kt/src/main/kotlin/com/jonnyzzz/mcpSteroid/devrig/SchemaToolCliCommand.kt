@@ -80,7 +80,8 @@ class SchemaToolCliCommand(
         rejectFlagsConsumedAsValues(buildMap {
             for (param in spec.schema.asCliParams()) {
                 if (param.cliHidden) continue
-                put(param.cliFlag, param.name)
+                // A boolean flag takes no value, so the token after it is never read as one.
+                if (param.negativeCliFlag == null) put(param.cliFlag, param.name)
                 param.cliFileSource?.let { put(it.flag, param.name) }
             }
             if (spec.cli.producesImage) put("--out", "out")
