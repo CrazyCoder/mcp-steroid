@@ -286,9 +286,10 @@ class UiToolSpec(val handler: () -> UiToolHandler) : McpToolBase() {
 
     val restore = InputSchemaElement.param("restore")
         .description(
-            "With steps: afterwards close the windows and menus the call opened and put back what its steps changed " +
-                "(settings, theme, sizes, menu items, files), as a scenario replay does, so the IDE is left as the call " +
-                "found it. Runs whether the steps passed or failed. A scenario replay restores by itself."
+            "With steps: afterwards close the windows and menus the call opened, and put back what its steps changed " +
+                "(settings, theme, sizes, menu items, files), so the IDE is left as the call found it. Runs whether the " +
+                "steps passed or failed. Not with scenario: a scenario replay puts back what its steps changed by itself, " +
+                "and closes what they opened only in its cleanup."
         )
         .cliSynopsis("put the IDE back after the steps")
         .boolean()

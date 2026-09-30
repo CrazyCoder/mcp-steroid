@@ -438,8 +438,8 @@ Set the frame up with steps before the `screenshot`:
 ### One call that leaves the IDE as it was
 
 A `steroid_ui` call with `"restore": true` closes the windows and menus its steps opened, and puts back what
-they changed, as a replay does, whether the steps passed or failed. A picture for a user or an article is one
-such call:
+they changed, whether the steps passed or failed. A replay puts back what changed in the same way, but closes
+windows only in its `cleanup`. A picture for a user or an article is one such call:
 
 ```
 [{"action":"settings","page":"editor.preferences.appearance"},
