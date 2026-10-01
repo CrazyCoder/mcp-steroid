@@ -9,8 +9,6 @@ import com.intellij.util.ui.Animator
 import com.intellij.util.ui.AsyncProcessIcon
 import com.intellij.util.ui.JBUI
 import java.awt.*
-import java.awt.event.KeyAdapter
-import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.*
@@ -76,7 +74,8 @@ class DemoOverlayPanel(
         layout = BorderLayout(12, 12)
         border = JBUI.Borders.empty(20)
         isOpaque = false
-        isFocusable = true
+        // Never takes keyboard focus: input the agent dispatches must reach the IDE component under the overlay.
+        isFocusable = false
         preferredSize = Dimension(PANEL_WIDTH, PANEL_HEIGHT)
 
         // Status label for animated line
@@ -105,15 +104,6 @@ class DemoOverlayPanel(
         add(createHeaderPanel(), BorderLayout.NORTH)
         add(createConsolePanel(), BorderLayout.CENTER)
         add(createFooterPanel(), BorderLayout.SOUTH)
-
-        // ESC key to close
-        addKeyListener(object : KeyAdapter() {
-            override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ESCAPE) {
-                    onCloseRequest()
-                }
-            }
-        })
 
         // Dot animation timer (250ms - 37% faster than 400ms)
         dotTimer = Timer(250) {
@@ -211,7 +201,7 @@ class DemoOverlayPanel(
         return JPanel(FlowLayout(FlowLayout.LEFT, 0, 0)).apply {
             isOpaque = false
             border = JBUI.Borders.emptyTop(8)
-            add(JLabel("Press ESC or click ✕ to dismiss").apply {
+            add(JLabel("Click ✕ to dismiss").apply {
                 font = jetBrainsMonoItalic
                 foreground = accentOrange
             })

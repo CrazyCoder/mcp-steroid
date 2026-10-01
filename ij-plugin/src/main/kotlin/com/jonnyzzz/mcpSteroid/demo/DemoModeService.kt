@@ -159,11 +159,13 @@ class DemoModeService(
         )
 
         window.isAlwaysOnTop = true
+        // The overlay only shows progress. Keys steroid_ui and steroid_input dispatch go to the focused component,
+        // so a focusable overlay would swallow them; mouse clicks on its close button still arrive.
+        window.focusableWindowState = false
         currentWindow = window
 
         // Show window and fade in
         window.isVisible = true
-        panel.requestFocusInWindow()
         panel.fadeIn()
 
         // Close old window AFTER showing new one (avoid flickering)
